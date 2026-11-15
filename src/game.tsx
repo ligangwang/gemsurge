@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findHint, type Pos } from "./engine/board";
 import { FEVER_MOVES, Session, type Goal, type Turn } from "./engine/session";
-import { GEM_CSS, GemScene } from "./gem-scene";
+import { AnimationCancelled, GEM_CSS, GemScene } from "./gem-scene";
 import { useDingn, useLocale } from "./dingn";
 import {
   COLOR_NAMES,
@@ -18,7 +18,7 @@ import {
   utcDay,
 } from "./levels";
 import { badges, endBadges, playBadges } from "./badges";
-import { highest, store, type Saved } from "./save";
+import { highest, loadSaved, merge, store, type Saved } from "./save";
 import {
   NONE,
   PRICES,
@@ -62,6 +62,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   const scene = useRef<GemScene | null>(null);
   const session = useRef<Session | null>(null);
   const busy = useRef(false);
+  const [rewarded] = useState(() => new WeakSet<Session>());
   const hintTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const savedRef = useRef(saved);
   savedRef.current = saved;
@@ -73,11 +74,20 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
 
   useEffect(() => setMuted(muted), [muted]);
 
-  // The upgrades the player owns, again after they sign in.
+  // The upgrades the player owns, and their account's progress merged with
+  // this device's, again after they sign in.
   useEffect(() => {
     let live = true;
     badges.reset();
     loadOwned(sdk).then((o) => live && setOwned(o));
+    if (signedIn)
+      loadSaved(sdk).then((account) => {
+        if (!live) return;
+        const next = merge(savedRef.current, account);
+        savedRef.current = next;
+        setSaved(next);
+        store(sdk, next).catch(() => {});
+      });
     return () => {
       live = false;
     };
@@ -178,6 +188,10 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       unlock(playBadges(s));
       rerender();
       if (s.outcome) await finish(s);
+    } catch (err) {
+      if (!(err instanceof AnimationCancelled)) throw err;
+      // The player left for another level mid-move: still save and pay.
+      if (s.outcome) await reward(s, false);
     } finally {
       busy.current = false;
       if (session.current === s && !s.outcome) {
@@ -213,7 +227,9 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     await reward(s);
   }
 
-  async function reward(s: Session) {
+  async function reward(s: Session, show = true) {
+    if (rewarded.has(s)) return;
+    rewarded.add(s);
     const won = s.outcome === "won";
     const level = s.spec.level;
     const stars = s.stars;
@@ -235,11 +251,12 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     } else {
       const prev = next.daily?.day === today ? next.daily : null;
       best = !prev || s.score > prev.score;
-      const pay = won && !prev?.paid;
-      if (pay) coins = DAILY_COINS;
+      if (won && !prev?.paid) coins = DAILY_COINS;
       else if (won) note = "Today's daily coins are already paid.";
-      next.daily = { day: today, score: Math.max(prev?.score ?? 0, s.score), paid: !!prev?.paid || pay };
+      // Marked paid only once dingn has paid (below).
+      next.daily = { day: today, score: Math.max(prev?.score ?? 0, s.score), paid: !!prev?.paid };
     }
+    savedRef.current = next;
     setSaved(next);
     store(sdk, next).catch(() => {});
     unlock(endBadges(s, highest(next)));
@@ -251,11 +268,18 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
           const r = await sdk.rewards.earn(coins);
           paid = r.coins;
           if (!r.coins) note = "You've earned all of today's coins from this game.";
+          else if (level === 0) {
+            const after = { ...savedRef.current, daily: { ...next.daily!, paid: true } };
+            savedRef.current = after;
+            setSaved(after);
+            store(sdk, after).catch(() => {});
+          }
         } catch {
           note = "Coins couldn't be paid just now.";
         }
       }
     }
+    if (!show) return;
     setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: paid, note, best });
     setScreen("end");
     stars && [1, 2, 3].slice(0, stars).forEach((n, i) => setTimeout(() => sfx.star(n), 300 + i * 250));

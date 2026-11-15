@@ -59,7 +59,16 @@ type Tween = {
   delay: number;
   update: (k: number) => void;
   done?: () => void;
+  /** Ends a wait early when the board is replaced. */
+  cancel?: () => void;
 };
+
+/** Thrown out of an animation whose board was replaced (setBoard). */
+export class AnimationCancelled extends Error {
+  constructor() {
+    super("animation cancelled");
+  }
+}
 
 // --------------------------------------------------------------- geometry
 
@@ -605,7 +614,10 @@ export class GemScene {
   /** Shows a board at once, without animation. */
   setBoard(cells: (Gem | null)[], ice: number[], worldIndex: number) {
     for (const id of [...this.views.keys()]) this.removeView(id);
+    // A move still animating on the old board stops here.
+    const pending = this.tweens;
     this.tweens = [];
+    for (const tw of pending) tw.cancel?.();
     this.setWorld(worldIndex);
     this.cells = cells.map((g) => (g ? { ...g } : null));
     cells.forEach((g, i) => {
@@ -735,7 +747,10 @@ export class GemScene {
 
   /** Waits game time (slowed by slow motion). */
   private wait(seconds: number) {
-    return new Promise<void>((resolve) => this.tween(seconds, () => {}, 0, resolve));
+    return new Promise<void>((resolve, reject) => {
+      this.tween(seconds, () => {}, 0, resolve);
+      this.tweens[this.tweens.length - 1].cancel = () => reject(new AnimationCancelled());
+    });
   }
 
   private viewAt(cells: (Gem | null)[], p: Pos) {

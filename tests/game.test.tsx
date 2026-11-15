@@ -39,8 +39,12 @@ vi.mock("../src/gem-scene", () => ({
 let sdk: DingnGame;
 const calls = { save: vi.fn(), earn: vi.fn(), unlock: vi.fn(), spend: vi.fn() };
 let owned: string[] = [];
+let stored: Map<string, unknown>;
+let account: unknown = null;
+let setPlayer: (p: DingnGame["player"]) => void = () => {};
 function fakeSdk(signedIn: boolean, locale: Locale = "en") {
-  const stored = new Map<string, unknown>();
+  stored = new Map<string, unknown>();
+  account = null;
   owned = [];
   calls.save.mockReset().mockResolvedValue(undefined);
   calls.earn.mockReset().mockImplementation(async (coins: number) => ({ coins, left: 100 }));
@@ -55,12 +59,15 @@ function fakeSdk(signedIn: boolean, locale: Locale = "en") {
     locale,
     player: { signedIn, name: signedIn ? "Ada" : "", avatar: "" },
     embedded: true,
-    onPlayer: () => () => {},
+    onPlayer: (listener) => {
+      setPlayer = listener;
+      return () => {};
+    },
     storage: {
       get: async (key) => (stored.get(key) ?? null) as never,
       set: async (key, value) => void stored.set(key, value),
     },
-    progress: { load: async () => null, save: calls.save },
+    progress: { load: async () => account as never, save: calls.save },
     rewards: {
       unlock: calls.unlock,
       list: async () => [],
@@ -159,6 +166,32 @@ test("signed-out players are asked to sign in to buy", async () => {
   play();
   fireEvent.click(screen.getByRole("button", { name: "Upgrades" }));
   expect(screen.getByRole("button", { name: "Sign in to buy upgrades" })).toBeTruthy();
+});
+
+test("signing in brings back the account's levels", async () => {
+  fakeSdk(false);
+  play();
+  expect((screen.getByRole("button", { name: "Level 3" }) as HTMLButtonElement).disabled).toBe(true);
+  const saved = empty();
+  saved.stars[0] = saved.stars[1] = 2;
+  account = saved;
+  sdk.player = { signedIn: true, name: "Ada", avatar: "" };
+  await act(async () => setPlayer(sdk.player));
+  await vi.waitFor(() =>
+    expect((screen.getByRole("button", { name: "Level 3" }) as HTMLButtonElement).disabled).toBe(false),
+  );
+});
+
+test("a signed-out daily win leaves today's coins to claim", async () => {
+  fakeSdk(false);
+  play();
+  fireEvent.click(screen.getByRole("button", { name: "Daily board" }));
+  await playOut();
+  if (session().outcome === "won") {
+    await screen.findByText("Board complete!");
+    expect(stored.get("gemsurge")).toMatchObject({ daily: { paid: false } });
+    expect(calls.earn).not.toHaveBeenCalled();
+  }
 });
 
 test("speaks Chinese", () => {
