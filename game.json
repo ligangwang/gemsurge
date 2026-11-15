@@ -1,6 +1,6 @@
 {
   "id": "gemsurge",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "title": {
     "en": "Gem Surge",
     "zh": "宝石狂潮"
@@ -9,6 +9,7 @@
     "en": "A 3D match-3: swap glowing gems, build line blasters, bombs and prisms, combine them for huge chain reactions, and surge through 30 levels across three worlds plus a daily board.",
     "zh": "3D 消消乐：交换发光宝石，做出激光、炸弹和棱镜，组合它们引发连锁爆炸，闯过三个世界的 30 关，还有每日棋盘。"
   },
+  "category": "casual",
   "entry": "index.html",
   "badges": [
     {

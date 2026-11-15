@@ -48,6 +48,10 @@ test("every badge the game awards is in game.json", () => {
   assert.equal(ids.size, game.badges.length);
 });
 
+test("game.json lists Gem Surge under Casual", () => {
+  assert.equal(game.category, "casual");
+});
+
 test("game.json's shop matches the upgrades", () => {
   assert.deepEqual(game.shop, shopManifest());
   for (const item of game.shop) assert.ok(item.price > 0 && item.price <= 1000, item.id);
