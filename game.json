@@ -1,0 +1,282 @@
+{
+  "id": "gemsurge",
+  "version": "1.0.0",
+  "title": {
+    "en": "Gem Surge",
+    "zh": "宝石狂潮"
+  },
+  "description": {
+    "en": "A 3D match-3: swap glowing gems, build line blasters, bombs and prisms, combine them for huge chain reactions, and surge through 30 levels across three worlds plus a daily board.",
+    "zh": "3D 消消乐：交换发光宝石，做出激光、炸弹和棱镜，组合它们引发连锁爆炸，闯过三个世界的 30 关，还有每日棋盘。"
+  },
+  "entry": "index.html",
+  "badges": [
+    {
+      "id": "level-5",
+      "tier": "bronze",
+      "level": 5,
+      "title": {
+        "en": "Clear level 5",
+        "zh": "通过第 5 关"
+      }
+    },
+    {
+      "id": "level-10",
+      "tier": "bronze",
+      "level": 10,
+      "title": {
+        "en": "Clear level 10",
+        "zh": "通过第 10 关"
+      }
+    },
+    {
+      "id": "level-15",
+      "tier": "silver",
+      "level": 15,
+      "title": {
+        "en": "Clear level 15",
+        "zh": "通过第 15 关"
+      }
+    },
+    {
+      "id": "level-20",
+      "tier": "silver",
+      "level": 20,
+      "title": {
+        "en": "Clear level 20",
+        "zh": "通过第 20 关"
+      }
+    },
+    {
+      "id": "level-25",
+      "tier": "gold",
+      "level": 25,
+      "title": {
+        "en": "Clear level 25",
+        "zh": "通过第 25 关"
+      }
+    },
+    {
+      "id": "level-30",
+      "tier": "gold",
+      "level": 30,
+      "title": {
+        "en": "Clear level 30",
+        "zh": "通过第 30 关"
+      }
+    },
+    {
+      "id": "three-stars",
+      "tier": "silver",
+      "icon": "stars",
+      "title": {
+        "en": "Clear a level with 3 stars",
+        "zh": "三星通关"
+      }
+    },
+    {
+      "id": "prism",
+      "tier": "bronze",
+      "icon": "star",
+      "title": {
+        "en": "Set off a prism",
+        "zh": "引爆一个棱镜"
+      }
+    },
+    {
+      "id": "combo",
+      "tier": "bronze",
+      "icon": "target",
+      "title": {
+        "en": "Swap two specials together",
+        "zh": "把两个特殊宝石交换组合"
+      }
+    },
+    {
+      "id": "fever",
+      "tier": "bronze",
+      "icon": "bolt",
+      "title": {
+        "en": "Fill the meter and reach Fever",
+        "zh": "充满能量进入狂热"
+      }
+    },
+    {
+      "id": "chain-5",
+      "tier": "silver",
+      "icon": "trophy",
+      "title": {
+        "en": "Chain 5 cascades in one move",
+        "zh": "一步连锁 5 次"
+      }
+    },
+    {
+      "id": "chain-8",
+      "tier": "gold",
+      "icon": "trophy",
+      "title": {
+        "en": "Chain 8 cascades in one move",
+        "zh": "一步连锁 8 次"
+      }
+    },
+    {
+      "id": "board-wipe",
+      "tier": "diamond",
+      "icon": "crown",
+      "title": {
+        "en": "Swap two prisms to clear the whole board",
+        "zh": "交换两个棱镜清空整个棋盘"
+      }
+    },
+    {
+      "id": "daily-board",
+      "tier": "bronze",
+      "icon": "clock",
+      "title": {
+        "en": "Clear a daily board",
+        "zh": "完成一次每日棋盘"
+      }
+    }
+  ],
+  "shop": [
+    {
+      "id": "moves-1",
+      "price": 60,
+      "title": {
+        "en": "Extra moves +1",
+        "zh": "额外步数 +1"
+      }
+    },
+    {
+      "id": "moves-2",
+      "price": 150,
+      "title": {
+        "en": "Extra moves +2",
+        "zh": "额外步数 +2"
+      },
+      "requires": "moves-1"
+    },
+    {
+      "id": "moves-3",
+      "price": 300,
+      "title": {
+        "en": "Extra moves +3",
+        "zh": "额外步数 +3"
+      },
+      "requires": "moves-2"
+    },
+    {
+      "id": "moves-4",
+      "price": 500,
+      "title": {
+        "en": "Extra moves +4",
+        "zh": "额外步数 +4"
+      },
+      "requires": "moves-3"
+    },
+    {
+      "id": "moves-5",
+      "price": 800,
+      "title": {
+        "en": "Extra moves +5",
+        "zh": "额外步数 +5"
+      },
+      "requires": "moves-4"
+    },
+    {
+      "id": "blaster-1",
+      "price": 80,
+      "title": {
+        "en": "Start with 1 line blaster",
+        "zh": "开局带 1 个激光"
+      }
+    },
+    {
+      "id": "blaster-2",
+      "price": 250,
+      "title": {
+        "en": "Start with 2 line blasters",
+        "zh": "开局带 2 个激光"
+      },
+      "requires": "blaster-1"
+    },
+    {
+      "id": "blaster-3",
+      "price": 500,
+      "title": {
+        "en": "Start with 3 line blasters",
+        "zh": "开局带 3 个激光"
+      },
+      "requires": "blaster-2"
+    },
+    {
+      "id": "bomb-1",
+      "price": 120,
+      "title": {
+        "en": "Start with 1 bomb",
+        "zh": "开局带 1 个炸弹"
+      }
+    },
+    {
+      "id": "bomb-2",
+      "price": 350,
+      "title": {
+        "en": "Start with 2 bombs",
+        "zh": "开局带 2 个炸弹"
+      },
+      "requires": "bomb-1"
+    },
+    {
+      "id": "bomb-3",
+      "price": 700,
+      "title": {
+        "en": "Start with 3 bombs",
+        "zh": "开局带 3 个炸弹"
+      },
+      "requires": "bomb-2"
+    },
+    {
+      "id": "prism-1",
+      "price": 400,
+      "title": {
+        "en": "Start with 1 prism",
+        "zh": "开局带 1 个棱镜"
+      }
+    },
+    {
+      "id": "prism-2",
+      "price": 1000,
+      "title": {
+        "en": "Start with 2 prisms",
+        "zh": "开局带 2 个棱镜"
+      },
+      "requires": "prism-1"
+    },
+    {
+      "id": "fever-1",
+      "price": 100,
+      "title": {
+        "en": "Fever charge +15%",
+        "zh": "狂热充能 +15%"
+      }
+    },
+    {
+      "id": "fever-2",
+      "price": 300,
+      "title": {
+        "en": "Fever charge +30%",
+        "zh": "狂热充能 +30%"
+      },
+      "requires": "fever-1"
+    },
+    {
+      "id": "fever-3",
+      "price": 600,
+      "title": {
+        "en": "Fever charge +45%",
+        "zh": "狂热充能 +45%"
+      },
+      "requires": "fever-2"
+    }
+  ]
+}
