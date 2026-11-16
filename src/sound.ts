@@ -174,7 +174,7 @@ const SONGS: Song[] = [
     snare: [4, 12],
     hat: [2, 6, 10, 14],
     arp: [0, 1, 2, 1, 0, 1, 2, 1],
-    lead: "square",
+    lead: "triangle",
   },
   {
     bpm: 84,
@@ -262,7 +262,7 @@ function kick(a: AudioContext, dest: AudioNode, t: number) {
   const g = a.createGain();
   osc.frequency.setValueAtTime(130, t);
   osc.frequency.exponentialRampToValueAtTime(45, t + 0.18);
-  g.gain.setValueAtTime(0.5, t);
+  g.gain.setValueAtTime(0.28, t);
   g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
   osc.connect(g).connect(dest);
   osc.start(t);
@@ -291,15 +291,15 @@ function playStep(a: AudioContext, dest: AudioNode, song: Song, step: number, t:
   const [root, tones] = song.chords[bar];
 
   if (song.kick.includes(inBar)) kick(a, dest, t);
-  if (song.snare.includes(inBar)) hit(a, dest, t, 0.18, 0.18, "bandpass", 1800);
-  if (song.hat.includes(inBar)) hit(a, dest, t, 0.05, 0.08, "highpass", 8000);
+  if (song.snare.includes(inBar)) hit(a, dest, t, 0.16, 0.09, "bandpass", 1600);
+  if (song.hat.includes(inBar)) hit(a, dest, t, 0.05, 0.04, "highpass", 8000);
 
   if (inBar === 0) {
     // A soft pad holds the chord for the whole bar.
     for (const n of tones) voice(a, dest, midi(n - 12), t, sixteenth * 16, "triangle", 0.035, 1200);
   }
   if (inBar === 0 || inBar === 6 || inBar === 10) {
-    voice(a, dest, midi(root), t, sixteenth * (inBar === 0 ? 5 : 3.5), "triangle", 0.22, 600);
+    voice(a, dest, midi(root), t, sixteenth * (inBar === 0 ? 5 : 3.5), "sine", 0.2, 500);
   }
   if (inBar % 2 === 0) {
     const eighth = inBar / 2;
@@ -311,7 +311,7 @@ function playStep(a: AudioContext, dest: AudioNode, song: Song, step: number, t:
       if (n) {
         let len = 1;
         while (eighth + len < line.length && !line[eighth + len]) len++;
-        voice(a, dest, midi(n), t, sixteenth * 2 * len * 0.9, song.lead, song.lead === "square" ? 0.05 : 0.09, 2400);
+        voice(a, dest, midi(n), t, sixteenth * 2 * len * 0.9, song.lead, 0.08, 1800);
       }
     }
   }
@@ -328,7 +328,7 @@ export function music(world: number) {
   const song = SONGS[world % SONGS.length];
   const out = a.createGain();
   out.gain.setValueAtTime(0.0001, a.currentTime);
-  out.gain.exponentialRampToValueAtTime(0.45, a.currentTime + 1.5);
+  out.gain.exponentialRampToValueAtTime(0.26, a.currentTime + 2.5);
   out.connect(master);
 
   const sixteenth = 60 / song.bpm / 4;
