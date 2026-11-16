@@ -620,7 +620,7 @@ export class GemScene {
     const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
     this.composer = new EffectComposer(this.renderer, target);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.55, 0.2, 1.6);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.4, 0.2, 1.6);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
 
@@ -678,7 +678,7 @@ export class GemScene {
           ior: 2.2,
           clearcoat: 1,
           clearcoatRoughness: 0.03,
-          envMapIntensity: 1.6,
+          envMapIntensity: 1.2,
           vertexColors: true,
           transparent: true,
           blending: THREE.AdditiveBlending,
@@ -1539,7 +1539,7 @@ export class GemScene {
     if (!v || v.scale < 0.9) return;
     const mat = new THREE.SpriteMaterial({
       map: this.starTex,
-      color: new THREE.Color(1.6, 1.6, 1.6),
+      color: new THREE.Color(1.1, 1.1, 1.1),
       transparent: true,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
@@ -1552,14 +1552,14 @@ export class GemScene {
     const r = 0.1 + Math.random() * 0.18;
     sprite.position.set(Math.cos(a) * r, Math.sin(a) * r, 0.45);
     v.group.add(sprite);
-    const size = 0.4 + Math.random() * 0.3;
+    const size = 0.3 + Math.random() * 0.15;
     this.tween(
-      0.55,
+      0.9,
       (k) => {
         const pulse = Math.sin(k * Math.PI);
         sprite.scale.setScalar(size * (0.3 + pulse));
-        mat.opacity = pulse;
-        mat.rotation = k * 0.8;
+        mat.opacity = pulse * 0.7;
+        mat.rotation = k * 0.4;
       },
       0,
       () => {
@@ -1665,13 +1665,13 @@ export class GemScene {
     }
     this.tweens = keep.concat(this.tweens);
 
-    // Gems idle: a gentle sway, specials spin and pulse.
+    // Gems idle: barely a sway, so a board at rest is calm to look at; specials spin and pulse.
     for (const v of this.views.values()) {
       const t = this.time + v.phase;
       const hinted = this.hint?.some((p) => p.x === v.x && p.y === v.y);
       const sel = this.selected && this.selected.x === v.x && this.selected.y === v.y;
-      v.body.rotation.x = Math.sin(t * 0.9) * 0.25;
-      v.body.rotation.y = v.gem.special === "prism" ? t * 1.5 : Math.sin(t * 0.7) * 0.35 + (sel ? t * 4 : 0);
+      v.body.rotation.x = Math.sin(t * 0.5) * 0.07;
+      v.body.rotation.y = v.gem.special === "prism" ? t * 1.5 : Math.sin(t * 0.4) * 0.09 + (sel ? t * 4 : 0);
       let s = v.scale * (sel ? 1.15 : 1);
       if (hinted) s *= 1 + Math.sin(this.time * 8) * 0.12;
       if (v.gem.special) s *= 1 + Math.sin(this.time * 5 + v.phase) * 0.05;
@@ -1702,7 +1702,7 @@ export class GemScene {
     const u = this.bg.material.uniforms;
     u.time.value = this.time;
     u.fever.value = this.fever;
-    this.bloom.strength = 0.55 + this.fever * 0.35;
+    this.bloom.strength = 0.4 + this.fever * 0.35;
     this.frameMat.emissiveIntensity = 0.15 + this.fever * (0.8 + 0.4 * Math.sin(this.time * 6));
     for (const m of this.materials) m.emissiveIntensity = 0.1 + this.fever * 0.2;
 
@@ -1717,7 +1717,7 @@ export class GemScene {
 
     this.particles.update(dt);
     if (this.time > this.nextGlint) {
-      this.nextGlint = this.time + 0.08 + Math.random() * 0.18;
+      this.nextGlint = this.time + 0.9 + Math.random() * 1.3;
       this.glint();
     }
     this.composer.render();

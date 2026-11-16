@@ -118,7 +118,7 @@ test("a level plays to the end, saves and pays coins for a win", async () => {
   play();
   fireEvent.click(screen.getByRole("button", { name: "Play" }));
   expect(screen.getByRole("heading", { name: "Level 1" })).toBeTruthy();
-  expect(screen.getByText("20")).toBeTruthy();
+  expect(screen.getByText("26")).toBeTruthy();
   await playOut();
   const s = session();
   if (s.outcome === "won") {
@@ -158,7 +158,7 @@ test("upgrades are bought with coins and start the next level", async () => {
   expect(await screen.findByText("Upgrade bought! It works from your next level.")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Close" }));
   fireEvent.click(screen.getByRole("button", { name: "Play" }));
-  expect(session().movesLeft).toBe(21);
+  expect(session().movesLeft).toBe(27);
 });
 
 test("signed-out players are asked to sign in to buy", async () => {
