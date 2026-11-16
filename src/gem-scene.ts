@@ -26,7 +26,9 @@ import type { Turn } from "./engine/session";
 import type { Cleared } from "./engine/board";
 import { sfx } from "./sound";
 
-export const GEM_COLORS = [0xff2450, 0xffd21f, 0x18e070, 0x3a84ff, 0xb450ff, 0xfff0fa];
+export const GEM_COLORS = [0xff2450, 0xffc400, 0x18e070, 0x3a84ff, 0xb450ff, 0xfff0fa];
+/** The stones themselves are a little deeper, since the light inside brightens them. */
+const STONE_COLORS = [0xe8102e, 0xffb000, 0x00b54c, 0x1458f0, 0x8a2ce8, 0xfff0fa];
 /** CSS versions for the HUD. */
 export const GEM_CSS = GEM_COLORS.map((c) => `#${c.toString(16).padStart(6, "0")}`);
 
@@ -105,7 +107,10 @@ function cutGem({ outline, table, crown, pavilion, brilliant, keel = 0 }: Cut) {
   const upper = ring(brilliant ? 0.8 : (1 + table) / 2, crown * (brilliant ? 0.6 : 0.55));
   const girdle = ring(1, 0, brilliant);
   const under = ring(1, -0.035, brilliant);
-  const lower = ring(brilliant ? 0.5 : 0.62, -pavilion * (brilliant ? 0.6 : 0.5));
+  // Two rings down the pavilion, so the back of the stone breaks the light
+  // into many small facets.
+  const lower = ring(brilliant ? 0.74 : 0.78, -pavilion * 0.36);
+  const deep = ring(brilliant ? 0.42 : 0.5, -pavilion * 0.72, brilliant);
   const point = (p: THREE.Vector3) =>
     new THREE.Vector3(Math.sign(p.x) * Math.min(Math.abs(p.x), keel), 0, -pavilion);
 
@@ -127,13 +132,15 @@ function cutGem({ outline, table, crown, pavilion, brilliant, keel = 0 }: Cut) {
     band(upper, girdle, 1);
     band(girdle, under, 0);
     band(lower, under, 1);
+    band(lower, deep, 1);
   } else {
     band(top, upper, 0);
     band(upper, girdle, 0);
     band(girdle, under, 0);
     band(under, lower, 0);
+    band(lower, deep, 0);
   }
-  for (let i = 0; i < n; i++) tris.push([lower[i], lower[(i + 1) % n], point(lower[i])], [lower[(i + 1) % n], point(lower[(i + 1) % n]), point(lower[i])]);
+  for (let i = 0; i < n; i++) tris.push([deep[i], deep[(i + 1) % n], point(deep[i])], [deep[(i + 1) % n], point(deep[(i + 1) % n]), point(deep[i])]);
 
   // Wind every facet to face outwards, and drop the slivers a keel leaves.
   const positions: number[] = [];
@@ -150,7 +157,7 @@ function cutGem({ outline, table, crown, pavilion, brilliant, keel = 0 }: Cut) {
     // Light bounces around inside a cut stone, so neighbouring facets are
     // never the same brightness. The table is the brightest.
     const onTable = a.z === crown && b.z === crown && c.z === crown;
-    const shade = onTable ? 1.25 : [0.78, 1.12, 0.92, 1.3, 0.86, 1.04][(shades.length / 9) % 6 | 0];
+    const shade = onTable ? 1.25 : [0.6, 1.15, 0.85, 1.35, 0.7, 1.0][(shades.length / 9) % 6 | 0];
     for (let k = 0; k < 9; k++) shades.push(shade);
   }
   const g = new THREE.BufferGeometry();
@@ -224,22 +231,29 @@ function studioTexture() {
   c.height = 256;
   const g = c.getContext("2d")!;
   const sky = g.createLinearGradient(0, 0, 0, 256);
-  sky.addColorStop(0, "#7c82a4");
-  sky.addColorStop(0.5, "#34364e");
-  sky.addColorStop(1, "#101018");
+  sky.addColorStop(0, "#5a5f80");
+  sky.addColorStop(0.5, "#26283c");
+  sky.addColorStop(1, "#0a0a12");
   g.fillStyle = sky;
   g.fillRect(0, 0, 512, 256);
   // Lamps: [x, y, width, height, colour], spread all the way round.
   const lamps: [number, number, number, number, string][] = [
-    [30, 40, 50, 26, "#ffffff"],
-    [130, 70, 26, 60, "#ffffff"],
-    [215, 28, 70, 20, "#fff4e0"],
-    [300, 80, 22, 50, "#ffffff"],
-    [370, 36, 56, 24, "#e6f0ff"],
-    [455, 76, 24, 56, "#ffffff"],
-    [80, 150, 40, 14, "#b8c4ff"],
-    [250, 160, 60, 12, "#ffd0f0"],
-    [410, 156, 44, 14, "#c8fff0"],
+    [20, 30, 44, 22, "#ffffff"],
+    [96, 60, 18, 46, "#ffffff"],
+    [150, 20, 30, 16, "#fff4e0"],
+    [205, 70, 40, 18, "#ffffff"],
+    [262, 26, 18, 40, "#e6f0ff"],
+    [318, 64, 44, 20, "#ffffff"],
+    [384, 24, 22, 44, "#ffffff"],
+    [436, 70, 40, 18, "#fff0f6"],
+    [486, 30, 18, 40, "#ffffff"],
+    [50, 112, 26, 12, "#ffffff"],
+    [176, 118, 22, 12, "#ffffff"],
+    [300, 112, 26, 12, "#ffffff"],
+    [420, 118, 22, 12, "#ffffff"],
+    [80, 160, 40, 12, "#b8c4ff"],
+    [250, 170, 50, 10, "#ffd0f0"],
+    [410, 162, 40, 12, "#c8fff0"],
   ];
   g.filter = "blur(2px)";
   for (const [x, y, w, h, colour] of lamps) {
@@ -280,6 +294,33 @@ function starTexture() {
   g.fillRect(-9, -9, 18, 18);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/**
+ * What the facets at the back of a stone send out to the eye: mostly bright
+ * light, broken up by dark patches. A cut stone is a set of little mirrors
+ * that return the light from above, and the dark patches are what make
+ * neighbouring facets flash differently.
+ */
+function brightTexture() {
+  const c = document.createElement("canvas");
+  c.width = 512;
+  c.height = 256;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#f4f4fa";
+  g.fillRect(0, 0, 512, 256);
+  // Patches placed by a fixed little generator, so every player sees the same stones.
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 130; i++) {
+    const shade = Math.floor(10 + rnd() * 120);
+    g.fillStyle = `rgb(${shade},${shade},${shade + 12})`;
+    g.fillRect(rnd() * 512, rnd() * 256, 10 + rnd() * 34, 8 + rnd() * 26);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.mapping = THREE.EquirectangularReflectionMapping;
   return t;
 }
 
@@ -509,6 +550,7 @@ export class GemScene {
   private geometries = makeGeometries();
   private prismGeometry = new THREE.IcosahedronGeometry(0.46, 0);
   private materials: THREE.MeshPhysicalMaterial[];
+  private shellMaterials: THREE.MeshPhysicalMaterial[];
   private prismMaterial: THREE.MeshPhysicalMaterial;
   private glowTex = glowTexture();
   private starTex = starTexture();
@@ -567,6 +609,9 @@ export class GemScene {
     const studio = studioTexture();
     this.scene.environment = pmrem.fromEquirectangular(studio).texture;
     studio.dispose();
+    const bright = brightTexture();
+    const inside = pmrem.fromEquirectangular(bright).texture;
+    bright.dispose();
     pmrem.dispose();
 
     const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
@@ -594,25 +639,47 @@ export class GemScene {
     // gem comes from the studio it reflects, which keeps them crisp and small.
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x6a5a8a, 2.8));
 
-    this.materials = GEM_COLORS.map(
+    this.materials = STONE_COLORS.map(
       (c, i) =>
         new THREE.MeshPhysicalMaterial({
           color: c,
           emissive: c,
-          emissiveIntensity: i === 5 ? 0.25 : 0.62,
-          roughness: i === 5 ? 0.3 : 0.1,
-          metalness: i === 5 ? 0 : 0.3,
+          emissiveIntensity: i === 5 ? 0.25 : 0.12,
+          envMap: i === 5 ? null : inside,
+          roughness: i === 5 ? 0.3 : 0.06,
+          metalness: i === 5 ? 0 : 0.92,
+          // A cut stone is see-through: what you see is the facets at the
+          // back (the pavilion), lit from inside, under a glassy top.
+          side: i === 5 ? THREE.FrontSide : THREE.BackSide,
           clearcoat: 1,
           clearcoatRoughness: 0.05,
           iridescence: i === 5 ? 0.8 : 0,
           iridescenceIOR: 1.6,
-          envMapIntensity: 3.2,
+          envMapIntensity: i === 5 ? 3 : 1.25,
           sheen: i === 5 ? 1 : 0,
           sheenColor: new THREE.Color(0xffc0ff),
           flatShading: false,
           vertexColors: true,
           specularIntensity: 1,
           ior: 2.2,
+        }),
+    );
+    // The glassy top of each stone: only its reflections and a veil of
+    // colour, added over the facets seen through it.
+    this.shellMaterials = STONE_COLORS.map(
+      (c) =>
+        new THREE.MeshPhysicalMaterial({
+          color: new THREE.Color(c).multiplyScalar(0.04),
+          roughness: 0.04,
+          metalness: 0,
+          ior: 2.2,
+          clearcoat: 1,
+          clearcoatRoughness: 0.03,
+          envMapIntensity: 1.6,
+          vertexColors: true,
+          transparent: true,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
         }),
     );
     this.prismMaterial = new THREE.MeshPhysicalMaterial({
@@ -722,6 +789,12 @@ export class GemScene {
     }
     const body = new THREE.Mesh(prism ? this.prismGeometry : this.geometries[gem.color], material);
     group.add(body);
+    if (!prism && gem.color !== 5) {
+      const shell = new THREE.Mesh(this.geometries[gem.color], this.shellMaterials[gem.color]);
+      shell.userData.shared = true;
+      shell.renderOrder = 2;
+      body.add(shell);
+    }
     const glow = new THREE.Sprite(
       new THREE.SpriteMaterial({
         map: this.glowTex,
@@ -781,7 +854,7 @@ export class GemScene {
     this.boardGroup.remove(v.group);
     v.group.traverse((o) => {
       if (o instanceof THREE.Sprite) o.material.dispose();
-      if (o instanceof THREE.Mesh && o !== v.body) {
+      if (o instanceof THREE.Mesh && o !== v.body && !o.userData.shared) {
         o.geometry.dispose();
       }
     });
