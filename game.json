@@ -1,6 +1,6 @@
 {
   "id": "gemsurge",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "title": {
     "en": "Gem Surge",
     "zh": "宝石狂潮"
@@ -64,6 +64,51 @@
       "title": {
         "en": "Clear level 30",
         "zh": "通过第 30 关"
+      }
+    },
+    {
+      "id": "level-50",
+      "tier": "gold",
+      "level": 50,
+      "title": {
+        "en": "Clear level 50",
+        "zh": "通过第 50 关"
+      }
+    },
+    {
+      "id": "level-100",
+      "tier": "gold",
+      "level": 100,
+      "title": {
+        "en": "Clear level 100",
+        "zh": "通过第 100 关"
+      }
+    },
+    {
+      "id": "level-250",
+      "tier": "gold",
+      "level": 250,
+      "title": {
+        "en": "Clear level 250",
+        "zh": "通过第 250 关"
+      }
+    },
+    {
+      "id": "level-500",
+      "tier": "diamond",
+      "level": 500,
+      "title": {
+        "en": "Clear level 500",
+        "zh": "通过第 500 关"
+      }
+    },
+    {
+      "id": "level-1000",
+      "tier": "diamond",
+      "level": 1000,
+      "title": {
+        "en": "Clear level 1000",
+        "zh": "通过第 1000 关"
       }
     },
     {

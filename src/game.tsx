@@ -30,7 +30,7 @@ import {
   type Owned,
   type UpgradeKind,
 } from "./upgrades";
-import { isMuted, music, setMuted, sfx } from "./sound";
+import { setMuted, sfx } from "./sound";
 
 type Screen = "menu" | "play" | "end" | "shop";
 type EndInfo = {
@@ -128,7 +128,6 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       s.dispose();
       scene.current = null;
       clearTimeout(hintTimer.current);
-      music(-1);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -148,7 +147,6 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     scene.current?.setBoard(s.board.cells, s.board.ice, spec.world);
     scene.current?.setInput(true);
     scene.current?.banner(level === 0 ? "Daily board" : `Level ${level}`, 2);
-    if (!isMuted()) music(spec.world);
     armHint();
   }
 
@@ -291,7 +289,6 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     scene.current?.setInput(false);
     scene.current?.setFever(false);
     scene.current?.showHint(null);
-    music(-1);
     setScreen("menu");
   }
 
@@ -318,7 +315,6 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     const m = !muted;
     setMute(m);
     setMuted(m);
-    if (!m && screen === "play" && session.current) music(session.current.spec.world);
     sdk.storage.set("prefs", { muted: m }).catch(() => {});
   }
 
@@ -421,6 +417,11 @@ function Menu(props: {
   const { t } = useLocale();
   const sdk = useDingn();
   const { saved, top } = props;
+  // The map shows three worlds at a time, starting on the page with the next level to play.
+  const PAGE = WORLDS.length * LEVELS_PER_WORLD;
+  const pages = Math.ceil(LAST_LEVEL / PAGE);
+  const [page, setPage] = useState(() => Math.min(pages - 1, Math.floor((props.nextLevel - 1) / PAGE)));
+  const first = page * PAGE + 1;
   return (
     <div className="gem-menu">
       <header className="gem-title">
@@ -453,15 +454,24 @@ function Menu(props: {
         )}
       </header>
       <section className="gem-worlds" aria-label={t("Levels")}>
-        <p className="eyebrow">
-          {t("Levels")} · ★ {props.totalStars} / {LAST_LEVEL * 3}
-        </p>
+        <div className="gem-pager">
+          <p className="eyebrow">
+            {t("Levels")} {first}–{Math.min(first + PAGE - 1, LAST_LEVEL)} / {LAST_LEVEL} · ★ {props.totalStars}
+          </p>
+          <button className="icon-button" disabled={page === 0} onClick={() => setPage(page - 1)} aria-label={t("Earlier levels")}>
+            ‹
+          </button>
+          <button className="icon-button" disabled={page >= pages - 1} onClick={() => setPage(page + 1)} aria-label={t("Later levels")}>
+            ›
+          </button>
+        </div>
         {WORLDS.map((w, wi) => (
           <div key={w.id} className={`gem-world world-${w.id}`}>
             <h3>{t(w.name)}</h3>
             <div className="gem-levels">
               {Array.from({ length: LEVELS_PER_WORLD }, (_, k) => {
-                const n = wi * LEVELS_PER_WORLD + k + 1;
+                const n = first + wi * LEVELS_PER_WORLD + k;
+                if (n > LAST_LEVEL) return null;
                 const locked = n > top + 1;
                 const stars = saved.stars[n - 1];
                 return (

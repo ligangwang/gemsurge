@@ -1,7 +1,7 @@
 # Gem Surge (宝石狂潮)
 
 A 3D match-3 for [dingn](https://dingn.com): swap glowing gems, build
-specials, combine them for huge chain reactions, and surge through 30 levels
+specials, combine them for huge chain reactions, and surge through 1000 levels
 across three worlds. Play it at <https://dingn.com/play/gemsurge/>.
 
 - **Match 3 or more** neighbouring gems of a colour; the gems above fall and
@@ -15,8 +15,8 @@ across three worlds. Play it at <https://dingn.com/play/gemsurge/>.
   prisms clear the whole board.
 - **Fever**: chains, specials and combos fill the meter; Fever doubles points
   for 3 moves. Moves left when you win become blasters for a final **surge**.
-- **Levels**: 30 levels in Neon City, Deep Sea and Outer Space, each with its
-  own background and music pad. Goals are scores, gems of a colour, and ice
+- **Levels**: 1000 levels through Neon City, Deep Sea and Outer Space (the first 30 hand-made, the rest generated from them), each with its
+  own background. Goals are scores, gems of a colour, and ice
   to break (1 or 2 layers), within a move limit. 1 to 3 stars by score.
 - **Daily board**: 20 moves, the same board and refills for everyone each UTC
   day.
@@ -31,7 +31,7 @@ Gem Surge earns and spends dingn coins:
   `sdk.rewards.earn`. A lost level that got at least halfway on a goal pays 1.
   dingn caps what a game pays a player each day.
 - The daily board pays 10 coins once a day.
-- 14 badges (levels 5 to 30, 3 stars, prisms, combos, Fever, chains of 5 and
+- 19 badges (levels 5 to 1000, 3 stars, prisms, combos, Fever, chains of 5 and
   8, a board wipe, the daily board) pay what dingn gives their tier.
 - The **Upgrades** shop sells 16 permanent tiers (`src/upgrades.ts`, listed in
   `game.json`'s `shop`): extra moves (5 tiers, 60 to 800 coins), starting line
@@ -66,7 +66,7 @@ To play it inside dingn while developing, open the
   what's saved (stars and best score a level, the daily board). Saved on the
   device with `sdk.storage`, and to the player's account with `sdk.progress`
   when signed in.
-- `src/sound.ts`: synthesised sound effects and music pads.
+- `src/sound.ts`: synthesised sound effects.
 
 ## Release a new version
 

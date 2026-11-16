@@ -3,13 +3,14 @@ import assert from "node:assert/strict";
 import game from "../game.json" with { type: "json" };
 import zh from "../src/zh-CN.json" with { type: "json" };
 import { SIZE } from "../src/engine/board";
-import { DAILY_COINS, LAST_LEVEL, WORLDS, LEVELS_PER_WORLD, coinsFor, dailySpec, levelSpec } from "../src/levels";
+import { DAILY_COINS, HAND_MADE, LAST_LEVEL, WORLDS, LEVELS_PER_WORLD, coinsFor, dailySpec, levelSpec } from "../src/levels";
 import { DAILY, levelBadges, CHAIN_5, CHAIN_8, COMBO, FEVER, PRISM, THREE_STARS, WIPE } from "../src/badges";
 import { boostsFor, nextTier, NONE, ownedFrom, PRICES, shopManifest, upgradeId } from "../src/upgrades";
 import { empty, highest, merge, parse } from "../src/save";
 
 test("every level has goals it can meet", () => {
-  assert.equal(LAST_LEVEL, WORLDS.length * LEVELS_PER_WORLD);
+  assert.equal(HAND_MADE, WORLDS.length * LEVELS_PER_WORLD);
+  assert.equal(LAST_LEVEL, 1000);
   for (let n = 1; n <= LAST_LEVEL; n++) {
     const spec = levelSpec(n);
     assert.equal(spec.level, n);
@@ -21,8 +22,15 @@ test("every level has goals it can meet", () => {
     }
     const [one, two, three] = spec.stars;
     assert.ok(one <= two && two < three, `level ${n} stars`);
+    assert.ok(spec.world >= 0 && spec.world < WORLDS.length, `level ${n} world`);
+    assert.ok(spec.moves >= 16, `level ${n} moves`);
   }
   assert.equal(levelSpec(11).world, 1);
+  // Generated levels: the worlds come round again, and a number always makes the same level.
+  assert.equal(levelSpec(31).world, 0);
+  assert.equal(levelSpec(45).world, 1);
+  assert.deepEqual(levelSpec(777), levelSpec(777));
+  assert.notEqual(levelSpec(777).seed, levelSpec(778).seed);
 });
 
 test("the daily board is the same all day and different the next", () => {
