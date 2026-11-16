@@ -1,6 +1,6 @@
 // Sound effects, synthesised with Web Audio so the game ships no audio files.
 // Pops climb in pitch as a chain grows; blasters zap, bombs thump and prisms
-// ring. Each world has its own looping tune, sequenced from the code below.
+// ring. Each world has its own calm ambient music, made up as it plays.
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
@@ -139,185 +139,97 @@ export const sfx = {
 
 const midi = (m: number) => 440 * 2 ** ((m - 69) / 12);
 
-type Song = {
-  bpm: number;
-  /** Per bar: the bass root and three chord tones (MIDI numbers). */
-  chords: [number, number[]][];
-  /** Per bar: eight eighth notes of melody, 0 for silence. A note lasts until the next one. */
-  melody: number[][];
-  /** Drum hits on the sixteen sixteenths of a bar. */
-  kick: number[];
-  snare: number[];
-  hat: number[];
-  /** How the chord is arpeggiated: chord-tone index per eighth, -1 for none. */
-  arp: number[];
-  lead: OscillatorType;
+type Mood = {
+  /** Seconds each chord is held. */
+  hold: number;
+  /** Chords as MIDI notes, lowest first; the first is the bass. */
+  chords: number[][];
+  /** The scale the bell notes are picked from (MIDI, one octave; other octaves follow). */
+  scale: number[];
+  /** How often a bell rings, as a chance per half second. */
+  bells: number;
 };
 
-/** One tune per world: bright synth-pop, a slow sea song, and a spacey half-time groove. */
-const SONGS: Song[] = [
+/**
+ * Ambient music for each world: long, soft chords that melt into each other
+ * and a few bell notes picked at random from a pentatonic scale, so it never
+ * repeats a tune and never clashes.
+ */
+const MOODS: Mood[] = [
+  // Neon City: warm, a little bright (C major pentatonic).
   {
-    bpm: 112,
+    hold: 6,
     chords: [
-      [45, [69, 72, 76]],
-      [41, [69, 72, 77]],
-      [48, [67, 72, 76]],
-      [43, [67, 71, 74]],
+      [48, 60, 64, 67, 71],
+      [45, 57, 60, 64, 67],
+      [41, 57, 60, 65, 69],
+      [43, 59, 62, 67, 69],
     ],
-    melody: [
-      [76, 0, 74, 72, 74, 0, 69, 0],
-      [72, 0, 72, 74, 76, 0, 72, 0],
-      [79, 0, 76, 0, 74, 72, 74, 0],
-      [74, 0, 71, 0, 67, 0, 0, 0],
-    ],
-    kick: [0, 8, 10],
-    snare: [4, 12],
-    hat: [2, 6, 10, 14],
-    arp: [0, 1, 2, 1, 0, 1, 2, 1],
-    lead: "triangle",
+    scale: [72, 74, 76, 79, 81],
+    bells: 0.3,
   },
+  // Deep Sea: slow and floating (D major pentatonic).
   {
-    bpm: 84,
+    hold: 8,
     chords: [
-      [50, [62, 66, 69]],
-      [47, [59, 62, 66]],
-      [43, [59, 62, 67]],
-      [45, [61, 64, 69]],
+      [38, 57, 62, 66, 69],
+      [43, 59, 62, 66, 69],
+      [47, 59, 62, 66, 73],
+      [45, 57, 61, 64, 69],
     ],
-    melody: [
-      [78, 0, 0, 76, 74, 0, 0, 0],
-      [73, 0, 74, 0, 71, 0, 0, 0],
-      [71, 0, 74, 0, 79, 0, 78, 0],
-      [76, 0, 0, 0, 73, 0, 0, 0],
-    ],
-    kick: [0, 10],
-    snare: [],
-    hat: [4, 12],
-    arp: [0, -1, 1, -1, 2, -1, 1, -1],
-    lead: "sine",
+    scale: [74, 76, 78, 81, 83],
+    bells: 0.2,
   },
+  // Outer Space: open and distant (E minor pentatonic).
   {
-    bpm: 96,
+    hold: 8,
     chords: [
-      [40, [64, 67, 71]],
-      [36, [64, 67, 72]],
-      [38, [62, 66, 69]],
-      [35, [62, 66, 71]],
+      [40, 59, 64, 67, 71],
+      [36, 60, 64, 67, 71],
+      [43, 59, 62, 67, 71],
+      [38, 57, 62, 66, 69],
     ],
-    melody: [
-      [71, 0, 0, 74, 76, 0, 74, 0],
-      [72, 0, 71, 0, 67, 0, 0, 0],
-      [69, 0, 71, 0, 74, 0, 78, 0],
-      [76, 0, 74, 0, 71, 0, 0, 0],
-    ],
-    kick: [0, 7, 10],
-    snare: [8],
-    hat: [0, 2, 4, 6, 8, 10, 12, 14],
-    arp: [0, 2, 1, 2, 0, 2, 1, 2],
-    lead: "triangle",
+    scale: [76, 79, 81, 83, 86],
+    bells: 0.16,
   },
 ];
 
-let noiseBuffer: AudioBuffer | null = null;
-function noiseSource(a: AudioContext) {
-  if (!noiseBuffer) {
-    noiseBuffer = a.createBuffer(1, a.sampleRate, a.sampleRate);
-    const data = noiseBuffer.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-  }
-  const src = a.createBufferSource();
-  src.buffer = noiseBuffer;
-  return src;
-}
-
-/** A plucked or held note into `dest` at time `t`, with a soft attack and release. */
-function voice(
-  a: AudioContext,
-  dest: AudioNode,
-  freq: number,
-  t: number,
-  dur: number,
-  type: OscillatorType,
-  gain: number,
-  cutoff = 4000,
-) {
+/** A note that swells in and fades out slowly. */
+function swell(a: AudioContext, dest: AudioNode, freq: number, t: number, dur: number, gain: number, type: OscillatorType) {
   const osc = a.createOscillator();
   osc.type = type;
   osc.frequency.value = freq;
-  const filter = a.createBiquadFilter();
-  filter.type = "lowpass";
-  filter.frequency.value = cutoff;
+  osc.detune.value = (Math.random() - 0.5) * 10;
   const g = a.createGain();
+  const fade = dur * 0.4;
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(gain, t + 0.012);
-  g.gain.exponentialRampToValueAtTime(gain * 0.6, t + Math.min(0.15, dur * 0.5));
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  osc.connect(filter).connect(g).connect(dest);
-  osc.start(t);
-  osc.stop(t + dur + 0.05);
-}
-
-function kick(a: AudioContext, dest: AudioNode, t: number) {
-  const osc = a.createOscillator();
-  const g = a.createGain();
-  osc.frequency.setValueAtTime(130, t);
-  osc.frequency.exponentialRampToValueAtTime(45, t + 0.18);
-  g.gain.setValueAtTime(0.28, t);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+  g.gain.linearRampToValueAtTime(gain, t + fade);
+  g.gain.setValueAtTime(gain, t + dur - fade * 0.5);
+  g.gain.linearRampToValueAtTime(0.0001, t + dur + fade);
   osc.connect(g).connect(dest);
   osc.start(t);
-  osc.stop(t + 0.35);
+  osc.stop(t + dur + fade + 0.1);
 }
 
-function hit(a: AudioContext, dest: AudioNode, t: number, dur: number, gain: number, type: BiquadFilterType, freq: number) {
-  const src = noiseSource(a);
-  const filter = a.createBiquadFilter();
-  filter.type = type;
-  filter.frequency.value = freq;
-  const g = a.createGain();
-  g.gain.setValueAtTime(gain, t);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  src.connect(filter).connect(g).connect(dest);
-  src.start(t, Math.random() * 0.5);
-  src.stop(t + dur + 0.02);
-}
-
-/** Schedules one sixteenth of a song. Every fourth pass through the tune leaves the melody out. */
-function playStep(a: AudioContext, dest: AudioNode, song: Song, step: number, t: number) {
-  const sixteenth = 60 / song.bpm / 4;
-  const bar = Math.floor(step / 16) % song.chords.length;
-  const pass = Math.floor(step / (16 * song.chords.length));
-  const inBar = step % 16;
-  const [root, tones] = song.chords[bar];
-
-  if (song.kick.includes(inBar)) kick(a, dest, t);
-  if (song.snare.includes(inBar)) hit(a, dest, t, 0.16, 0.09, "bandpass", 1600);
-  if (song.hat.includes(inBar)) hit(a, dest, t, 0.05, 0.04, "highpass", 8000);
-
-  if (inBar === 0) {
-    // A soft pad holds the chord for the whole bar.
-    for (const n of tones) voice(a, dest, midi(n - 12), t, sixteenth * 16, "triangle", 0.035, 1200);
-  }
-  if (inBar === 0 || inBar === 6 || inBar === 10) {
-    voice(a, dest, midi(root), t, sixteenth * (inBar === 0 ? 5 : 3.5), "sine", 0.2, 500);
-  }
-  if (inBar % 2 === 0) {
-    const eighth = inBar / 2;
-    const tone = song.arp[eighth];
-    if (tone >= 0) voice(a, dest, midi(tones[tone]), t, sixteenth * 2, "triangle", 0.045, 3000);
-    if (pass % 4 !== 3) {
-      const line = song.melody[bar];
-      const n = line[eighth];
-      if (n) {
-        let len = 1;
-        while (eighth + len < line.length && !line[eighth + len]) len++;
-        voice(a, dest, midi(n), t, sixteenth * 2 * len * 0.9, song.lead, 0.08, 1800);
-      }
-    }
+/** A soft bell: a sine with a quiet octave above it, ringing out. */
+function bell(a: AudioContext, dest: AudioNode, freq: number, t: number, gain: number) {
+  for (const [mult, level, ring] of [
+    [1, 1, 2.4],
+    [2, 0.25, 1.2],
+  ]) {
+    const osc = a.createOscillator();
+    osc.frequency.value = freq * mult;
+    const g = a.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(gain * level, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + ring);
+    osc.connect(g).connect(dest);
+    osc.start(t);
+    osc.stop(t + ring + 0.1);
   }
 }
 
-/** Starts a world's looping tune (or stops the music with -1). */
+/** Starts a world's ambient music (or stops the music with -1). */
 export function music(world: number) {
   if (world === musicWorld) return;
   musicNodes?.stop();
@@ -325,34 +237,70 @@ export function music(world: number) {
   musicWorld = world;
   const a = world >= 0 ? audio() : null;
   if (!a || !master) return;
-  const song = SONGS[world % SONGS.length];
+  const mood = MOODS[world % MOODS.length];
   const out = a.createGain();
   out.gain.setValueAtTime(0.0001, a.currentTime);
-  out.gain.exponentialRampToValueAtTime(0.26, a.currentTime + 2.5);
+  out.gain.exponentialRampToValueAtTime(0.22, a.currentTime + 4);
   out.connect(master);
 
-  const sixteenth = 60 / song.bpm / 4;
-  let step = 0;
-  let nextTime = a.currentTime + 0.1;
-  // Look a little ahead and schedule notes on the audio clock, so timers that
-  // run late do not make the beat stumble.
+  // Chords go through a low-pass filter so they stay mellow.
+  const pads = a.createBiquadFilter();
+  pads.type = "lowpass";
+  pads.frequency.value = 900;
+  pads.connect(out);
+
+  // Bells go through a quiet echo, which gives them some room.
+  const bells = a.createGain();
+  const echo = a.createDelay(1);
+  echo.delayTime.value = 0.42;
+  const feedback = a.createGain();
+  feedback.gain.value = 0.35;
+  const wet = a.createGain();
+  wet.gain.value = 0.5;
+  bells.connect(out);
+  bells.connect(echo);
+  echo.connect(feedback).connect(echo);
+  echo.connect(wet).connect(out);
+
+  let chord = 0;
+  let nextChord = a.currentTime + 0.1;
+  let nextBell = a.currentTime + 3;
+  let step = Math.floor(mood.scale.length / 2);
+  // Look a little ahead and schedule on the audio clock, so late timers do not matter.
   const tick = () => {
-    if (nextTime < a.currentTime) nextTime = a.currentTime + 0.05;
-    while (nextTime < a.currentTime + 0.2) {
-      playStep(a, out, song, step++, nextTime);
-      nextTime += sixteenth;
+    const horizon = a.currentTime + 1;
+    // After a long stall (a hidden tab, a paused debugger), skip what was
+    // missed instead of playing it all at once.
+    if (nextChord < a.currentTime - 0.5) nextChord = a.currentTime + 0.1;
+    if (nextBell < a.currentTime) nextBell = a.currentTime + 0.5;
+    while (nextChord < horizon) {
+      const notes = mood.chords[chord++ % mood.chords.length];
+      notes.forEach((n, i) => {
+        if (i === 0) swell(a, pads, midi(n), nextChord, mood.hold, 0.2, "sine");
+        else swell(a, pads, midi(n), nextChord, mood.hold, 0.07, i % 2 ? "triangle" : "sine");
+      });
+      nextChord += mood.hold;
+    }
+    while (nextBell < horizon) {
+      if (Math.random() < mood.bells) {
+        // Wander up and down the scale by a step or two, over two octaves.
+        step = Math.min(mood.scale.length * 2 - 1, Math.max(0, step + Math.floor(Math.random() * 5) - 2));
+        const n = mood.scale[step % mood.scale.length] + 12 * Math.floor(step / mood.scale.length) - 12;
+        bell(a, bells, midi(n), nextBell, 0.07 + Math.random() * 0.05);
+      }
+      nextBell += 0.5;
     }
   };
   tick();
-  const timer = window.setInterval(tick, 50);
+  const timer = window.setInterval(tick, 250);
   musicNodes = {
     stop() {
       window.clearInterval(timer);
       const t = a.currentTime;
       out.gain.cancelScheduledValues(t);
       out.gain.setValueAtTime(Math.max(out.gain.value, 0.0001), t);
-      out.gain.exponentialRampToValueAtTime(0.0001, t + 0.8);
-      window.setTimeout(() => out.disconnect(), 1000);
+      out.gain.exponentialRampToValueAtTime(0.0001, t + 1.2);
+      window.setTimeout(() => out.disconnect(), 1500);
     },
   };
 }
