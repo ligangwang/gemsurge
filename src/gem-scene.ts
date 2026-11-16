@@ -24,6 +24,7 @@ import {
   type Special,
 } from "./engine/board";
 import type { Turn } from "./engine/session";
+import type { Cleared } from "./engine/board";
 import { sfx } from "./sound";
 
 export const GEM_COLORS = [0xff1f4b, 0xffc21a, 0x14d968, 0x2f78ff, 0xa63dff, 0xfff0fa];
@@ -376,7 +377,7 @@ export class GemScene {
   ) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMapping = THREE.NeutralToneMapping;
     this.renderer.toneMappingExposure = 1;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     host.appendChild(this.renderer.domElement);
@@ -411,7 +412,7 @@ export class GemScene {
     this.bg.renderOrder = -10;
     this.scene.add(this.bg);
 
-    const key = new THREE.DirectionalLight(0xffffff, 1.3);
+    const key = new THREE.DirectionalLight(0xffffff, 0.85);
     key.position.set(-3, 5, 8);
     const rim = new THREE.DirectionalLight(0x88aaff, 0.6);
     rim.position.set(4, -3, 4);
@@ -422,18 +423,18 @@ export class GemScene {
         new THREE.MeshPhysicalMaterial({
           color: c,
           emissive: c,
-          emissiveIntensity: 0.1,
-          roughness: i === 5 ? 0.3 : 0.12,
+          emissiveIntensity: 0.3,
+          roughness: i === 5 ? 0.4 : 0.38,
           metalness: 0.0,
-          clearcoat: 0.35,
-          clearcoatRoughness: 0.1,
+          clearcoat: 0.2,
+          clearcoatRoughness: 0.4,
           iridescence: i === 5 ? 0.8 : 0,
           iridescenceIOR: 1.6,
-          envMapIntensity: 0.5,
+          envMapIntensity: 0.3,
           sheen: i === 5 ? 1 : 0,
           sheenColor: new THREE.Color(0xffc0ff),
           flatShading: i !== 5,
-          specularIntensity: 0.6,
+          specularIntensity: 0.25,
           ior: 2.2,
         }),
     );
@@ -858,12 +859,42 @@ export class GemScene {
     }
     if (!step.blasts.length) sfx.pop(step.chain);
 
+    // Plain matches (no blast reached them) get their own show: a beam along
+    // each line of three or more, then every gem flares, pops and shatters,
+    // rippling out from the middle of its line.
+    const plain = step.cleared.filter((c) => !clearDelay.has(idx(c.x, c.y)));
+    const ripple = this.matchBeams(plain);
+    if (plain.length) this.shake = Math.max(this.shake, 0.05 + 0.01 * plain.length);
+
     for (const c of step.cleared) {
       const i = idx(c.x, c.y);
       const v = this.views.get(c.id);
-      const delay = clearDelay.get(i) ?? 0;
       if (!v) continue;
+      const matched = !clearDelay.has(i);
+      const delay = matched ? (ripple.get(i) ?? 0) : clearDelay.get(i)!;
       const start = v.scale;
+      if (matched) {
+        this.tween(0.01, () => {}, delay, () => this.flare(v.group.position, c.color));
+        this.tween(
+          0.26,
+          (k) => {
+            // Swell with a quick wobble, then snap to nothing.
+            const swell = k < 0.55 ? 1 + 0.35 * easeOut(k / 0.55) : 1.35 * (1 - easeIn((k - 0.55) / 0.45));
+            v.scale = start * swell;
+            v.body.rotation.z += 0.25;
+          },
+          delay,
+          () => {
+            const at = v.group.position;
+            this.ring(at, new THREE.Color(GEM_COLORS[Math.max(0, c.color)]), 0.95, 0.35);
+            // Fast sparks, then heavier shards that fall away.
+            this.burst(at, c.color, 14, { speed: 4.5, size: 0.2, life: 0.5, gravity: 0, boost: 1.3 });
+            this.burst(at, c.color, 10, { speed: 2.6, size: 0.3, life: 1, gravity: -11, drag: 1.2, boost: 1 });
+            this.removeView(c.id);
+          },
+        );
+        continue;
+      }
       this.tween(
         0.2,
         (k) => {
@@ -887,7 +918,7 @@ export class GemScene {
       });
     }
     if (step.ice.length) sfx.ice();
-    const longest = Math.max(0, ...step.cleared.map((c) => clearDelay.get(idx(c.x, c.y)) ?? 0));
+    const longest = Math.max(0, ...step.cleared.map((c) => clearDelay.get(idx(c.x, c.y)) ?? (ripple.get(idx(c.x, c.y)) ?? 0) + 0.08));
     await this.wait(longest + 0.2);
 
     // New specials pop in.
@@ -1124,6 +1155,103 @@ export class GemScene {
       attr.setXYZ(i, p.x, p.y, p.z);
     }
     attr.needsUpdate = true;
+  }
+
+  /**
+   * A beam of light along every line of three or more same-coloured gems in
+   * `cleared`. Returns how long each cell waits to pop, so a line bursts from
+   * its middle outwards.
+   */
+  private matchBeams(cleared: Cleared[]) {
+    const delay = new Map<number, number>();
+    const color = new Map<number, number>();
+    for (const c of cleared) color.set(idx(c.x, c.y), c.color);
+    const line = (cells: Pos[]) => {
+      const mid = (cells.length - 1) / 2;
+      cells.forEach((p, n) => {
+        const d = 0.05 + Math.abs(n - mid) * 0.045;
+        const i = idx(p.x, p.y);
+        delay.set(i, Math.min(delay.get(i) ?? Infinity, d));
+      });
+      const a = world(cells[0].x, cells[0].y);
+      const b = world(cells[cells.length - 1].x, cells[cells.length - 1].y);
+      this.beam(a, b, new THREE.Color(GEM_COLORS[Math.max(0, color.get(idx(cells[0].x, cells[0].y))!)]));
+    };
+    for (const [dx, dy] of [
+      [1, 0],
+      [0, 1],
+    ]) {
+      for (const c of cleared) {
+        const same = (x: number, y: number) =>
+          x >= 0 && y >= 0 && x < SIZE && y < SIZE && color.get(idx(x, y)) === c.color;
+        if (same(c.x - dx, c.y - dy)) continue; // not the start of a line
+        const cells: Pos[] = [];
+        for (let x = c.x, y = c.y; same(x, y); x += dx, y += dy) cells.push({ x, y });
+        if (cells.length >= 3) line(cells);
+      }
+    }
+    return delay;
+  }
+
+  /** A soft bar of light from `a` to `b` that flashes wide and thins out. */
+  private beam(a: THREE.Vector3, b: THREE.Vector3, color: THREE.Color) {
+    const length = a.distanceTo(b) + 1.1;
+    const make = (tint: THREE.Color, height: number) => {
+      const mat = new THREE.MeshBasicMaterial({
+        map: this.glowTex,
+        color: tint,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        toneMapped: false,
+      });
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+      mesh.position.set((a.x + b.x) / 2, (a.y + b.y) / 2, 0.75);
+      mesh.rotation.z = Math.atan2(b.y - a.y, b.x - a.x);
+      this.fx.add(mesh);
+      this.tween(
+        0.32,
+        (k) => {
+          mesh.scale.set(length * (0.6 + 0.5 * easeOut(Math.min(1, k * 3))), height * (1 - easeIn(k)) + 0.02, 1);
+          mat.opacity = 1 - k * k;
+        },
+        0,
+        () => {
+          this.fx.remove(mesh);
+          mesh.geometry.dispose();
+          mat.dispose();
+        },
+      );
+    };
+    make(color.clone().multiplyScalar(1.5), 1.5);
+    make(color.clone().lerp(new THREE.Color(1, 1, 1), 0.6).multiplyScalar(1.3), 0.4);
+  }
+
+  /** A quick bloom of light on a gem as it pops. */
+  private flare(at: THREE.Vector3, color: number) {
+    const mat = new THREE.SpriteMaterial({
+      map: this.glowTex,
+      color: new THREE.Color(GEM_COLORS[Math.max(0, color)]).lerp(new THREE.Color(1, 1, 1), 0.2).multiplyScalar(1.3),
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    const sprite = new THREE.Sprite(mat);
+    sprite.position.set(at.x, at.y, 0.8);
+    this.fx.add(sprite);
+    this.tween(
+      0.34,
+      (k) => {
+        sprite.scale.setScalar(0.7 + 1.3 * easeOut(k));
+        mat.opacity = 1 - k;
+      },
+      0,
+      () => {
+        this.fx.remove(sprite);
+        mat.dispose();
+      },
+    );
   }
 
   private burst(at: THREE.Vector3, color: number, count: number, opts: Parameters<Particles["emit"]>[3] = {}) {
