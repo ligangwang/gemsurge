@@ -1,10 +1,10 @@
 // The level ladder, the daily board, and what a play pays.
 import { SIZE } from "./engine/board";
-import { hashSeed } from "./engine/random";
+import { below, hashSeed, shuffleInPlace } from "./engine/random";
 import type { Goal, LevelSpec } from "./engine/session";
 
 export type World = { id: string; name: string };
-/** Ten levels a world, each with its own look in the scene. */
+/** Ten levels a world, each with its own look in the scene. The worlds come round again after the third. */
 export const WORLDS: World[] = [
   { id: "neon", name: "Neon City" },
   { id: "sea", name: "Deep Sea" },
@@ -71,7 +71,32 @@ const TABLE: [number, number, string][] = [
   [30, 5, "i:frame c0:24 c4:24"],
 ];
 
-export const LAST_LEVEL = TABLE.length;
+/** The first levels are laid out by hand in TABLE; the rest are generated from them. */
+export const HAND_MADE = TABLE.length;
+export const LAST_LEVEL = 1000;
+
+/**
+ * A generated level: one of the hand-made levels from the second world on,
+ * with the goal colours shuffled, a new board, and targets that creep up
+ * (and moves that creep down) the further you go. The same number always
+ * makes the same level.
+ */
+function generated(n: number): [number, number, string] {
+  const rng = { seed: hashSeed(`gemsurge-generated-${n}`) };
+  const [moves, colors, text] = TABLE[LEVELS_PER_WORLD + below(rng, HAND_MADE - LEVELS_PER_WORLD)];
+  const far = (n - HAND_MADE) / (LAST_LEVEL - HAND_MADE);
+  const swap = shuffleInPlace(rng, Array.from({ length: colors }, (_, i) => i));
+  const grow = (target: number, step: number) => Math.round((target * (1 + 0.3 * far)) / step) * step;
+  const goals = text.split(" ").map((part) => {
+    if (part[0] === "s") return `s${grow(Number(part.slice(1)), 100)}`;
+    if (part[0] === "c") {
+      const [color, target] = part.slice(1).split(":").map(Number);
+      return `c${swap[color]}:${grow(target, 1)}`;
+    }
+    return part;
+  });
+  return [moves - Math.round(2 * far), colors, goals.join(" ")];
+}
 
 function parseGoals(text: string): { goals: Goal[]; ice?: string } {
   const goals: Goal[] = [];
@@ -94,7 +119,7 @@ const PER_MOVE: Record<number, number> = { 5: 200, 6: 110 };
 
 export function levelSpec(level: number): LevelSpec {
   const n = Math.min(Math.max(1, level), LAST_LEVEL);
-  const [moves, colors, text] = TABLE[n - 1];
+  const [moves, colors, text] = n <= HAND_MADE ? TABLE[n - 1] : generated(n);
   const { goals, ice } = parseGoals(text);
   const per = PER_MOVE[colors] ?? 110;
   const scoreGoal = goals.find((g) => g.kind === "score");
@@ -103,7 +128,7 @@ export function levelSpec(level: number): LevelSpec {
   const three = round(Math.max(base * 2, per * moves * 1.5));
   return {
     level: n,
-    world: Math.floor((n - 1) / LEVELS_PER_WORLD),
+    world: Math.floor((n - 1) / LEVELS_PER_WORLD) % WORLDS.length,
     moves,
     colors,
     goals,

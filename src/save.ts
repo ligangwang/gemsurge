@@ -93,7 +93,15 @@ export async function loadSaved(sdk: Sdk): Promise<Saved> {
   }
 }
 export async function store(sdk: Sdk, saved: Saved) {
-  const value = saved as unknown as Json;
+  // Only as far as the last level played, so a save stays well under the
+  // 16 KB the SDK allows.
+  let length = saved.stars.length;
+  while (length > 0 && !saved.stars[length - 1] && !saved.best[length - 1]) length--;
+  const value = {
+    ...saved,
+    stars: saved.stars.slice(0, length),
+    best: saved.best.slice(0, length),
+  } as unknown as Json;
   await sdk.storage.set(KEY, value).catch(() => {});
   if (sdk.player.signedIn) await sdk.progress.save(value).catch(() => {});
 }

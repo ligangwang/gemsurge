@@ -90,10 +90,19 @@ export const sfx = {
     tone(180, { type: "square", dur: 0.1, gain: 0.05, delay: 0.08 });
   },
   /** A match pop, higher with each link of the chain. */
-  pop: (chain: number) => {
+  pop: (chain: number, gems = 3) => {
     const f = note(chain - 1);
     tone(f, { type: "sine", dur: 0.25, gain: 0.16 });
     tone(f * 2, { type: "triangle", dur: 0.12, gain: 0.05 });
+    // Each gem past the third adds a note, running up the scale.
+    for (let i = 1; i <= Math.min(gems - 3, 6); i++) {
+      tone(note(chain - 1 + i), { type: "sine", dur: 0.2, gain: 0.1, delay: i * 0.045 });
+    }
+  },
+  /** The thump under a big clear; `power` runs from 0.3 to 2. */
+  boom: (power: number) => {
+    tone(110 + 30 * power, { type: "sine", dur: 0.3 + 0.25 * power, gain: Math.min(0.5, 0.14 + 0.2 * power), to: 38 });
+    noise(0.25 + 0.3 * power, Math.min(0.55, 0.1 + 0.22 * power), 1400 + 2200 * power);
   },
   laser: () => {
     tone(1600, { type: "sawtooth", dur: 0.35, gain: 0.06, to: 200 });

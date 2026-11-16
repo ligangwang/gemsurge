@@ -199,6 +199,15 @@
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
+.gem-pager {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.gem-pager .eyebrow { flex: 1; margin: 0; }
+.gem-pager .icon-button { font-size: 22px; line-height: 1; }
+.gem-pager .icon-button:disabled { opacity: 0.3; cursor: default; }
 .gem-world h3 {
   margin: 4px 0 8px;
   font-size: 18px;

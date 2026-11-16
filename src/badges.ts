@@ -4,7 +4,7 @@ import type { DingnGame } from "../sdk/dingn-sdk.js";
 import type { Session } from "./engine/session";
 
 /** A badge for clearing each of these levels. */
-export const LEVEL_MILESTONES = [5, 10, 15, 20, 25, 30];
+export const LEVEL_MILESTONES = [5, 10, 15, 20, 25, 30, 50, 100, 250, 500, 1000];
 export const levelBadge = (level: number) => `level-${level}`;
 export const THREE_STARS = "three-stars";
 export const CHAIN_5 = "chain-5";

@@ -1034,7 +1034,11 @@ export class GemScene {
       for (const i of reach) if (!clearDelay.has(i)) clearDelay.set(i, t + 0.06 + blastDelay(blast, i));
       t += blast.kind === "prism" ? 0.18 : 0.09;
     }
-    if (!step.blasts.length) sfx.pop(step.chain);
+    // How big this clear is, from 0 (a plain three) to 2: more gems and a
+    // longer chain make everything below louder, wider and brighter.
+    const power = Math.min(2, Math.max(0, step.cleared.length - 3) / 8 + (step.chain - 1) * 0.3);
+    if (!step.blasts.length) sfx.pop(step.chain, step.cleared.length);
+    if (power >= 0.3) sfx.boom(power);
 
     // Plain matches (no blast reached them) get their own show: a beam along
     // each line of three or more, then every gem flares, pops and shatters,
@@ -1042,6 +1046,27 @@ export class GemScene {
     const plain = step.cleared.filter((c) => !clearDelay.has(idx(c.x, c.y)));
     const ripple = this.matchBeams(plain);
     if (plain.length) this.shake = Math.max(this.shake, 0.05 + 0.01 * plain.length);
+    if (step.cleared.length) this.shake = Math.max(this.shake, 0.22 * power);
+    if (power >= 0.3) {
+      // A shockwave from the middle of the clear, then more of everything as it grows.
+      const mid = new THREE.Vector3();
+      for (const c of step.cleared) mid.add(world(c.x, c.y));
+      mid.divideScalar(step.cleared.length);
+      const tint = new THREE.Color(GEM_COLORS[Math.max(0, step.cleared[0].color)]);
+      this.tween(0.01, () => {}, 0.12, () => {
+        this.ring(mid, tint, 2 + 2.5 * power, 0.5 + 0.15 * power);
+        this.burst(mid, -1, Math.round(40 * power), { speed: 5 + 4 * power, life: 0.8, size: 0.26, boost: 1.4 });
+        if (power >= 0.7) {
+          this.ring(mid, new THREE.Color(1, 1, 1), 1.4 + 2 * power, 0.4);
+          this.flash(Math.min(0.5, 0.18 * power));
+        }
+        if (power >= 1.2) {
+          this.ring(mid, tint, 4 + 3 * power, 0.9);
+          this.burst(mid, -1, 90, { speed: 11, life: 1.3, size: 0.3, gravity: -6, drag: 1.4, boost: 1.6 });
+          this.slowMotion(0.3);
+        }
+      });
+    }
 
     for (const c of step.cleared) {
       const i = idx(c.x, c.y);
@@ -1063,10 +1088,10 @@ export class GemScene {
           delay,
           () => {
             const at = v.group.position;
-            this.ring(at, new THREE.Color(GEM_COLORS[Math.max(0, c.color)]), 0.95, 0.35);
+            this.ring(at, new THREE.Color(GEM_COLORS[Math.max(0, c.color)]), 0.95 + 0.5 * power, 0.35);
             // Fast sparks, then heavier shards that fall away.
-            this.burst(at, c.color, 14, { speed: 4.5, size: 0.2, life: 0.5, gravity: 0, boost: 1.3 });
-            this.burst(at, c.color, 10, { speed: 2.6, size: 0.3, life: 1, gravity: -11, drag: 1.2, boost: 1 });
+            this.burst(at, c.color, Math.round(14 + 12 * power), { speed: 4.5 + 2.5 * power, size: 0.2, life: 0.5 + 0.2 * power, gravity: 0, boost: 1.3 });
+            this.burst(at, c.color, Math.round(10 + 8 * power), { speed: 2.6 + 1.5 * power, size: 0.3, life: 1, gravity: -11, drag: 1.2, boost: 1 });
             this.removeView(c.id);
           },
         );
@@ -1080,8 +1105,8 @@ export class GemScene {
         },
         delay,
         () => {
-          this.burst(v.group.position, c.color, c.special ? 30 : 16, {
-            speed: c.special ? 4.5 : 3,
+          this.burst(v.group.position, c.color, Math.round((c.special ? 30 : 16) * (1 + 0.5 * power)), {
+            speed: (c.special ? 4.5 : 3) * (1 + 0.3 * power),
           });
           this.removeView(c.id);
         },
