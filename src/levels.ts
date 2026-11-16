@@ -114,13 +114,28 @@ function parseGoals(text: string): { goals: Goal[]; ice?: string } {
   return { goals, ice };
 }
 
+/** The first levels are gentler than their tables say, to ease a new player in. */
+export const EASY_LEVELS = 100;
+/**
+ * How much gentler: 1 through level 70, fading to 0 just past level 100, so
+ * there is no sudden wall. A fully eased level has 30% more moves and
+ * targets a fifth lower.
+ */
+const ease = (n: number) => Math.min(1, Math.max(0, (EASY_LEVELS + 1 - n) / 30));
+
 /** Rough points a move scores with 5 or 6 colours, used to set the star scores. */
 const PER_MOVE: Record<number, number> = { 5: 200, 6: 110 };
 
 export function levelSpec(level: number): LevelSpec {
   const n = Math.min(Math.max(1, level), LAST_LEVEL);
-  const [moves, colors, text] = n <= HAND_MADE ? TABLE[n - 1] : generated(n);
+  const [tableMoves, colors, text] = n <= HAND_MADE ? TABLE[n - 1] : generated(n);
   const { goals, ice } = parseGoals(text);
+  const easy = ease(n);
+  const moves = Math.round(tableMoves * (1 + 0.3 * easy));
+  for (const goal of goals) {
+    if (goal.kind === "score") goal.target = Math.round((goal.target * (1 - 0.2 * easy)) / 100) * 100;
+    else if (goal.kind === "color") goal.target = Math.round(goal.target * (1 - 0.2 * easy));
+  }
   const per = PER_MOVE[colors] ?? 110;
   const scoreGoal = goals.find((g) => g.kind === "score");
   const base = scoreGoal?.kind === "score" ? scoreGoal.target : 0;

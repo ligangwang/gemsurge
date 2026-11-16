@@ -100,3 +100,16 @@ test("every Chinese pattern keeps its placeholders", () => {
     assert.equal(holes(cn), holes(en), en);
   }
 });
+
+test("the first 100 levels are eased, and the easing fades out by level 101", () => {
+  // Level 1 is "20 moves, score 3000" in the table.
+  assert.equal(levelSpec(1).moves, 26);
+  assert.deepEqual(levelSpec(1).goals, [{ kind: "score", target: 2400 }]);
+  // Level 2 is "collect 30".
+  assert.deepEqual(levelSpec(2).goals, [{ kind: "color", color: 0, target: 24 }]);
+  for (let n = 71; n <= 101; n++) {
+    assert.ok(levelSpec(n).moves <= 39, `level ${n} moves`);
+  }
+  // Past the eased levels the moves are the generator's own: 16 to 30.
+  for (let n = 101; n <= 130; n++) assert.ok(levelSpec(n).moves <= 30, `level ${n} moves`);
+});

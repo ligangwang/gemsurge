@@ -15,7 +15,7 @@ across three worlds. Play it at <https://dingn.com/play/gemsurge/>.
   prisms clear the whole board.
 - **Fever**: chains, specials and combos fill the meter; Fever doubles points
   for 3 moves. Moves left when you win become blasters for a final **surge**.
-- **Levels**: 1000 levels through Neon City, Deep Sea and Outer Space (the first 30 hand-made, the rest generated from them), each with its
+- **Levels**: 1000 levels through Neon City, Deep Sea and Outer Space (the first 30 hand-made, the rest generated from them), the first 100 eased with extra moves and lower targets, each with its
   own background. Goals are scores, gems of a colour, and ice
   to break (1 or 2 layers), within a move limit. 1 to 3 stars by score.
 - **Daily board**: 20 moves, the same board and refills for everyone each UTC
