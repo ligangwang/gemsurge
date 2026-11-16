@@ -269,6 +269,10 @@ export function music(world: number) {
   // Look a little ahead and schedule on the audio clock, so late timers do not matter.
   const tick = () => {
     const horizon = a.currentTime + 1;
+    // After a long stall (a hidden tab, a paused debugger), skip what was
+    // missed instead of playing it all at once.
+    if (nextChord < a.currentTime - 0.5) nextChord = a.currentTime + 0.1;
+    if (nextBell < a.currentTime) nextBell = a.currentTime + 0.5;
     while (nextChord < horizon) {
       const notes = mood.chords[chord++ % mood.chords.length];
       notes.forEach((n, i) => {
