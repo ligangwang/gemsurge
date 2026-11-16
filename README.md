@@ -16,7 +16,7 @@ across three worlds. Play it at <https://dingn.com/play/gemsurge/>.
 - **Fever**: chains, specials and combos fill the meter; Fever doubles points
   for 3 moves. Moves left when you win become blasters for a final **surge**.
 - **Levels**: 30 levels in Neon City, Deep Sea and Outer Space, each with its
-  own background and music pad. Goals are scores, gems of a colour, and ice
+  own background. Goals are scores, gems of a colour, and ice
   to break (1 or 2 layers), within a move limit. 1 to 3 stars by score.
 - **Daily board**: 20 moves, the same board and refills for everyone each UTC
   day.
@@ -66,7 +66,7 @@ To play it inside dingn while developing, open the
   what's saved (stars and best score a level, the daily board). Saved on the
   device with `sdk.storage`, and to the player's account with `sdk.progress`
   when signed in.
-- `src/sound.ts`: synthesised sound effects and music pads.
+- `src/sound.ts`: synthesised sound effects.
 
 ## Release a new version
 

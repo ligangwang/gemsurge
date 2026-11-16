@@ -30,7 +30,7 @@ import {
   type Owned,
   type UpgradeKind,
 } from "./upgrades";
-import { isMuted, music, setMuted, sfx } from "./sound";
+import { setMuted, sfx } from "./sound";
 
 type Screen = "menu" | "play" | "end" | "shop";
 type EndInfo = {
@@ -128,7 +128,6 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       s.dispose();
       scene.current = null;
       clearTimeout(hintTimer.current);
-      music(-1);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -148,7 +147,6 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     scene.current?.setBoard(s.board.cells, s.board.ice, spec.world);
     scene.current?.setInput(true);
     scene.current?.banner(level === 0 ? "Daily board" : `Level ${level}`, 2);
-    if (!isMuted()) music(spec.world);
     armHint();
   }
 
@@ -291,7 +289,6 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     scene.current?.setInput(false);
     scene.current?.setFever(false);
     scene.current?.showHint(null);
-    music(-1);
     setScreen("menu");
   }
 
@@ -318,7 +315,6 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     const m = !muted;
     setMute(m);
     setMuted(m);
-    if (!m && screen === "play" && session.current) music(session.current.spec.world);
     sdk.storage.set("prefs", { muted: m }).catch(() => {});
   }
 
