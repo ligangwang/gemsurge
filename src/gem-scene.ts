@@ -174,47 +174,50 @@ const outlineOf = (count: number, radius: (angle: number) => number, turn = 0) =
     return new THREE.Vector2(Math.cos(a), Math.sin(a)).multiplyScalar(radius(a));
   });
 
-/** A regular polygon with its corners cut off, as cutters do to protect them. */
-function clipped(sides: number, radius: number, clip: number, turn: number) {
-  const pts: THREE.Vector2[] = [];
-  for (let i = 0; i < sides; i++) {
-    const at = (k: number) => {
-      const a = (k / sides) * Math.PI * 2 + turn;
-      return new THREE.Vector2(Math.cos(a) * radius, Math.sin(a) * radius);
-    };
-    const corner = at(i);
-    pts.push(corner.clone().lerp(at(i - 1), clip), corner.clone().lerp(at(i + 1), clip));
-  }
-  return pts;
-}
+/** A rounded box shape (a superellipse) `w` by `h` across; a higher `power` is squarer. */
+const cushion = (w: number, h: number, power: number) => (a: number) =>
+  (Math.abs(Math.cos(a) / w) ** power + Math.abs(Math.sin(a) / h) ** power) ** (-1 / power);
 
 /**
  * Six cuts with six different outlines, so a gem reads by shape as well as
- * colour: round brilliant, marquise, emerald cut, hexagon, trillion, pearl.
+ * colour. Every outline is a smooth curve with no hard corners: round, pear,
+ * cushion, oval, a soft trillion, and the pearl.
  */
 function makeGeometries(): THREE.BufferGeometry[] {
-  const ruby = cutGem({ outline: outlineOf(16, () => 0.45), table: 0.56, crown: 0.17, pavilion: 0.34, brilliant: true });
-  // A marquise: two arcs meeting in points at the top and bottom.
+  const N = 24;
+  const ruby = cutGem({ outline: outlineOf(N, () => 0.45), table: 0.56, crown: 0.17, pavilion: 0.34, brilliant: true });
+  // A pear: round at the bottom, drawn up to a soft tip.
   const topaz = cutGem({
-    outline: outlineOf(16, (a) => 0.31 / (0.62 + 0.38 * Math.abs(Math.cos(a))) * (0.62 + 0.38), Math.PI / 16).map(
-      (p) => new THREE.Vector2(p.x * 0.84, p.y * 1.0),
-    ),
+    outline: outlineOf(N, (a) => 0.33 * (1 + 0.5 * Math.max(0, Math.sin(a)) ** 3), Math.PI / N),
     table: 0.5,
     crown: 0.17,
     pavilion: 0.3,
     brilliant: true,
   });
+  topaz.translate(0, -0.07, 0);
   const emerald = cutGem({
-    outline: clipped(4, 0.56, 0.24, Math.PI / 4).map((p) => new THREE.Vector2(p.x * 0.86, p.y * 1.08)),
-    table: 0.5,
+    outline: outlineOf(N, cushion(0.38, 0.47, 3.2), Math.PI / N),
+    table: 0.52,
     crown: 0.16,
     pavilion: 0.3,
     brilliant: false,
-    keel: 0.12,
+    keel: 0.1,
   });
-  const sapphire = cutGem({ outline: clipped(6, 0.47, 0.18, 0), table: 0.55, crown: 0.17, pavilion: 0.32, brilliant: true });
-  const amethyst = cutGem({ outline: clipped(3, 0.68, 0.16, Math.PI / 2), table: 0.5, crown: 0.16, pavilion: 0.3, brilliant: true });
-  amethyst.translate(0, -0.09, 0);
+  const sapphire = cutGem({ outline: outlineOf(N, cushion(0.49, 0.37, 2)), table: 0.55, crown: 0.17, pavilion: 0.32, brilliant: true });
+  // A trillion with bowed sides and rounded corners.
+  const amethyst = cutGem({
+    outline: outlineOf(N, (a) => {
+      const third = (Math.PI * 2) / 3;
+      const fromSide = ((((a - Math.PI / 2) % third) + third) % third) - third / 2;
+      const side = 0.33 / Math.cos(fromSide);
+      return (side ** -4 + 0.52 ** -4) ** (-1 / 4);
+    }),
+    table: 0.5,
+    crown: 0.16,
+    pavilion: 0.3,
+    brilliant: true,
+  });
+  amethyst.translate(0, -0.04, 0);
   const pearl = new THREE.SphereGeometry(0.38, 32, 24);
   pearl.setAttribute("color", new THREE.Float32BufferAttribute(new Float32Array(pearl.attributes.position.count * 3).fill(1), 3));
   return [ruby, topaz, emerald, sapphire, amethyst, pearl];
