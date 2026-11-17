@@ -738,7 +738,7 @@ export class GemScene {
           emissive: c,
           emissiveIntensity: i === 5 ? 0.25 : 0.12,
           envMap: i === 5 ? null : inside,
-          roughness: i === 5 ? 0.3 : 0.06,
+          roughness: i === 5 ? 0.3 : 0.14,
           metalness: i === 5 ? 0 : 0.92,
           // A cut stone is see-through: what you see is the facets at the
           // back (the pavilion), lit from inside, under a glassy top.
@@ -747,7 +747,7 @@ export class GemScene {
           clearcoatRoughness: 0.05,
           iridescence: i === 5 ? 0.8 : 0,
           iridescenceIOR: 1.6,
-          envMapIntensity: i === 5 ? 3 : 1.25,
+          envMapIntensity: i === 5 ? 3 : 1.05,
           sheen: i === 5 ? 1 : 0,
           sheenColor: new THREE.Color(0xffc0ff),
           flatShading: false,
@@ -768,7 +768,7 @@ export class GemScene {
           clearcoat: 1,
           clearcoatRoughness: 0.03,
           envMap: windowLight,
-          envMapIntensity: 2.6,
+          envMapIntensity: 1.5,
           vertexColors: true,
           transparent: true,
           blending: THREE.AdditiveBlending,
