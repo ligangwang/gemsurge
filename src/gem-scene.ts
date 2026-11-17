@@ -161,7 +161,7 @@ function cutGem({ outline, table, crown, pavilion, brilliant, keel = 0 }: Cut) {
     // Facets deep in the stone are brighter than those at its rim, which
     // rounds the stone off towards its edge.
     const depth = Math.min(1, Math.max(0, -(a.z + b.z + c.z) / 3 / pavilion));
-    const shade = onTable ? 1.25 : [0.75, 1.1, 0.9, 1.25, 0.8, 1.0][(shades.length / 9) % 6 | 0] * (0.72 + 0.4 * depth);
+    const shade = onTable ? 1.25 : [0.82, 1.08, 0.92, 1.18, 0.86, 1.0][(shades.length / 9) % 6 | 0] * (0.72 + 0.4 * depth);
     for (let k = 0; k < 9; k++) shades.push(shade);
   }
   const g = new THREE.BufferGeometry();
