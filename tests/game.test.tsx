@@ -16,6 +16,7 @@ vi.mock("../src/gem-scene", () => ({
   GEM_CSS: ["#f00", "#fa0", "#0f0", "#00f", "#a0f", "#fff"],
   STONE_CSS: ["#f00", "#fa0", "#0f0", "#00f", "#a0f", "#fff"],
   GEM_OUTLINES: new Array(6).fill("M0 0Z"),
+  CHEERS: new Set(),
   GemScene: class {
     boards = 0;
     onSwap: (a: Pos, b: Pos) => void;
@@ -31,6 +32,7 @@ vi.mock("../src/gem-scene", () => ({
     setFever() {}
     banner() {}
     setBannerTranslator() {}
+    setBannerListener() {}
     async playInvalid() {}
     async playTurn() {}
     async celebrate() {}
@@ -126,7 +128,7 @@ test("a level plays to the end, saves and pays coins for a win", async () => {
   if (s.outcome === "won") {
     expect(await screen.findByText("Level complete!")).toBeTruthy();
     expect(calls.earn).toHaveBeenCalledWith(2 + s.stars * 2);
-    expect(calls.save).toHaveBeenCalledWith(expect.objectContaining({ stars: expect.arrayContaining([s.stars]) }));
+    expect(calls.save).toHaveBeenCalledWith(expect.objectContaining({ stars: String(s.stars) }));
     expect(screen.getByRole("button", { name: "Next level" })).toBeTruthy();
   } else {
     expect(await screen.findAllByText("Out of moves")).toBeTruthy();
@@ -201,7 +203,7 @@ test("speaks Chinese", () => {
   play();
   expect(screen.getByRole("button", { name: "开始" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "每日棋盘" })).toBeTruthy();
-  expect(screen.getByText("霓虹都市")).toBeTruthy();
+  expect(screen.getByText(/霓虹都市/)).toBeTruthy();
   expect(screen.getByText("登录以赚取金币和徽章")).toBeTruthy();
 });
 
@@ -219,4 +221,46 @@ test("a charged Supernova clears the board without using a move", async () => {
   expect(calls.save).toHaveBeenCalledWith(expect.objectContaining({ novasUsed: 1 }));
   if (!session().outcome)
     expect((screen.getByRole("button", { name: /Supernova ×0/ }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+test("finishing a round's last level holds the ceremony: a new title, a reward and a draw", async () => {
+  const saved = { ...empty(), earned: 5000 };
+  for (let i = 0; i < 9; i++) saved.stars[i] = 1;
+  play(saved);
+  // The menu shows the title held and what the round pays.
+  expect(screen.getByText(/Novice Traveller/)).toBeTruthy();
+  expect(screen.getByText(/Round 1 · 9 \/ 10/)).toBeTruthy();
+  expect(screen.getAllByText(/Pebble Picker/).length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "Play level 10" }));
+  for (let n = 0; n < 40 && !session().outcome; n++)
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /Supernova ×/ })));
+  expect(session().outcome).toBe("won");
+  expect(await screen.findByRole("heading", { name: "Round 1 complete!" })).toBeTruthy();
+  expect(screen.getByText("New title")).toBeTruthy();
+  expect(screen.getAllByText(/Pebble Picker/).length).toBeGreaterThan(0);
+  expect(screen.getByText(/Lucky draw/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Start round 2" })).toBeTruthy();
+  const last = calls.save.mock.calls.at(-1)![0] as { novasWon: number };
+  expect(last.novasWon).toBeGreaterThanOrEqual(2);
+  // The level's own coins, then 10 more for the round.
+  expect(calls.earn).toHaveBeenLastCalledWith(10);
+  expect(calls.earn.mock.calls.length).toBeGreaterThanOrEqual(2);
+});
+
+test("undo takes the last move back, three times a level", async () => {
+  play();
+  fireEvent.click(screen.getByRole("button", { name: "Play" }));
+  const undo = () => screen.getByRole("button", { name: /Undo ×/ }) as HTMLButtonElement;
+  expect(undo().disabled).toBe(true);
+  const moves = session().movesLeft;
+  const cells = JSON.stringify(session().board.cells);
+  const [a, b] = findHint(session().board)!;
+  await act(async () => mocks.scene!.onSwap(a, b));
+  expect(session().movesLeft).toBe(moves - 1);
+  expect(undo().textContent).toContain("×3");
+  await act(async () => fireEvent.click(undo()));
+  expect(session().movesLeft).toBe(moves);
+  expect(JSON.stringify(session().board.cells)).toBe(cells);
+  expect(undo().textContent).toContain("×2");
+  expect(undo().disabled).toBe(true);
 });

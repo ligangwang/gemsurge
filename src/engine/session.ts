@@ -2,6 +2,7 @@
 import {
   MAX_COLORS,
   SIZE,
+  cloneBoard,
   createBoard,
   placeSpecials,
   supernova,
@@ -41,6 +42,8 @@ export const NO_BOOSTS: Boosts = { moves: 0, specials: [], fever: 1 };
 
 /** Fever lasts this many moves and doubles their score. */
 export const FEVER_MOVES = 3;
+/** How many moves a play can take back. */
+export const UNDOS = 3;
 /** A Supernova's clear scores this many times over. */
 export const NOVA_SCORE = 3;
 /** The most moves the end-of-level surge turns into blasters. */
@@ -75,6 +78,10 @@ export class Session {
   movesMade = 0;
   /** Supernovas set off in this play. */
   novas = 0;
+  /** Moves that can still be taken back. */
+  undosLeft = UNDOS;
+  /** The play as it stood before the last move, while that move can be taken back. */
+  private before: Record<string, unknown> | null = null;
   finished = false;
 
   constructor(
@@ -120,8 +127,10 @@ export class Session {
   /** Swaps two gems; null when the swap does nothing or the level is over. */
   move(a: Pos, b: Pos): Turn | null {
     if (this.outcome) return null;
+    const before = this.snapshot();
     const result = swap(this.board, a, b);
     if (!result) return null;
+    this.before = before;
     this.movesLeft--;
     this.movesMade++;
     const inFever = this.fever;
@@ -141,10 +150,47 @@ export class Session {
     return { ...result, points, inFever, feverStarted };
   }
 
+  private snapshot(): Record<string, unknown> {
+    return {
+      board: cloneBoard(this.board),
+      movesLeft: this.movesLeft,
+      score: this.score,
+      collected: [...this.collected],
+      iceLeft: this.iceLeft,
+      meter: this.meter,
+      feverMoves: this.feverMoves,
+      bestChain: this.bestChain,
+      specialsMade: this.specialsMade,
+      combos: [...this.combos],
+      prismsFired: this.prismsFired,
+      fevers: this.fevers,
+      movesMade: this.movesMade,
+    };
+  }
+
+  /** The last move can be taken back: not on the daily board, nor once the level is over. */
+  get canUndo() {
+    return !!this.before && this.undosLeft > 0 && !this.outcome && !this.spec.allMoves;
+  }
+
+  /**
+   * Takes the last move back, so the player can choose again. The board's
+   * dice go back too: the same swap makes the same gems fall.
+   */
+  undo(): boolean {
+    if (!this.canUndo) return false;
+    Object.assign(this, this.before);
+    this.before = null;
+    this.undosLeft--;
+    return true;
+  }
+
   /** Sets off a Supernova, which clears the whole board and costs no move. */
   nova(): Turn | null {
     if (this.outcome) return null;
     const result = supernova(this.board);
+    // A Supernova is spent for good, so the move before it can't come back.
+    this.before = null;
     this.novas++;
     const points = result.score * NOVA_SCORE;
     this.record(result, points);

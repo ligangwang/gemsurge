@@ -494,3 +494,46 @@
 .nova-bar .fill { height: 100%; background: linear-gradient(90deg, #ff9d2e, #ff3d8b); transition: width 0.6s ease; }
 .nova-note { font-size: 12px; color: #cdd2e0; margin: 6px 0 0; }
 .end-nova { color: #ffb347; font-weight: 700; margin: 8px 0 0; }
+
+/* Rounds: the title card on the menu, and the ceremony for finishing one. */
+.gem-round {
+  margin: 18px 0 0;
+  max-width: 520px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(255, 190, 80, 0.16), rgba(140, 90, 255, 0.14));
+  border: 1px solid rgba(255, 210, 120, 0.3);
+}
+.round-title { margin: 0; font-size: 22px; font-weight: 800; color: #ffd98a; }
+.round-title .medal { margin-right: 8px; }
+.round-progress { margin: 4px 0 8px; font-size: 13px; color: #cdd2e0; }
+.round-bar { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+.round-bar .fill { height: 100%; background: linear-gradient(90deg, #ffb347, #ff5fa2); transition: width 0.6s ease; }
+.round-next { margin: 10px 0 0; font-size: 13px; color: #e6e9f5; }
+.round-prize { color: #ffd98a; font-weight: 600; }
+.round-note { border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 8px; }
+.round-panel { position: relative; overflow: hidden; width: min(520px, 100%); border: 1px solid rgba(255, 210, 120, 0.55); box-shadow: 0 0 60px rgba(255, 180, 80, 0.35); }
+.round-panel.milestone { border-color: #ffe9a8; box-shadow: 0 0 90px rgba(255, 200, 100, 0.6); }
+.round-panel > * { position: relative; }
+.round-rays {
+  position: absolute !important;
+  inset: -60%;
+  background: repeating-conic-gradient(from 0deg, rgba(255, 210, 120, 0.13) 0deg 10deg, transparent 10deg 20deg);
+  animation: rays-turn 40s linear infinite;
+  pointer-events: none;
+}
+@keyframes rays-turn { to { transform: rotate(360deg); } }
+.round-panel h2 { color: #ffe9a8; animation: rank-in 0.7s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
+.round-new { margin: 10px 0 0; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #cdd2e0; }
+.round-rank { margin: 2px 0 10px; font-size: 34px; font-weight: 900; color: #ffd23f; text-shadow: 0 0 24px rgba(255, 200, 80, 0.7); animation: rank-in 0.9s 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
+@keyframes rank-in { from { transform: scale(0.2); opacity: 0; } }
+.round-rewards { list-style: none; margin: 0 auto; padding: 0; display: grid; gap: 6px; font-size: 17px; font-weight: 700; }
+.round-rewards li { animation: fade-in 0.5s 1s both; }
+.round-draw .spinning { display: inline-block; animation: draw-spin 0.35s linear infinite; color: #ffb347; }
+@keyframes draw-spin { 50% { transform: translateY(-4px) scale(1.15); opacity: 0.5; } }
+.round-draw.landed strong { color: #ffd23f; display: inline-block; animation: rank-in 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
+.round-story { margin: 14px 0 0; font-style: italic; color: #e6e9f5; }
+@media (prefers-reduced-motion: reduce) { .round-rays { animation: none; } }
+
+.hud-undo { width: 100%; margin-top: 14px; }
+.hud-undo:disabled { opacity: 0.45; }

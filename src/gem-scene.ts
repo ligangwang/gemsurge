@@ -1436,6 +1436,9 @@ export class GemScene {
       this.floatText(`+${(step.score * multiplier).toLocaleString()}`, mid, step.chain > 1 ? "big" : "");
     }
     if (step.chain >= 2) this.banner(chainWord(step.chain), step.chain);
+    // A word for a big clear on the swap's own match.
+    else if (step.cleared.length >= 8) this.banner("Awesome!", 3);
+    else if (step.cleared.length >= 5) this.banner("Good!", 2);
 
     // Gems fall and new ones drop in.
     await this.fall(step.cells, new Set(step.spawned));
@@ -1824,8 +1827,15 @@ export class GemScene {
     el.className = `gem-banner level-${Math.min(level, 6)}`;
     el.textContent = this.translate(text);
     this.overlay.appendChild(el);
+    this.onBanner(text, el.textContent);
     setTimeout(() => el.remove(), 1400);
   }
+
+  /** Called with each banner's words, as written and as shown, so the game can say them aloud. */
+  setBannerListener(listener: (text: string, shown: string) => void) {
+    this.onBanner = listener;
+  }
+  private onBanner: (text: string, shown: string) => void = () => {};
 
   /** How banner words are translated. */
   setBannerTranslator(t: (s: string) => string) {
@@ -1990,6 +2000,8 @@ function blastColor(cells: (Gem | null)[], blast: Blast) {
 }
 
 const CHAIN_WORDS = ["", "", "Nice", "Great", "Brilliant", "Dazzling", "Radiant", "Unstoppable"];
+/** The words of encouragement the game says aloud. */
+export const CHEERS = new Set([...CHAIN_WORDS.filter(Boolean), "Good!", "Awesome!", "Keep going!", "Round complete!"]);
 /** The banner for a chain; the game translates these words. */
 export const chainWord = (chain: number) => CHAIN_WORDS[Math.min(chain, CHAIN_WORDS.length - 1)];
 

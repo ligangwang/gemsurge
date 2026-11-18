@@ -29,6 +29,7 @@ function audio() {
 
 export function setMuted(value: boolean) {
   muted = value;
+  if (value && typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
 }
 
 function tone(
@@ -82,6 +83,30 @@ const SCALE = [0, 2, 4, 7, 9];
 const note = (step: number, base = 523.25) =>
   base * 2 ** ((Math.floor(step / 5) * 12 + SCALE[((step % 5) + 5) % 5]) / 12);
 
+// --- A spoken word of encouragement, in a soft, higher voice.
+
+const SOFT_VOICES = /female|woman|girl|ting-?ting|mei-?jia|sin-?ji|xiaoxiao|xiaoyi|huihui|yaoyao|samantha|karen|victoria|zira|aria|jenny|google/i;
+
+/** Says `text` aloud with the device's own speech, when it has one. */
+export function say(text: string, locale: string) {
+  if (muted || typeof speechSynthesis === "undefined" || typeof SpeechSynthesisUtterance === "undefined") return;
+  try {
+    const lang = locale.startsWith("zh") ? "zh" : "en";
+    const voices = speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith(lang));
+    const line = new SpeechSynthesisUtterance(text.replace(/[!！]/g, ""));
+    line.voice = voices.find((v) => SOFT_VOICES.test(v.name)) ?? voices[0] ?? null;
+    line.lang = lang === "zh" ? "zh-CN" : "en-US";
+    // A little higher and gentler than the default, but not a cartoon.
+    line.pitch = 1.35;
+    line.rate = 1;
+    line.volume = 0.7;
+    speechSynthesis.cancel();
+    speechSynthesis.speak(line);
+  } catch {
+    // No speech on this device: the banner still shows the word.
+  }
+}
+
 export const sfx = {
   select: () => tone(880, { type: "triangle", dur: 0.06, gain: 0.06 }),
   swap: () => tone(420, { type: "triangle", dur: 0.1, gain: 0.07, to: 620 }),
@@ -134,6 +159,14 @@ export const sfx = {
   },
   lose: () => {
     [7, 4, 0].forEach((s, i) => tone(330 * 2 ** (s / 12), { type: "triangle", dur: 0.45, gain: 0.08, delay: i * 0.14 }));
+  },
+  /** A rising fanfare for finishing a round. */
+  fanfare: () => {
+    [0, 4, 7, 12, 7, 12, 16, 19, 24].forEach((step, i) =>
+      tone(392 * 2 ** (step / 12), { type: "triangle", dur: i === 8 ? 1.1 : 0.32, gain: 0.11, delay: i * 0.13 }),
+    );
+    [0, 7, 12].forEach((step) => tone(196 * 2 ** (step / 12), { type: "sine", dur: 1.6, gain: 0.08, delay: 1.04 }));
+    noise(0.5, 0.07, 9000, 1.04);
   },
   star: (n: number) => tone(note(5 + n * 2), { type: "triangle", dur: 0.3, gain: 0.1 }),
 };

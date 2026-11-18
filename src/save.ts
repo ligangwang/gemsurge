@@ -20,6 +20,8 @@ export type Saved = {
   earned: number;
   /** Supernovas set off so far. */
   novasUsed: number;
+  /** Supernovas won as round rewards and in lucky draws. */
+  novasWon: number;
 };
 type Sdk = Pick<DingnGame, "storage" | "progress" | "player">;
 
@@ -30,6 +32,7 @@ export const empty = (): Saved => ({
   chain: 0,
   earned: 0,
   novasUsed: 0,
+  novasWon: 0,
 });
 const whole = (value: unknown, max: number) => {
   const n = Number(value);
@@ -44,7 +47,8 @@ export const highest = (s: Saved) => {
 };
 
 /** Supernovas ready to set off. */
-export const novas = (s: Saved) => Math.max(0, Math.floor(s.earned / NOVA_COST) - s.novasUsed);
+export const novas = (s: Saved) =>
+  Math.max(0, Math.floor(s.earned / NOVA_COST) + s.novasWon - s.novasUsed);
 /** Coins towards the next Supernova, 0 to NOVA_COST - 1. */
 export const novaCharge = (s: Saved) => s.earned % NOVA_COST;
 
@@ -52,12 +56,17 @@ export const novaCharge = (s: Saved) => s.earned % NOVA_COST;
 export function parse(value: Json): Saved {
   const saved = empty();
   if (!value || typeof value !== "object" || Array.isArray(value)) return saved;
-  const list = (v: Json | undefined, max: number) =>
-    Array.from({ length: LAST_LEVEL }, (_, i) =>
-      Array.isArray(v) ? whole(v[i], max) : 0,
-    );
-  saved.stars = list(value.stars, 3);
-  saved.best = list(value.best, 1e9);
+  // Stars are stored as a string of digits (older saves: a list), and the
+  // best scores as a list that starts at level `bestFrom` + 1.
+  const stars = value.stars;
+  const best = value.best;
+  const from = whole(value.bestFrom, LAST_LEVEL);
+  saved.stars = Array.from({ length: LAST_LEVEL }, (_, i) =>
+    typeof stars === "string" || Array.isArray(stars) ? whole(stars[i], 3) : 0,
+  );
+  saved.best = Array.from({ length: LAST_LEVEL }, (_, i) =>
+    Array.isArray(best) && i >= from ? whole(best[i - from], 1e9) : 0,
+  );
   saved.chain = whole(value.chain, 1000);
   // A save from before Supernovas is credited with what its stars were worth.
   saved.earned =
@@ -65,6 +74,7 @@ export function parse(value: Json): Saved {
       ? saved.stars.reduce((sum, stars, i) => sum + coinsFor(i + 1, stars), 0)
       : whole(value.earned, 1e9);
   saved.novasUsed = whole(value.novasUsed, 1e7);
+  saved.novasWon = whole(value.novasWon, 1e7);
   const d = value.daily;
   if (
     d &&
@@ -98,10 +108,13 @@ export function merge(a: Saved, b: Saved): Saved {
     chain: Math.max(a.chain, b.chain),
     earned: Math.max(a.earned, b.earned),
     novasUsed: Math.max(a.novasUsed, b.novasUsed),
+    novasWon: Math.max(a.novasWon, b.novasWon),
   };
 }
 
 const KEY = "gemsurge";
+/** How many levels' best scores a save keeps. */
+export const BEST_KEPT = 600;
 export async function loadSaved(sdk: Sdk): Promise<Saved> {
   let device = empty();
   try {
@@ -115,14 +128,17 @@ export async function loadSaved(sdk: Sdk): Promise<Saved> {
   }
 }
 export async function store(sdk: Sdk, saved: Saved) {
-  // Only as far as the last level played, so a save stays well under the
-  // 16 KB the SDK allows.
+  // A save has to stay under the 16 KB the SDK allows, even at level 10,000:
+  // stars go as one digit a level, only as far as the last level played, and
+  // best scores are kept for the last BEST_KEPT of those levels.
   let length = saved.stars.length;
   while (length > 0 && !saved.stars[length - 1] && !saved.best[length - 1]) length--;
+  const bestFrom = Math.max(0, length - BEST_KEPT);
   const value = {
     ...saved,
-    stars: saved.stars.slice(0, length),
-    best: saved.best.slice(0, length),
+    stars: saved.stars.slice(0, length).join(""),
+    best: saved.best.slice(bestFrom, length),
+    bestFrom,
   } as unknown as Json;
   await sdk.storage.set(KEY, value).catch(() => {});
   if (sdk.player.signedIn) await sdk.progress.save(value).catch(() => {});
