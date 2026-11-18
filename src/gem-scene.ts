@@ -1389,7 +1389,7 @@ export class GemScene {
       this.tween(0.7, (k) => {
         v.group.position.lerpVectors(from, to, easeInOut(k));
         v.group.position.z = Math.sin(k * Math.PI) * 1.5;
-        v.body.rotation.y = k * Math.PI * 2;
+        v.group.rotation.z = k < 1 ? k * Math.PI * 2 : 0;
       });
     });
     this.cells = cells.map((g) => (g ? { ...g } : null));
