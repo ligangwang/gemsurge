@@ -110,8 +110,8 @@ export function say(text: string, locale: string) {
       voices.find((v) => GIRL_VOICES.test(v.name)) ?? voices.find((v) => SOFT_VOICES.test(v.name)) ?? voices[0] ?? null;
     line.lang = lang === "zh" ? "zh-CN" : "en-US";
     // A bright, girlish voice: clearly higher than the default and a touch quicker.
-    line.pitch = 1.65;
-    line.rate = 1.08;
+    line.pitch = 1.8;
+    line.rate = 1.1;
     line.volume = 1;
     speechSynthesis.cancel();
     speechSynthesis.speak(line);
