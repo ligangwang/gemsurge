@@ -1797,7 +1797,7 @@ export class GemScene {
       const hinted = this.hint?.some((p) => p.x === v.x && p.y === v.y);
       const sel = this.selected && this.selected.x === v.x && this.selected.y === v.y;
       v.body.rotation.x = Math.sin(t * 0.5) * 0.07;
-      v.body.rotation.y = v.gem.special === "prism" ? t * 1.5 : Math.sin(t * 0.4) * 0.09 + (sel ? t * 4 : 0);
+      v.body.rotation.y = v.gem.special === "prism" ? t * 1.5 : Math.sin(t * 0.4) * 0.09 + (sel ? Math.sin(t * 6) * 0.45 : 0);
       let s = v.scale * (sel ? 1.15 : 1);
       if (hinted) s *= 1 + Math.sin(this.time * 8) * 0.12;
       if (v.gem.special) s *= 1 + Math.sin(this.time * 5 + v.phase) * 0.05;
