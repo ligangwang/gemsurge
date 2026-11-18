@@ -636,6 +636,13 @@ export function surge(b: Board, count: number): MoveResult {
   return settle(b, seed.clear.length ? seed : null, null);
 }
 
+/** A Supernova: the whole board goes off at once, then the cascades play out. */
+export function supernova(b: Board): MoveResult {
+  const seed = emptySeed();
+  seed.blasts.push({ kind: "wipe", x: SIZE / 2 - 1, y: SIZE / 2 - 1 });
+  return settle(b, seed, null);
+}
+
 /** Rearranges the gems so there is no match and at least one swap. */
 export function shuffle(b: Board) {
   const gems = b.cells.filter((g): g is Gem => !!g);

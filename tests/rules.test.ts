@@ -3,13 +3,14 @@ import assert from "node:assert/strict";
 import game from "../game.json" with { type: "json" };
 import zh from "../src/zh-CN.json" with { type: "json" };
 import { SIZE } from "../src/engine/board";
-import { DAILY_COINS, HAND_MADE, LAST_LEVEL, WORLDS, LEVELS_PER_WORLD, coinsFor, dailySpec, levelSpec } from "../src/levels";
+import { Session } from "../src/engine/session";
+import { DAILY_COINS, HAND_MADE, LAST_LEVEL, WORLDS, LEVELS_PER_WORLD, coinsFor, dailySpec, levelSpec, worldCycle } from "../src/levels";
 import { DAILY, levelBadges, CHAIN_5, CHAIN_8, COMBO, FEVER, PRISM, THREE_STARS, WIPE } from "../src/badges";
 import { boostsFor, nextTier, NONE, ownedFrom, PRICES, shopManifest, upgradeId } from "../src/upgrades";
-import { empty, highest, merge, parse } from "../src/save";
+import { novas, novaCharge, empty, highest, merge, parse } from "../src/save";
 
 test("every level has goals it can meet", () => {
-  assert.equal(HAND_MADE, WORLDS.length * LEVELS_PER_WORLD);
+  assert.equal(HAND_MADE, 30);
   assert.equal(LAST_LEVEL, 1000);
   for (let n = 1; n <= LAST_LEVEL; n++) {
     const spec = levelSpec(n);
@@ -26,9 +27,14 @@ test("every level has goals it can meet", () => {
     assert.ok(spec.moves >= 16, `level ${n} moves`);
   }
   assert.equal(levelSpec(11).world, 1);
-  // Generated levels: the worlds come round again, and a number always makes the same level.
-  assert.equal(levelSpec(31).world, 0);
-  assert.equal(levelSpec(45).world, 1);
+  // Past the hand-made levels come new worlds, which only come round again after level 80.
+  assert.equal(WORLDS.length, 8);
+  assert.equal(levelSpec(31).world, 3);
+  assert.equal(levelSpec(45).world, 4);
+  assert.equal(levelSpec(80).world, 7);
+  assert.equal(levelSpec(81).world, 0);
+  assert.equal(worldCycle(80), 0);
+  assert.equal(worldCycle(81), 1);
   assert.deepEqual(levelSpec(777), levelSpec(777));
   assert.notEqual(levelSpec(777).seed, levelSpec(778).seed);
 });
@@ -112,4 +118,28 @@ test("the first 100 levels are eased, and the easing fades out by level 101", ()
   }
   // Past the eased levels the moves are the generator's own: 16 to 30.
   for (let n = 101; n <= 130; n++) assert.ok(levelSpec(n).moves <= 30, `level ${n} moves`);
+});
+
+test("every 100 coins a play is worth charge a Supernova", () => {
+  const saved = { ...empty(), earned: 250, novasUsed: 1 };
+  assert.equal(novas(saved), 1);
+  assert.equal(novaCharge(saved), 50);
+  assert.equal(novas({ ...saved, novasUsed: 5 }), 0);
+  // A save from before Supernovas is credited with what its stars were worth.
+  const old = parse({ stars: [3, 3, 1] });
+  assert.equal(old.earned, coinsFor(1, 3) + coinsFor(2, 3) + coinsFor(3, 1));
+  assert.equal(parse({ stars: [3], earned: 7, novasUsed: 2 }).earned, 7);
+  assert.equal(merge({ ...empty(), earned: 120, novasUsed: 0 }, { ...empty(), earned: 90, novasUsed: 1 }).novasUsed, 1);
+});
+
+test("a Supernova clears the whole board and costs no move", () => {
+  const s = new Session(levelSpec(13));
+  const moves = s.movesLeft;
+  const ice = s.iceLeft;
+  const turn = s.nova()!;
+  assert.ok(turn.steps[0].cleared.length >= SIZE * SIZE);
+  assert.equal(s.movesLeft, moves);
+  assert.ok(s.iceLeft < ice);
+  assert.ok(s.score > 0);
+  assert.equal(s.novas, 1);
 });

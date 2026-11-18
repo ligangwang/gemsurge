@@ -4,13 +4,26 @@ import { below, hashSeed, shuffleInPlace } from "./engine/random";
 import type { Goal, LevelSpec } from "./engine/session";
 
 export type World = { id: string; name: string };
-/** Ten levels a world, each with its own look in the scene. The worlds come round again after the third. */
+/**
+ * Ten levels a world, each with its own look in the scene. The worlds come
+ * round again after the last, in new colours each time (see `worldCycle`).
+ */
 export const WORLDS: World[] = [
   { id: "neon", name: "Neon City" },
   { id: "sea", name: "Deep Sea" },
   { id: "space", name: "Outer Space" },
+  { id: "lake", name: "Lantern Lake" },
+  { id: "aurora", name: "Aurora Peaks" },
+  { id: "desert", name: "Golden Desert" },
+  { id: "forest", name: "Firefly Forest" },
+  { id: "clouds", name: "Cloud Kingdom" },
 ];
 export const LEVELS_PER_WORLD = 10;
+
+/** The world a level is in, counted from 0 and never wrapping: level 81 is in world 8. */
+export const worldNumber = (level: number) => Math.floor((Math.max(1, level) - 1) / LEVELS_PER_WORLD);
+/** How many times the worlds have come round by this level: 0 for the first 80 levels. */
+export const worldCycle = (level: number) => Math.floor(worldNumber(level) / WORLDS.length);
 
 export const COLOR_NAMES = ["Ruby", "Topaz", "Emerald", "Sapphire", "Amethyst", "Pearl"];
 
@@ -143,7 +156,7 @@ export function levelSpec(level: number): LevelSpec {
   const three = round(Math.max(base * 2, per * moves * 1.5));
   return {
     level: n,
-    world: Math.floor((n - 1) / LEVELS_PER_WORLD) % WORLDS.length,
+    world: worldNumber(n) % WORLDS.length,
     moves,
     colors,
     goals,
@@ -176,6 +189,9 @@ export function dailySpec(day: string): LevelSpec {
     allMoves: true,
   };
 }
+
+/** Coins earned in Gem Surge that charge one Supernova. */
+export const NOVA_COST = 100;
 
 /**
  * dingn coins for a level: 2 for clearing it, 2 more a star, and a bonus in

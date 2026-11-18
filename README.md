@@ -2,7 +2,7 @@
 
 A 3D match-3 for [dingn](https://dingn.com): swap glowing gems, build
 specials, combine them for huge chain reactions, and surge through 1000 levels
-across three worlds. Play it at <https://dingn.com/play/gemsurge/>.
+across eight worlds. Play it at <https://dingn.com/play/gemsurge/>.
 
 - **Match 3 or more** neighbouring gems of a colour; the gems above fall and
   new ones drop in, and every cascade raises the chain.
@@ -15,7 +15,7 @@ across three worlds. Play it at <https://dingn.com/play/gemsurge/>.
   prisms clear the whole board.
 - **Fever**: chains, specials and combos fill the meter; Fever doubles points
   for 3 moves. Moves left when you win become blasters for a final **surge**.
-- **Levels**: 1000 levels through Neon City, Deep Sea and Outer Space (the first 30 hand-made, the rest generated from them), the first 100 eased with extra moves and lower targets, each with its
+- **Levels**: 1000 levels through eight worlds, a new one every 10 levels (Neon City, Deep Sea, Outer Space, Lantern Lake, Aurora Peaks, Golden Desert, Firefly Forest and Cloud Kingdom; they come round again in new colours after level 80; the first 30 levels are hand-made, the rest generated from them), the first 100 eased with extra moves and lower targets, each with its
   own background. Goals are scores, gems of a colour, and ice
   to break (1 or 2 layers), within a move limit. 1 to 3 stars by score.
 - **Daily board**: 20 moves, the same board and refills for everyone each UTC
@@ -26,6 +26,10 @@ across three worlds. Play it at <https://dingn.com/play/gemsurge/>.
 
 Gem Surge earns and spends dingn coins:
 
+- Every 100 coins a player's levels are worth (paid or not) charge a
+  **Supernova**: a button in the level that clears the whole board at three
+  times the score and costs no move. The count is kept in the save
+  (`earned` and `novasUsed` in `src/save.ts`), not in dingn's shop.
 - A cleared level pays 2 coins plus 2 a star, plus 1 in Deep Sea and 2 in
   Outer Space, up to 10 (`coinsFor` in `src/levels.ts`), through
   `sdk.rewards.earn`. A lost level that got at least halfway on a goal pays 1.

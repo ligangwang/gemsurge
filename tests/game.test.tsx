@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("../src/gem-scene", () => ({
   GEM_CSS: ["#f00", "#fa0", "#0f0", "#00f", "#a0f", "#fff"],
+  STONE_CSS: ["#f00", "#fa0", "#0f0", "#00f", "#a0f", "#fff"],
+  GEM_OUTLINES: new Array(6).fill("M0 0Z"),
   GemScene: class {
     boards = 0;
     onSwap: (a: Pos, b: Pos) => void;
@@ -201,4 +203,20 @@ test("speaks Chinese", () => {
   expect(screen.getByRole("button", { name: "每日棋盘" })).toBeTruthy();
   expect(screen.getByText("霓虹都市")).toBeTruthy();
   expect(screen.getByText("登录以赚取金币和徽章")).toBeTruthy();
+});
+
+test("a charged Supernova clears the board without using a move", async () => {
+  const saved = { ...empty(), earned: 130 };
+  play(saved);
+  fireEvent.click(screen.getByRole("button", { name: "Play" }));
+  const nova = screen.getByRole("button", { name: /Supernova ×1/ }) as HTMLButtonElement;
+  expect(nova.disabled).toBe(false);
+  const moves = session().movesLeft;
+  await act(async () => fireEvent.click(nova));
+  expect(session().novas).toBe(1);
+  expect(session().score).toBeGreaterThan(0);
+  expect(session().outcome === "won" || session().movesLeft === moves).toBe(true);
+  expect(calls.save).toHaveBeenCalledWith(expect.objectContaining({ novasUsed: 1 }));
+  if (!session().outcome)
+    expect((screen.getByRole("button", { name: /Supernova ×0/ }) as HTMLButtonElement).disabled).toBe(true);
 });

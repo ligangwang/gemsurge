@@ -4,21 +4,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findHint, type Pos } from "./engine/board";
 import { FEVER_MOVES, Session, type Goal, type Turn } from "./engine/session";
-import { AnimationCancelled, GEM_CSS, GemScene } from "./gem-scene";
+import { AnimationCancelled, GEM_OUTLINES, GemScene, STONE_CSS } from "./gem-scene";
 import { useDingn, useLocale } from "./dingn";
 import {
   COLOR_NAMES,
   DAILY_COINS,
   LAST_LEVEL,
   LEVELS_PER_WORLD,
+  NOVA_COST,
   WORLDS,
   coinsFor,
   dailySpec,
   levelSpec,
   utcDay,
+  worldCycle,
 } from "./levels";
 import { badges, endBadges, playBadges } from "./badges";
-import { highest, loadSaved, merge, store, type Saved } from "./save";
+import { highest, loadSaved, merge, novaCharge, novas, store, type Saved } from "./save";
 import {
   NONE,
   PRICES,
@@ -41,6 +43,8 @@ type EndInfo = {
   /** Why no coins were paid, when none were. */
   note: string;
   best: boolean;
+  /** Supernovas this play charged. */
+  novas: number;
 };
 
 const HINT_AFTER = 7000;
@@ -122,7 +126,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     scene.current = s;
     // A board to look at behind the menu.
     const demo = new Session(levelSpec(Math.max(1, top)));
-    s.setBoard(demo.board.cells, [], demo.spec.world);
+    s.setBoard(demo.board.cells, [], demo.spec.world, worldCycle(demo.spec.level));
     s.setInput(false);
     return () => {
       s.dispose();
@@ -144,7 +148,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     setEnd(null);
     setScreen("play");
     rerender();
-    scene.current?.setBoard(s.board.cells, s.board.ice, spec.world);
+    scene.current?.setBoard(s.board.cells, s.board.ice, spec.world, worldCycle(spec.level));
     scene.current?.setInput(true);
     scene.current?.banner(level === 0 ? "Daily board" : `Level ${level}`, 2);
     armHint();
@@ -152,26 +156,41 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
 
   // A handle for the browser checks while developing.
   if (import.meta.env.DEV)
-    (window as unknown as { gemsurge: unknown }).gemsurge = { session, hint: () => session.current && findHint(session.current.board), swap: (a: Pos, b: Pos) => onSwap.current(a, b), start };
+    (window as unknown as { gemsurge: unknown }).gemsurge = { session, hint: () => session.current && findHint(session.current.board), swap: (a: Pos, b: Pos) => onSwap.current(a, b), start, nova: () => {
+      savedRef.current = { ...savedRef.current, earned: savedRef.current.earned + NOVA_COST };
+      setSaved(savedRef.current);
+      return play(null);
+    } };
 
-  onSwap.current = async (a, b) => {
+  onSwap.current = (a, b) => play([a, b]);
+
+  /** Plays a swap, or a Supernova when there is no `pair`. */
+  async function play(pair: [Pos, Pos] | null) {
     const s = session.current;
     const sc = scene.current;
     if (!s || !sc || busy.current || screen !== "play") return;
+    if (!pair && (s.outcome || !s.spec.level || novas(savedRef.current) < 1)) return;
     busy.current = true;
     sc.setInput(false);
     clearTimeout(hintTimer.current);
     sc.showHint(null);
     try {
       const before = s.score;
-      const turn = s.move(a, b);
+      const turn = pair ? s.move(pair[0], pair[1]) : s.nova();
       if (!turn) {
-        await sc.playInvalid(a, b);
+        if (pair) await sc.playInvalid(pair[0], pair[1]);
         return;
+      }
+      if (!pair) {
+        const next = { ...savedRef.current, novasUsed: savedRef.current.novasUsed + 1 };
+        savedRef.current = next;
+        setSaved(next);
+        store(sdk, next).catch(() => {});
+        sc.banner("Supernova!", 6);
       }
       rerender();
       let running = before;
-      await sc.playTurn(turn, [a, b], {
+      await sc.playTurn(turn, pair, {
         onStep: (_, points) => {
           running += points;
           setShown(running);
@@ -197,7 +216,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
         armHint();
       }
     }
-  };
+  }
 
   async function finish(s: Session) {
     const sc = scene.current!;
@@ -254,6 +273,10 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       // Marked paid only once dingn has paid (below).
       next.daily = { day: today, score: Math.max(prev?.score ?? 0, s.score), paid: !!prev?.paid };
     }
+    // Every coin a play is worth charges the Supernova, signed in or not.
+    const ready = novas(next);
+    next.earned += coins;
+    const charged = novas(next) - ready;
     savedRef.current = next;
     setSaved(next);
     store(sdk, next).catch(() => {});
@@ -278,7 +301,8 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       }
     }
     if (!show) return;
-    setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: paid, note, best });
+    setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: paid, note, best, novas: charged });
+    if (charged) setTimeout(() => sfx.fever(), 900);
     setScreen("end");
     stars && [1, 2, 3].slice(0, stars).forEach((n, i) => setTimeout(() => sfx.star(n), 300 + i * 250));
   }
@@ -363,6 +387,10 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
           onMute={toggleMute}
           onMenu={toMenu}
           owned={owned}
+          novas={novas(saved)}
+          charge={novaCharge(saved)}
+          onNova={() => play(null)}
+          canNova={screen === "play" && !s.outcome}
         />
       )}
 
@@ -418,7 +446,8 @@ function Menu(props: {
   const sdk = useDingn();
   const { saved, top } = props;
   // The map shows three worlds at a time, starting on the page with the next level to play.
-  const PAGE = WORLDS.length * LEVELS_PER_WORLD;
+  const WORLDS_A_PAGE = 3;
+  const PAGE = WORLDS_A_PAGE * LEVELS_PER_WORLD;
   const pages = Math.ceil(LAST_LEVEL / PAGE);
   const [page, setPage] = useState(() => Math.min(pages - 1, Math.floor((props.nextLevel - 1) / PAGE)));
   const first = page * PAGE + 1;
@@ -465,8 +494,11 @@ function Menu(props: {
             ›
           </button>
         </div>
-        {WORLDS.map((w, wi) => (
-          <div key={w.id} className={`gem-world world-${w.id}`}>
+        {Array.from({ length: WORLDS_A_PAGE }, (_, wi) => {
+          const w = WORLDS[(page * WORLDS_A_PAGE + wi) % WORLDS.length];
+          if (first + wi * LEVELS_PER_WORLD > LAST_LEVEL) return null;
+          return (
+          <div key={wi} className={`gem-world world-${w.id}`}>
             <h3>{t(w.name)}</h3>
             <div className="gem-levels">
               {Array.from({ length: LEVELS_PER_WORLD }, (_, k) => {
@@ -495,7 +527,8 @@ function Menu(props: {
               })}
             </div>
           </div>
-        ))}
+          );
+        })}
       </section>
     </div>
   );
@@ -504,8 +537,14 @@ function Menu(props: {
 // --------------------------------------------------------------------- HUD
 
 function GoalIcon({ goal }: { goal: Goal }) {
+  // The same outline and colour as the stone on the board.
   if (goal.kind === "color")
-    return <span className={`goal-gem gem-${goal.color}`} style={{ background: GEM_CSS[goal.color] }} />;
+    return (
+      <svg className={`goal-gem gem-${goal.color}`} viewBox="-0.6 -0.6 1.2 1.2" aria-hidden>
+        <path d={GEM_OUTLINES[goal.color]} fill={STONE_CSS[goal.color]} stroke="rgba(255,255,255,0.75)" strokeWidth="0.05" />
+        <ellipse cx="-0.13" cy="-0.16" rx="0.12" ry="0.07" fill="rgba(255,255,255,0.7)" transform="rotate(-35 -0.13 -0.16)" />
+      </svg>
+    );
   if (goal.kind === "ice") return <span className="goal-ice" />;
   return <span className="goal-score">★</span>;
 }
@@ -523,6 +562,11 @@ function Hud(props: {
   owned: Owned;
   onMute: () => void;
   onMenu: () => void;
+  /** Supernovas ready, and coins towards the next one. */
+  novas: number;
+  charge: number;
+  canNova: boolean;
+  onNova: () => void;
 }) {
   const { t } = useLocale();
   const s = props.session;
@@ -597,6 +641,24 @@ function Hud(props: {
           <div className="fill" style={{ width: `${(s.fever ? s.feverMoves / FEVER_MOVES : s.meter) * 100}%` }} />
         </div>
       </div>
+      {spec.level > 0 && (
+        <div className="hud-nova">
+          <button className="button nova" disabled={!props.canNova || props.novas < 1} onClick={props.onNova}>
+            <span className="nova-star" aria-hidden>
+              ✹
+            </span>
+            {t("Supernova")} ×{props.novas}
+          </button>
+          <div className="nova-bar" aria-hidden>
+            <div className="fill" style={{ width: `${(props.charge / NOVA_COST) * 100}%` }} />
+          </div>
+          <p className="nova-note">
+            {props.novas > 0
+              ? t("Tap to clear the whole board. It costs no move.")
+              : t("{0} more coins from play charge the next one.", String(NOVA_COST - props.charge))}
+          </p>
+        </div>
+      )}
       {boosts && <p className="hud-boosts">{t("Upgrades")}: {boosts}</p>}
       <details className="hud-help">
         <summary>{t("How to play")}</summary>
@@ -606,6 +668,7 @@ function Hud(props: {
           <li>{t("Swap two specials together for a bigger blast.")}</li>
           <li>{t("Chains and blasts fill the Fever meter: Fever doubles your points for 3 moves.")}</li>
           <li>{t("Moves left at the end turn into blasters for a final surge.")}</li>
+          <li>{t("Every 100 coins you earn by playing charge a Supernova, which clears the whole board.")}</li>
         </ul>
       </details>
     </aside>
@@ -662,6 +725,7 @@ function EndPanel(props: {
             <span className="coin" aria-hidden /> {t("+{0} coins", String(end.coins))}
           </p>
         )}
+        {end.novas > 0 && <p className="end-nova">✹ {t("Supernova charged! Use it on any level.")}</p>}
         {end.note &&
           (end.note === "Sign in to earn coins and badges" ? (
             <button className="link-button end-note" onClick={() => sdk.requestSignIn()}>
