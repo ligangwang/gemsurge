@@ -4,6 +4,7 @@ import {
   SIZE,
   createBoard,
   placeSpecials,
+  supernova,
   surge,
   swap,
   type Board,
@@ -40,6 +41,8 @@ export const NO_BOOSTS: Boosts = { moves: 0, specials: [], fever: 1 };
 
 /** Fever lasts this many moves and doubles their score. */
 export const FEVER_MOVES = 3;
+/** A Supernova's clear scores this many times over. */
+export const NOVA_SCORE = 3;
 /** The most moves the end-of-level surge turns into blasters. */
 export const SURGE_MAX = 12;
 
@@ -70,6 +73,8 @@ export class Session {
   prismsFired = 0;
   fevers = 0;
   movesMade = 0;
+  /** Supernovas set off in this play. */
+  novas = 0;
   finished = false;
 
   constructor(
@@ -134,6 +139,16 @@ export class Session {
       }
     }
     return { ...result, points, inFever, feverStarted };
+  }
+
+  /** Sets off a Supernova, which clears the whole board and costs no move. */
+  nova(): Turn | null {
+    if (this.outcome) return null;
+    const result = supernova(this.board);
+    this.novas++;
+    const points = result.score * NOVA_SCORE;
+    this.record(result, points);
+    return { ...result, points, inFever: false, feverStarted: false };
   }
 
   /** The end-of-level surge for a win with moves left; null if there is nothing to do. */

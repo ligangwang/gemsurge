@@ -85,5 +85,16 @@
   "Brilliant": "精彩",
   "Dazzling": "耀眼",
   "Radiant": "璀璨",
-  "Unstoppable": "势不可挡"
+  "Unstoppable": "势不可挡",
+  "Aurora Peaks": "极光雪峰",
+  "Golden Desert": "黄金沙漠",
+  "Firefly Forest": "萤火森林",
+  "Cloud Kingdom": "云上王国",
+  "Supernova": "超新星",
+  "Supernova!": "超新星！",
+  "Tap to clear the whole board. It costs no move.": "点一下清空整个棋盘，不消耗步数。",
+  "{0} more coins from play charge the next one.": "再从游戏中赚 {0} 金币即可充能下一个。",
+  "Every 100 coins you earn by playing charge a Supernova, which clears the whole board.": "每在游戏中赚到 100 金币，就充能一个超新星，可清空整个棋盘。",
+  "Supernova charged! Use it on any level.": "超新星已充能！可在任意关卡使用。",
+  "Lantern Lake": "灯笼湖"
 }

@@ -2,7 +2,7 @@
 // few records. Saved on the device (sdk.storage) and, for a signed-in player,
 // to their dingn account (sdk.progress).
 import type { DingnGame, Json } from "../sdk/dingn-sdk.js";
-import { LAST_LEVEL } from "./levels";
+import { LAST_LEVEL, NOVA_COST, coinsFor } from "./levels";
 
 export type Saved = {
   /** Best stars for each level (index 0 is level 1); 0 for not cleared. */
@@ -13,6 +13,13 @@ export type Saved = {
   daily: { day: string; score: number; paid: boolean } | null;
   /** The longest chain ever. */
   chain: number;
+  /**
+   * Every coin a play has been worth, whether or not dingn paid it: each
+   * NOVA_COST of them charges a Supernova.
+   */
+  earned: number;
+  /** Supernovas set off so far. */
+  novasUsed: number;
 };
 type Sdk = Pick<DingnGame, "storage" | "progress" | "player">;
 
@@ -21,6 +28,8 @@ export const empty = (): Saved => ({
   best: new Array(LAST_LEVEL).fill(0),
   daily: null,
   chain: 0,
+  earned: 0,
+  novasUsed: 0,
 });
 const whole = (value: unknown, max: number) => {
   const n = Number(value);
@@ -34,6 +43,11 @@ export const highest = (s: Saved) => {
   return n;
 };
 
+/** Supernovas ready to set off. */
+export const novas = (s: Saved) => Math.max(0, Math.floor(s.earned / NOVA_COST) - s.novasUsed);
+/** Coins towards the next Supernova, 0 to NOVA_COST - 1. */
+export const novaCharge = (s: Saved) => s.earned % NOVA_COST;
+
 /** Reads a saved value, ignoring anything that isn't the right shape. */
 export function parse(value: Json): Saved {
   const saved = empty();
@@ -45,6 +59,12 @@ export function parse(value: Json): Saved {
   saved.stars = list(value.stars, 3);
   saved.best = list(value.best, 1e9);
   saved.chain = whole(value.chain, 1000);
+  // A save from before Supernovas is credited with what its stars were worth.
+  saved.earned =
+    value.earned === undefined
+      ? saved.stars.reduce((sum, stars, i) => sum + coinsFor(i + 1, stars), 0)
+      : whole(value.earned, 1e9);
+  saved.novasUsed = whole(value.novasUsed, 1e7);
   const d = value.daily;
   if (
     d &&
@@ -76,6 +96,8 @@ export function merge(a: Saved, b: Saved): Saved {
     best: a.best.map((s, i) => Math.max(s, b.best[i])),
     daily,
     chain: Math.max(a.chain, b.chain),
+    earned: Math.max(a.earned, b.earned),
+    novasUsed: Math.max(a.novasUsed, b.novasUsed),
   };
 }
 

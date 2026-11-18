@@ -31,6 +31,8 @@ export const GEM_COLORS = [0xff2450, 0xffc400, 0x18e070, 0x3a84ff, 0xb450ff, 0xf
 const STONE_COLORS = [0xe8102e, 0xffb000, 0x00b54c, 0x1458f0, 0x8a2ce8, 0xfff0fa];
 /** CSS versions for the HUD. */
 export const GEM_CSS = GEM_COLORS.map((c) => `#${c.toString(16).padStart(6, "0")}`);
+/** The stones' own colours, for pictures of them outside the scene. */
+export const STONE_CSS = STONE_COLORS.map((c) => `#${c.toString(16).padStart(6, "0")}`);
 
 const HALF = (SIZE - 1) / 2;
 const world = (x: number, y: number) => new THREE.Vector3(x - HALF, HALF - y, 0);
@@ -237,6 +239,26 @@ function makeDomes(): THREE.BufferGeometry[] {
   amethyst.translate(0, -0.04, 0);
   return [domeGem(ROUND, DOME), topaz, domeGem(CUSHION, DOME), domeGem(OVAL, DOME), amethyst];
 }
+/**
+ * Each stone's outline as an SVG path in a box from -0.6 to 0.6, so the goals
+ * can show the same shapes as the board.
+ */
+export const GEM_OUTLINES = [
+  [ROUND, 0],
+  [PEAR, -0.07],
+  [CUSHION, 0],
+  [OVAL, 0],
+  [TRILLION, -0.04],
+  [() => 0.38, 0],
+].map(([radius, lift]) => {
+  const points = Array.from({ length: 48 }, (_, i) => {
+    const a = (i / 48) * Math.PI * 2;
+    const reach = (radius as (a: number) => number)(a);
+    return `${(Math.cos(a) * reach).toFixed(3)} ${(-(Math.sin(a) * reach + (lift as number))).toFixed(3)}`;
+  });
+  return `M${points.join("L")}Z`;
+});
+
 const DOME = 0.2;
 
 /**
@@ -438,6 +460,7 @@ precision highp float;
 varying vec2 vUv;
 uniform float time;
 uniform float world;
+uniform float cycle;
 uniform float fever;
 uniform float aspect;
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -508,8 +531,102 @@ vec3 space(vec2 uv) {
   col += vec3(1.0, 0.8, 0.6) * smoothstep(0.012, 0.0, ring) * step(0.1, d + step(0.0, q.y * 3.5 + q.x * 1.2)) * 0.6;
   return col;
 }
+vec3 lake(vec2 uv) {
+  vec2 p = vec2((uv.x - 0.5) * aspect, uv.y);
+  // Still water at dusk: everything above the shore is mirrored below it.
+  float shore = 0.42;
+  float ripple = 0.006 * sin(uv.y * 140.0 + time * 0.8 + p.x * 6.0);
+  float y = uv.y > shore ? uv.y : 2.0 * shore - uv.y + ripple;
+  vec3 col = mix(vec3(0.85, 0.5, 0.45), vec3(0.1, 0.1, 0.32), smoothstep(shore, 1.0, y));
+  // A soft moon.
+  float moon = length(vec2(p.x - 0.5, y - 0.8));
+  col += vec3(1.0, 0.95, 0.8) * (smoothstep(0.06, 0.055, moon) * 0.35 + exp(-moon * 9.0) * 0.2);
+  // Low hills on the far shore.
+  float hill = shore + 0.05 + 0.04 * sin(p.x * 3.0 + 1.0) + 0.02 * sin(p.x * 7.0);
+  if (y < hill) col = vec3(0.1, 0.09, 0.24);
+  // Paper lanterns drifting up.
+  vec2 g = vec2(p.x * 12.0 + 0.2 * sin(y * 5.0 + time * 0.1), y * 12.0 - time * 0.06);
+  float lit = hash(floor(g));
+  col += step(0.82, lit) * smoothstep(0.22, 0.0, length(fract(g) - 0.5)) * vec3(0.9, 0.5, 0.2) * (0.5 + 0.2 * sin(time + lit * 30.0));
+  if (uv.y < shore) col = col * 0.7 + vec3(0.0, 0.02, 0.06);
+  return col;
+}
+vec3 aurora(vec2 uv) {
+  vec2 p = vec2((uv.x - 0.5) * aspect, uv.y);
+  vec3 col = mix(vec3(0.0, 0.02, 0.06), vec3(0.01, 0.05, 0.14), uv.y);
+  vec2 s = p * 110.0;
+  col += step(0.993, hash(floor(s))) * smoothstep(0.5, 0.0, length(fract(s) - 0.5));
+  // Three slow ribbons of light.
+  for (int i = 0; i < 3; i++) {
+    float k = float(i);
+    float y = 0.56 + 0.1 * k + 0.07 * sin(p.x * 2.0 + time * 0.15 + k * 1.7) + 0.05 * fbm(vec2(p.x * 1.5 + k, time * 0.05));
+    float d = uv.y - y;
+    float band = exp(-max(d, 0.0) * 7.0) * smoothstep(-0.03, 0.0, d);
+    float folds = 0.6 + 0.4 * fbm(vec2(p.x * 8.0, time * 0.1 + k));
+    col += mix(vec3(0.1, 0.9, 0.5), vec3(0.5, 0.3, 0.9), k / 2.0) * band * folds * 0.35;
+  }
+  // Snowy peaks.
+  float peak = 0.16 + abs(fract(p.x * 1.3 + 0.2) - 0.5) * 0.36 + fbm(vec2(p.x * 6.0, 2.0)) * 0.06;
+  if (uv.y < peak) col = mix(vec3(0.04, 0.07, 0.15), vec3(0.7, 0.82, 1.0), smoothstep(peak - 0.09, peak, uv.y) * 0.7);
+  return col;
+}
+vec3 desert(vec2 uv) {
+  vec2 p = vec2((uv.x - 0.5) * aspect, uv.y);
+  vec3 col = mix(vec3(0.75, 0.36, 0.14), vec3(0.16, 0.07, 0.26), smoothstep(0.25, 1.0, uv.y));
+  // A low sun.
+  float d = length(p - vec2(0.0, 0.46));
+  col += vec3(1.0, 0.8, 0.45) * (smoothstep(0.15, 0.14, d) * 0.6 + exp(-d * 5.0) * 0.35);
+  // Three lines of dunes, darker as they come nearer.
+  for (int i = 0; i < 3; i++) {
+    float k = float(i);
+    float h = 0.4 - k * 0.11 + 0.05 * sin(p.x * (2.0 + k * 1.3) + k * 2.0 + 1.0) + 0.015 * sin(p.x * 7.0 + k);
+    if (uv.y < h) col = mix(vec3(0.6, 0.3, 0.12), vec3(0.16, 0.06, 0.06), k / 2.0) * (0.75 + 0.25 * smoothstep(h - 0.12, h, uv.y));
+  }
+  return col;
+}
+vec3 forest(vec2 uv) {
+  vec2 p = vec2((uv.x - 0.5) * aspect, uv.y);
+  vec3 col = mix(vec3(0.0, 0.05, 0.03), vec3(0.03, 0.2, 0.12), uv.y);
+  // Shafts of light through the leaves.
+  col += vec3(0.3, 0.5, 0.2) * pow(fbm(vec2(p.x * 3.0 - uv.y * 0.6, time * 0.1)), 3.0) * uv.y * 0.8;
+  // Two rows of tree trunks.
+  for (int i = 0; i < 2; i++) {
+    float k = float(i);
+    float tx = p.x * (5.0 + k * 4.0) + k * 0.37;
+    float id = floor(tx);
+    float w = 0.12 + hash(vec2(id, 7.0 + k)) * 0.12;
+    if (abs(fract(tx) - 0.5) < w && hash(vec2(id, 1.0 + k)) > 0.35) col = mix(col, vec3(0.0, 0.03, 0.02), 0.55 + 0.4 * k);
+  }
+  // Fireflies.
+  vec2 g = vec2(p.x * 9.0 + sin(time * 0.3 + uv.y * 4.0) * 0.3, uv.y * 9.0 + time * 0.08);
+  float fly = hash(floor(g));
+  col += step(0.9, fly) * smoothstep(0.25, 0.0, length(fract(g) - 0.5)) * vec3(0.9, 1.0, 0.4) * (0.5 + 0.5 * sin(time * 1.5 + fly * 40.0));
+  return col;
+}
+vec3 clouds(vec2 uv) {
+  vec2 p = vec2((uv.x - 0.5) * aspect, uv.y);
+  vec3 col = mix(vec3(0.8, 0.45, 0.4), vec3(0.12, 0.26, 0.6), smoothstep(0.0, 0.9, uv.y));
+  float far = fbm(vec2(p.x * 2.0 + time * 0.03, uv.y * 4.0));
+  float near = fbm(vec2(p.x * 3.5 - time * 0.02, uv.y * 6.0 + 3.0));
+  col = mix(col, vec3(0.95, 0.85, 0.85), smoothstep(0.5, 0.75, far) * 0.6);
+  col = mix(col, vec3(1.0, 0.75, 0.8), smoothstep(0.55, 0.8, near) * 0.5 * (1.0 - uv.y));
+  return col * 0.75;
+}
+// Turns every colour round the colour wheel, for the worlds' later visits.
+vec3 turnHue(vec3 c, float a) {
+  const vec3 k = vec3(0.57735);
+  return c * cos(a) + cross(k, c) * sin(a) + k * dot(k, c) * (1.0 - cos(a));
+}
 void main() {
-  vec3 col = world < 0.5 ? neon(vUv) : world < 1.5 ? sea(vUv) : space(vUv);
+  vec3 col = world < 0.5 ? neon(vUv)
+    : world < 1.5 ? sea(vUv)
+    : world < 2.5 ? space(vUv)
+    : world < 3.5 ? lake(vUv)
+    : world < 4.5 ? aurora(vUv)
+    : world < 5.5 ? desert(vUv)
+    : world < 6.5 ? forest(vUv)
+    : clouds(vUv);
+  if (cycle > 0.5) col = max(turnHue(col, cycle * 0.9), 0.0);
   // Fever: hue-shifting energy around the edges.
   vec2 e = vUv - 0.5;
   float edge = smoothstep(0.25, 0.75, length(e * vec2(aspect, 1.0)) / max(aspect, 1.0) * 1.6);
@@ -670,6 +787,7 @@ export class GemScene {
   private fever = 0;
   private feverTarget = 0;
   private worldIndex = 0;
+  private worldCycle = 0;
   private overlay: HTMLDivElement;
   private raf = 0;
   private disposed = false;
@@ -716,7 +834,7 @@ export class GemScene {
     this.bg = new THREE.Mesh(
       new THREE.PlaneGeometry(2, 2),
       new THREE.ShaderMaterial({
-        uniforms: { time: { value: 0 }, world: { value: 0 }, fever: { value: 0 }, aspect: { value: 1 } },
+        uniforms: { time: { value: 0 }, world: { value: 0 }, cycle: { value: 0 }, fever: { value: 0 }, aspect: { value: 1 } },
         vertexShader: BG_VERTEX,
         fragmentShader: BG_FRAGMENT,
         depthWrite: false,
@@ -789,17 +907,17 @@ export class GemScene {
       envMapIntensity: 2.5,
     });
     this.iceMats = [
-      [0x5aa9d6, 0.55],
-      [0x2f7fb8, 0.8],
+      [0xd4eeff, 0.7],
+      [0xf4fbff, 0.92],
     ].map(
       ([color, opacity]) =>
         new THREE.MeshStandardMaterial({
           color,
-          emissive: 0x1d6fb0,
-          emissiveIntensity: 0.12,
-          roughness: 0.35,
+          emissive: 0x7fd0ff,
+          emissiveIntensity: 0.35,
+          roughness: 0.3,
           metalness: 0.1,
-          envMapIntensity: 0.4,
+          envMapIntensity: 0.6,
           transparent: true,
           opacity,
           depthWrite: false,
@@ -859,14 +977,21 @@ export class GemScene {
       [0x2a1c52, 0x35246a],
       [0x103a54, 0x15486a],
       [0x221d48, 0x2c2660],
+      [0x2a2350, 0x342b62],
+      [0x12284a, 0x18335c],
+      [0x4a2c1a, 0x5a3620],
+      [0x123524, 0x18432c],
+      [0x2a3a66, 0x334678],
     ];
     const [a, b] = palettes[this.worldIndex] ?? palettes[0];
+    // A world's later visits turn its colours, as the background does.
+    const turn = (this.worldCycle * 0.9) / (Math.PI * 2);
     const c = new THREE.Color();
     for (let y = 0; y < SIZE; y++)
-      for (let x = 0; x < SIZE; x++) this.tiles.setColorAt(idx(x, y), c.set((x + y) % 2 ? a : b));
+      for (let x = 0; x < SIZE; x++) this.tiles.setColorAt(idx(x, y), c.set((x + y) % 2 ? a : b).offsetHSL(turn, 0, 0));
     this.tiles.instanceColor!.needsUpdate = true;
-    const edge = [0xff2bd6, 0x22d3ee, 0x8b5cf6][this.worldIndex] ?? 0x3020ff;
-    this.frameMat.emissive.set(edge);
+    const edge = [0xff2bd6, 0x22d3ee, 0x8b5cf6, 0xffb86b, 0x40ffb0, 0xffb347, 0x9be15d, 0xff9ecf][this.worldIndex] ?? 0x3020ff;
+    this.frameMat.emissive.set(edge).offsetHSL(turn, 0, 0);
   }
 
   private makeView(gem: Gem, x: number, y: number): GemView {
@@ -956,13 +1081,13 @@ export class GemScene {
   }
 
   /** Shows a board at once, without animation. */
-  setBoard(cells: (Gem | null)[], ice: number[], worldIndex: number) {
+  setBoard(cells: (Gem | null)[], ice: number[], worldIndex: number, worldCycle = 0) {
     for (const id of [...this.views.keys()]) this.removeView(id);
     // A move still animating on the old board stops here.
     const pending = this.tweens;
     this.tweens = [];
     for (const tw of pending) tw.cancel?.();
-    this.setWorld(worldIndex);
+    this.setWorld(worldIndex, worldCycle);
     this.cells = cells.map((g) => (g ? { ...g } : null));
     cells.forEach((g, i) => {
       if (!g) return;
@@ -979,9 +1104,12 @@ export class GemScene {
     this.setFever(false);
   }
 
-  setWorld(i: number) {
+  /** `cycle` counts how many times the worlds have come round, which turns the colours. */
+  setWorld(i: number, cycle = 0) {
     this.worldIndex = i;
+    this.worldCycle = cycle;
     this.bg.material.uniforms.world.value = i;
+    this.bg.material.uniforms.cycle.value = cycle;
     this.paintTiles();
   }
 

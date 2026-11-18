@@ -215,6 +215,11 @@
 .world-neon h3 { color: #ff7ae0; }
 .world-sea h3 { color: #5ee6ff; }
 .world-space h3 { color: #b49bff; }
+.world-lake h3 { color: #ffc08a; }
+.world-aurora h3 { color: #6dffc4; }
+.world-desert h3 { color: #ffc46b; }
+.world-forest h3 { color: #b4f07a; }
+.world-clouds h3 { color: #ffb3d9; }
 .gem-levels {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -330,16 +335,15 @@
 .goal-count { font-variant-numeric: tabular-nums; font-weight: 600; }
 .goal.done .goal-count { color: #4af0a4; }
 .goal-gem {
-  width: 18px;
-  height: 18px;
-  transform: rotate(45deg);
-  border-radius: 4px;
-  box-shadow: 0 0 10px currentColor, inset 0 0 6px rgba(255, 255, 255, 0.6);
+  width: 26px;
+  height: 26px;
   flex: none;
 }
 .goal-ice {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
+  margin: 0 3px;
+  border: 1px solid #ffffff;
   border-radius: 4px;
   background: linear-gradient(135deg, #e8f7ff, #8fd3ff);
   box-shadow: 0 0 10px rgba(140, 210, 255, 0.7);
@@ -476,3 +480,17 @@
   .gem-end { left: 0; }
   .gem-banner { font-size: 36px !important; }
 }
+
+/* The Supernova: a board clear the player earns by playing. */
+.hud-nova { margin-top: 14px; }
+.button.nova {
+  width: 100%;
+  background: linear-gradient(135deg, #ff9d2e, #ff3d8b 55%, #8b5cf6);
+  box-shadow: 0 0 18px rgba(255, 110, 140, 0.45);
+}
+.button.nova:disabled { background: rgba(255, 255, 255, 0.08); box-shadow: none; color: #9aa0b4; }
+.nova-star { margin-right: 6px; }
+.nova-bar { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); margin-top: 8px; overflow: hidden; }
+.nova-bar .fill { height: 100%; background: linear-gradient(90deg, #ff9d2e, #ff3d8b); transition: width 0.6s ease; }
+.nova-note { font-size: 12px; color: #cdd2e0; margin: 6px 0 0; }
+.end-nova { color: #ffb347; font-weight: 700; margin: 8px 0 0; }
