@@ -37,13 +37,17 @@ export type LevelSpec = {
 };
 
 /** What the player's upgrades add to every level. */
-export type Boosts = { moves: number; specials: Special[]; fever: number };
+export type Boosts = { moves: number; specials: Special[]; fever: number; undos?: number };
 export const NO_BOOSTS: Boosts = { moves: 0, specials: [], fever: 1 };
 
 /** Fever lasts this many moves and doubles their score. */
 export const FEVER_MOVES = 3;
 /** How many moves a play can take back. */
 export const UNDOS = 3;
+/** Up to this level every play has all its undos; after it they are an upgrade. */
+export const FREE_UNDO_LEVELS = 100;
+/** The undos a play of `level` starts with, given the undo upgrade's tier. */
+export const undosFor = (level: number, owned: number) => (level <= FREE_UNDO_LEVELS ? UNDOS : Math.min(UNDOS, owned));
 /** A Supernova's clear scores this many times over. */
 export const NOVA_SCORE = 3;
 /** The most moves the end-of-level surge turns into blasters. */
@@ -91,6 +95,7 @@ export class Session {
     this.board = createBoard(spec.seed, spec.colors, spec.ice);
     placeSpecials(this.board, boosts.specials);
     this.movesLeft = spec.moves + boosts.moves;
+    this.undosLeft = undosFor(spec.level, boosts.undos ?? 0);
     this.iceTotal = this.iceLeft = spec.ice.reduce((a, b) => a + b, 0);
   }
 

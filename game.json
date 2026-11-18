@@ -1,6 +1,6 @@
 {
   "id": "gemsurge",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "title": {
     "en": "Gem Surge",
     "zh": "宝石狂潮"
@@ -324,6 +324,32 @@
         "zh": "狂热充能 +45%"
       },
       "requires": "fever-2"
+    },
+    {
+      "id": "undo-1",
+      "price": 100,
+      "title": {
+        "en": "1 undo a level after level 100",
+        "zh": "100 关后每关撤回 1 次"
+      }
+    },
+    {
+      "id": "undo-2",
+      "price": 250,
+      "title": {
+        "en": "2 undos a level after level 100",
+        "zh": "100 关后每关撤回 2 次"
+      },
+      "requires": "undo-1"
+    },
+    {
+      "id": "undo-3",
+      "price": 500,
+      "title": {
+        "en": "3 undos a level after level 100",
+        "zh": "100 关后每关撤回 3 次"
+      },
+      "requires": "undo-2"
     }
   ]
 }

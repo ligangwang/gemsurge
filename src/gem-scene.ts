@@ -26,16 +26,25 @@ import type { Turn } from "./engine/session";
 import type { Cleared } from "./engine/board";
 import { sfx } from "./sound";
 
-export const GEM_COLORS = [0xff2450, 0xffc400, 0x18e070, 0x3a84ff, 0xb450ff, 0xfff0fa];
+export const GEM_COLORS = [
+  0xff2450, 0xffc400, 0x12b060, 0x3a84ff, 0xb450ff, 0xe8f6ff,
+];
 /** The stones themselves are a little deeper, since the light inside brightens them. */
-const STONE_COLORS = [0xe8102e, 0xffb000, 0x00b54c, 0x1458f0, 0x8a2ce8, 0xfff0fa];
+const STONE_COLORS = [
+  0xb00a26, 0xe08c00, 0x067a3c, 0x0e3cc0, 0x6218c0, 0xe4f2ff,
+];
 /** CSS versions for the HUD. */
-export const GEM_CSS = GEM_COLORS.map((c) => `#${c.toString(16).padStart(6, "0")}`);
+export const GEM_CSS = GEM_COLORS.map(
+  (c) => `#${c.toString(16).padStart(6, "0")}`,
+);
 /** The stones' own colours, for pictures of them outside the scene. */
-export const STONE_CSS = STONE_COLORS.map((c) => `#${c.toString(16).padStart(6, "0")}`);
+export const STONE_CSS = STONE_COLORS.map(
+  (c) => `#${c.toString(16).padStart(6, "0")}`,
+);
 
 const HALF = (SIZE - 1) / 2;
-const world = (x: number, y: number) => new THREE.Vector3(x - HALF, HALF - y, 0);
+const world = (x: number, y: number) =>
+  new THREE.Vector3(x - HALF, HALF - y, 0);
 
 type SceneOptions = {
   onSwap: (a: Pos, b: Pos) => void;
@@ -76,128 +85,49 @@ export class AnimationCancelled extends Error {
 
 // --------------------------------------------------------------- geometry
 
-type Cut = {
-  /** The girdle: the gem's outline seen from the front, anticlockwise. */
-  outline: THREE.Vector2[];
-  /** How far the flat top (the table) is shrunk from the outline. */
-  table: number;
-  /** Height of the crown above the girdle and depth of the pavilion below it. */
-  crown: number;
-  pavilion: number;
-  /**
-   * A brilliant cut turns the rings between table, girdle and point half a
-   * step, which makes kite and star facets. A step cut keeps them lined up,
-   * for the long terraces of an emerald cut.
-   */
-  brilliant: boolean;
-  /** A step cut ends in a ridge this long instead of a point. */
-  keel?: number;
-};
-
-/**
- * Cuts a gem: a table and crown facing the player, a thin girdle, and a
- * pavilion behind. Every facet is flat, so each catches the light on its own.
- * Only the pavilion is seen, through the smooth dome from domeGem.
- */
-function cutGem({ outline, table, crown, pavilion, brilliant, keel = 0 }: Cut) {
-  const n = outline.length;
-  const ring = (scale: number, z: number, half = false) =>
-    outline.map((p, i) => {
-      const q = half ? p.clone().add(outline[(i + 1) % n]).multiplyScalar(0.5) : p;
-      return new THREE.Vector3(q.x * scale, q.y * scale, z);
-    });
-  const top = ring(table, crown, brilliant);
-  const upper = ring(brilliant ? 0.8 : (1 + table) / 2, crown * (brilliant ? 0.6 : 0.55));
-  const girdle = ring(1, 0, brilliant);
-  const under = ring(1, -0.035, brilliant);
-  // Two rings down the pavilion, so the back of the stone breaks the light
-  // into many small facets.
-  const lower = ring(brilliant ? 0.74 : 0.78, -pavilion * 0.36);
-  const deep = ring(brilliant ? 0.42 : 0.5, -pavilion * 0.72, brilliant);
-  const point = (p: THREE.Vector3) =>
-    new THREE.Vector3(Math.sign(p.x) * Math.min(Math.abs(p.x), keel), 0, -pavilion);
-
-  const tris: THREE.Vector3[][] = [];
-  const centre = new THREE.Vector3(0, 0, crown);
-  for (let i = 0; i < n; i++) tris.push([centre, top[i], top[(i + 1) % n]]);
-  // Joins two rings. When `b` sits half a step round from `a`, the band is a
-  // zigzag of triangles; otherwise it is a row of four-sided facets.
-  const band = (a: THREE.Vector3[], b: THREE.Vector3[], offset: -1 | 0 | 1) => {
-    for (let i = 0; i < n; i++) {
-      const j = (i + 1) % n;
-      if (offset === 0) tris.push([a[i], a[j], b[j]], [a[i], b[j], b[i]]);
-      else if (offset === 1) tris.push([a[i], a[j], b[i]], [a[j], b[j], b[i]]);
-      else tris.push([b[i], b[j], a[j]], [a[i], b[i], a[j]]);
-    }
-  };
-  if (brilliant) {
-    band(upper, top, 1);
-    band(upper, girdle, 1);
-    band(girdle, under, 0);
-    band(lower, under, 1);
-    band(lower, deep, 1);
-  } else {
-    band(top, upper, 0);
-    band(upper, girdle, 0);
-    band(girdle, under, 0);
-    band(under, lower, 0);
-    band(lower, deep, 0);
-  }
-  for (let i = 0; i < n; i++) tris.push([deep[i], deep[(i + 1) % n], point(deep[i])], [deep[(i + 1) % n], point(deep[(i + 1) % n]), point(deep[i])]);
-
-  // Wind every facet to face outwards, and drop the slivers a keel leaves.
-  const positions: number[] = [];
-  const shades: number[] = [];
-  const mid = new THREE.Vector3(0, 0, (crown - pavilion) / 2);
-  const normal = new THREE.Vector3();
-  const out = new THREE.Vector3();
-  for (const [a, b, c] of tris) {
-    normal.subVectors(b, a).cross(out.subVectors(c, a));
-    if (normal.lengthSq() < 1e-10) continue;
-    out.copy(a).add(b).add(c).divideScalar(3).sub(mid);
-    const [p, q, r] = normal.dot(out) < 0 ? [a, c, b] : [a, b, c];
-    positions.push(p.x, p.y, p.z, q.x, q.y, q.z, r.x, r.y, r.z);
-    // Light bounces around inside a cut stone, so neighbouring facets are
-    // never the same brightness. The table is the brightest.
-    const onTable = a.z === crown && b.z === crown && c.z === crown;
-    // Facets deep in the stone are brighter than those at its rim, which
-    // rounds the stone off towards its edge.
-    const depth = Math.min(1, Math.max(0, -(a.z + b.z + c.z) / 3 / pavilion));
-    const shade = onTable ? 1.25 : [0.82, 1.08, 0.92, 1.18, 0.86, 1.0][(shades.length / 9) % 6 | 0] * (0.72 + 0.4 * depth);
-    for (let k = 0; k < 9; k++) shades.push(shade);
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  g.setAttribute("color", new THREE.Float32BufferAttribute(shades, 3));
-  g.computeVertexNormals();
-  return g;
-}
-
-/** Points round a shape whose radius at each angle comes from `radius`. */
-const outlineOf = (count: number, radius: (angle: number) => number, turn = 0) =>
-  Array.from({ length: count }, (_, i) => {
-    const a = (i / count) * Math.PI * 2 + turn;
-    return new THREE.Vector2(Math.cos(a), Math.sin(a)).multiplyScalar(radius(a));
-  });
-
 /** A rounded box shape (a superellipse) `w` by `h` across; a higher `power` is squarer. */
 const cushion = (w: number, h: number, power: number) => (a: number) =>
-  (Math.abs(Math.cos(a) / w) ** power + Math.abs(Math.sin(a) / h) ** power) ** (-1 / power);
+  (Math.abs(Math.cos(a) / w) ** power + Math.abs(Math.sin(a) / h) ** power) **
+  (-1 / power);
 
 /**
- * The polished top of a stone: a smooth dome over the outline, like the top
- * of a cabochon. It has no facets, so the light slides over it in one curve.
+ * A smooth polished stone (a cabochon): a dome over the outline with no
+ * facets, so the light slides over it in one curve. Its colour is deepest at
+ * the rim and under the highlight, and glows low on the right, where light
+ * that came in through the top gathers on its way out.
  */
 function domeGem(radius: (angle: number) => number, height: number, turn = 0) {
   const around = 72;
-  const rings = 12;
+  const rings = 14;
   const positions: number[] = [0, 0, height];
+  const shades: number[] = [];
+  // `edge` is 0 at the middle of the stone and 1 at its rim; the glow is a
+  // crescent low on the right, opposite the window the top reflects.
+  const shadeAt = (angle: number, edge: number) => {
+    const facing = Math.max(0, Math.cos(angle + Math.PI * 0.28));
+    // Light that came in at the top gathers into a bright crescent on its way
+    // out, and a thin line of it runs round the rim: that depth is what makes
+    // a stone read as a see-through gem and not as something opaque.
+    const glow = Math.exp(-((edge - 0.6) ** 2) / 0.07) * facing ** 1.8;
+    const rim =
+      Math.exp(-((edge - 0.93) ** 2) / 0.004) * (0.25 + 0.75 * facing);
+    const shade = (0.26 + 3.6 * glow + 1.1 * rim) * (1 - 0.55 * edge ** 10);
+    // Where the light gathers it also pales, as it does in a real stone.
+    const pale = 0.5 * glow ** 2;
+    shades.push(shade + pale, shade + pale, shade + pale);
+  };
+  shadeAt(0, 0);
   for (let k = 1; k <= rings; k++) {
     const lean = (k / rings) * (Math.PI / 2);
     for (let i = 0; i < around; i++) {
       const a = (i / around) * Math.PI * 2 + turn;
-      const reach = radius(a) * Math.sin(lean);
-      positions.push(Math.cos(a) * reach, Math.sin(a) * reach, height * Math.cos(lean));
+      const reach = radius(a) * Math.sin(lean) ** 0.75;
+      positions.push(
+        Math.cos(a) * reach,
+        Math.sin(a) * reach,
+        height * Math.cos(lean),
+      );
+      shadeAt(a, Math.sin(lean));
     }
   }
   const index: number[] = [];
@@ -207,38 +137,40 @@ function domeGem(radius: (angle: number) => number, height: number, turn = 0) {
     const outer = inner + around;
     for (let i = 0; i < around; i++) {
       const j = (i + 1) % around;
-      index.push(inner + i, outer + i, outer + j, inner + i, outer + j, inner + j);
+      index.push(
+        inner + i,
+        outer + i,
+        outer + j,
+        inner + i,
+        outer + j,
+        inner + j,
+      );
     }
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  g.setAttribute("color", new THREE.Float32BufferAttribute(new Float32Array(positions.length).fill(1), 3));
+  g.setAttribute("color", new THREE.Float32BufferAttribute(shades, 3));
   g.setIndex(index);
   g.computeVertexNormals();
   return g;
 }
 
-const ROUND = () => 0.45;
+/** The diamond: a lozenge standing on its point, with rounded corners. */
+const LOZENGE = cushion(0.46, 0.49, 1.45);
+
+const ROUND = () => 0.47;
 /** A pear: round at the bottom, drawn up to a soft tip. */
-const PEAR = (a: number) => 0.33 * (1 + 0.5 * Math.max(0, Math.sin(a)) ** 3);
-const CUSHION = cushion(0.38, 0.47, 3.2);
-const OVAL = cushion(0.49, 0.37, 2);
+const PEAR = (a: number) => 0.345 * (1 + 0.5 * Math.max(0, Math.sin(a)) ** 3);
+const CUSHION = cushion(0.4, 0.485, 3.2);
+const OVAL = cushion(0.475, 0.385, 2);
 /** A trillion with bowed sides and rounded corners. */
 const TRILLION = (a: number) => {
   const third = (Math.PI * 2) / 3;
   const fromSide = ((((a - Math.PI / 2) % third) + third) % third) - third / 2;
-  const side = 0.33 / Math.cos(fromSide);
-  return (side ** -4 + 0.52 ** -4) ** (-1 / 4);
+  const side = 0.345 / Math.cos(fromSide);
+  return (side ** -4 + 0.535 ** -4) ** (-1 / 4);
 };
 
-/** The domed tops of the five stones, in colour order (the pearl has none). */
-function makeDomes(): THREE.BufferGeometry[] {
-  const topaz = domeGem(PEAR, DOME);
-  topaz.translate(0, -0.07, 0);
-  const amethyst = domeGem(TRILLION, DOME);
-  amethyst.translate(0, -0.04, 0);
-  return [domeGem(ROUND, DOME), topaz, domeGem(CUSHION, DOME), domeGem(OVAL, DOME), amethyst];
-}
 /**
  * Each stone's outline as an SVG path in a box from -0.6 to 0.6, so the goals
  * can show the same shapes as the board.
@@ -249,7 +181,7 @@ export const GEM_OUTLINES = [
   [CUSHION, 0],
   [OVAL, 0],
   [TRILLION, -0.04],
-  [() => 0.38, 0],
+  [LOZENGE, 0],
 ].map(([radius, lift]) => {
   const points = Array.from({ length: 48 }, (_, i) => {
     const a = (i / 48) * Math.PI * 2;
@@ -259,50 +191,32 @@ export const GEM_OUTLINES = [
   return `M${points.join("L")}Z`;
 });
 
+/** How far a stone domes up from the board. */
 const DOME = 0.2;
 
 /**
- * Six cuts with six different outlines, so a gem reads by shape as well as
- * colour. Every outline is a smooth curve with no hard corners: round, pear,
- * cushion, oval, a soft trillion, and the pearl.
+ * Six smooth stones with six different outlines, so a gem reads by shape as
+ * well as colour: round, pear, cushion, oval, a soft trillion, and the diamond's lozenge.
  */
 function makeGeometries(): THREE.BufferGeometry[] {
-  const N = 24;
-  const ruby = cutGem({ outline: outlineOf(N, ROUND), table: 0.56, crown: 0.17, pavilion: 0.34, brilliant: true });
-  const topaz = cutGem({
-    outline: outlineOf(N, PEAR, Math.PI / N),
-    table: 0.5,
-    crown: 0.17,
-    pavilion: 0.3,
-    brilliant: true,
-  });
+  const topaz = domeGem(PEAR, DOME);
   topaz.translate(0, -0.07, 0);
-  const emerald = cutGem({
-    outline: outlineOf(N, CUSHION, Math.PI / N),
-    table: 0.52,
-    crown: 0.16,
-    pavilion: 0.3,
-    brilliant: false,
-    keel: 0.1,
-  });
-  const sapphire = cutGem({ outline: outlineOf(N, OVAL), table: 0.55, crown: 0.17, pavilion: 0.32, brilliant: true });
-  const amethyst = cutGem({
-    outline: outlineOf(N, TRILLION),
-    table: 0.5,
-    crown: 0.16,
-    pavilion: 0.3,
-    brilliant: true,
-  });
+  const amethyst = domeGem(TRILLION, DOME);
   amethyst.translate(0, -0.04, 0);
-  const pearl = new THREE.SphereGeometry(0.38, 32, 24);
-  pearl.setAttribute("color", new THREE.Float32BufferAttribute(new Float32Array(pearl.attributes.position.count * 3).fill(1), 3));
-  return [ruby, topaz, emerald, sapphire, amethyst, pearl];
+  return [
+    domeGem(ROUND, DOME),
+    topaz,
+    domeGem(CUSHION, DOME),
+    domeGem(OVAL, DOME),
+    amethyst,
+    domeGem(LOZENGE, DOME),
+  ];
 }
 
 /**
  * What the gems reflect: a dark jeweller's studio with a few bright lamps.
- * Most facets pick up the dark and stay deep in colour, and the few that face
- * a lamp flash, which is what makes a cut stone look cut.
+ * The pearl, the prism and the board pick their highlights up from it; the
+ * smooth stones reflect the window in windowTexture instead.
  */
 function studioTexture() {
   const c = document.createElement("canvas");
@@ -377,33 +291,6 @@ function starTexture() {
 }
 
 /**
- * What the facets at the back of a stone send out to the eye: mostly bright
- * light, broken up by dark patches. A cut stone is a set of little mirrors
- * that return the light from above, and the dark patches are what make
- * neighbouring facets flash differently.
- */
-function brightTexture() {
-  const c = document.createElement("canvas");
-  c.width = 512;
-  c.height = 256;
-  const g = c.getContext("2d")!;
-  g.fillStyle = "#f4f4fa";
-  g.fillRect(0, 0, 512, 256);
-  // Patches placed by a fixed little generator, so every player sees the same stones.
-  let seed = 7;
-  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  for (let i = 0; i < 130; i++) {
-    const shade = Math.floor(10 + rnd() * 120);
-    g.fillStyle = `rgb(${shade},${shade},${shade + 12})`;
-    g.fillRect(rnd() * 512, rnd() * 256, 10 + rnd() * 34, 8 + rnd() * 26);
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.mapping = THREE.EquirectangularReflectionMapping;
-  return t;
-}
-
-/**
  * What the domed tops reflect: a dim room with one soft window up and to the
  * left and a faint fill light low on the right. On a smooth dome that makes a
  * single curved highlight, the way a polished stone shows a window.
@@ -414,16 +301,18 @@ function windowTexture() {
   c.height = 256;
   const g = c.getContext("2d")!;
   const room = g.createLinearGradient(0, 0, 0, 256);
-  room.addColorStop(0, "#3a3c52");
+  room.addColorStop(0, "#8088b8");
   room.addColorStop(0.6, "#14151f");
   room.addColorStop(1, "#08080c");
   g.fillStyle = room;
   g.fillRect(0, 0, 512, 256);
-  g.filter = "blur(4px)";
+  // A crisp window with a glazing bar: a hard-edged highlight is what glass
+  // and polished stone show, where a soft blob looks like sugar.
+  g.filter = "blur(1px)";
   g.fillStyle = "#ffffff";
-  g.beginPath();
-  g.roundRect(410, 60, 50, 36, 12);
-  g.fill();
+  g.fillRect(408, 56, 24, 40);
+  g.fillRect(436, 56, 24, 40);
+  g.filter = "blur(4px)";
   g.fillStyle = "#56608c";
   g.beginPath();
   g.roundRect(310, 160, 50, 22, 10);
@@ -690,7 +579,15 @@ class Particles {
     at: THREE.Vector3,
     color: THREE.Color,
     count: number,
-    { speed = 3, size = 0.3, life = 0.8, spread = 0.2, gravity = -4, drag = 2.5, boost = 1.5 } = {},
+    {
+      speed = 3,
+      size = 0.3,
+      life = 0.8,
+      spread = 0.2,
+      gravity = -4,
+      drag = 2.5,
+      boost = 1.5,
+    } = {},
   ) {
     for (let k = 0; k < count; k++) {
       const i = this.next;
@@ -753,7 +650,6 @@ export class GemScene {
   private boardGroup = new THREE.Group();
   private fx = new THREE.Group();
   private geometries = makeGeometries();
-  private domes = makeDomes();
   private prismGeometry = new THREE.IcosahedronGeometry(0.46, 0);
   private materials: THREE.MeshPhysicalMaterial[];
   private shellMaterials: THREE.MeshPhysicalMaterial[];
@@ -768,7 +664,12 @@ export class GemScene {
   private iceMats: THREE.MeshStandardMaterial[];
   private tiles!: THREE.InstancedMesh;
   private frame!: THREE.Mesh;
-  private frameMat = new THREE.MeshStandardMaterial({ color: 0x0b0f1d, roughness: 0.35, metalness: 0.6, emissive: 0x3020ff, emissiveIntensity: 0.15 });
+  private frameMat = new THREE.MeshBasicMaterial({
+    color: 0x05060f,
+    transparent: true,
+    opacity: 0.32,
+    depthWrite: false,
+  });
   private selRing: THREE.Mesh;
   private tweens: Tween[] = [];
   private last = performance.now();
@@ -794,13 +695,21 @@ export class GemScene {
   private resizeObserver: ResizeObserver;
   /** Gem colour at each cell, for effects that need it. */
   private cells: (Gem | null)[] = [];
-  private lightningLines: { line: THREE.Line; from: THREE.Vector3; to: THREE.Vector3; until: number }[] = [];
+  private lightningLines: {
+    line: THREE.Line;
+    from: THREE.Vector3;
+    to: THREE.Vector3;
+    until: number;
+  }[] = [];
 
   constructor(
     private host: HTMLElement,
     private options: SceneOptions,
   ) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      powerPreference: "high-performance",
+    });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.toneMapping = THREE.NeutralToneMapping;
     this.renderer.toneMappingExposure = 1;
@@ -816,25 +725,36 @@ export class GemScene {
     const studio = studioTexture();
     this.scene.environment = pmrem.fromEquirectangular(studio).texture;
     studio.dispose();
-    const bright = brightTexture();
-    const inside = pmrem.fromEquirectangular(bright).texture;
-    bright.dispose();
     const room = windowTexture();
     const windowLight = pmrem.fromEquirectangular(room).texture;
     room.dispose();
     pmrem.dispose();
 
-    const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+    const target = new THREE.WebGLRenderTarget(1, 1, {
+      type: THREE.HalfFloatType,
+      samples: 4,
+    });
     this.composer = new EffectComposer(this.renderer, target);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.4, 0.2, 1.6);
+    this.bloom = new UnrealBloomPass(
+      new THREE.Vector2(256, 256),
+      0.4,
+      0.2,
+      1.6,
+    );
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
 
     this.bg = new THREE.Mesh(
       new THREE.PlaneGeometry(2, 2),
       new THREE.ShaderMaterial({
-        uniforms: { time: { value: 0 }, world: { value: 0 }, cycle: { value: 0 }, fever: { value: 0 }, aspect: { value: 1 } },
+        uniforms: {
+          time: { value: 0 },
+          world: { value: 0 },
+          cycle: { value: 0 },
+          fever: { value: 0 },
+          aspect: { value: 1 },
+        },
         vertexShader: BG_VERTEX,
         fragmentShader: BG_FRAGMENT,
         depthWrite: false,
@@ -849,33 +769,32 @@ export class GemScene {
     // gem comes from the studio it reflects, which keeps them crisp and small.
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x6a5a8a, 2.8));
 
+    // The body of each stone: its colour, shaded by the glow and rim baked
+    // into the geometry. The diamond is clear, with a play of colour.
     this.materials = STONE_COLORS.map(
       (c, i) =>
         new THREE.MeshPhysicalMaterial({
           color: c,
           emissive: c,
-          emissiveIntensity: i === 5 ? 0.25 : 0.12,
-          envMap: i === 5 ? null : inside,
-          roughness: i === 5 ? 0.3 : 0.14,
-          metalness: i === 5 ? 0 : 0.92,
-          // A cut stone is see-through: what you see is the facets at the
-          // back (the pavilion), lit from inside, under a glassy top.
-          side: i === 5 ? THREE.FrontSide : THREE.BackSide,
-          clearcoat: 1,
+          emissiveIntensity: i === 5 ? 0.6 : 0.22,
+          // The diamond is see-through: the scene shows faintly through its middle.
+          transparent: i === 5,
+          opacity: i === 5 ? 0.72 : 1,
+          envMap: windowLight,
+          roughness: i === 5 ? 0.08 : 0.25,
+          metalness: 0,
+          clearcoat: i === 5 ? 1 : 0,
           clearcoatRoughness: 0.05,
-          iridescence: i === 5 ? 0.8 : 0,
+          iridescence: i === 5 ? 1 : 0,
           iridescenceIOR: 1.6,
-          envMapIntensity: i === 5 ? 3 : 1.05,
-          sheen: i === 5 ? 1 : 0,
+          envMapIntensity: i === 5 ? 1.2 : 0.3,
+          sheen: 0,
           sheenColor: new THREE.Color(0xffc0ff),
-          flatShading: false,
           vertexColors: true,
-          specularIntensity: 1,
-          ior: 2.2,
         }),
     );
-    // The glassy top of each stone: only its reflections and a veil of
-    // colour, added over the facets seen through it.
+    // The polished surface of each stone: only its reflections and a veil
+    // of colour, added over the body.
     this.shellMaterials = STONE_COLORS.map(
       (c) =>
         new THREE.MeshPhysicalMaterial({
@@ -886,8 +805,7 @@ export class GemScene {
           clearcoat: 1,
           clearcoatRoughness: 0.03,
           envMap: windowLight,
-          envMapIntensity: 1.5,
-          vertexColors: true,
+          envMapIntensity: 2.4,
           transparent: true,
           blending: THREE.AdditiveBlending,
           depthWrite: false,
@@ -901,7 +819,7 @@ export class GemScene {
       metalness: 0.2,
       iridescence: 1,
       iridescenceIOR: 2,
-      
+
       clearcoat: 1,
       flatShading: true,
       envMapIntensity: 2.5,
@@ -931,7 +849,11 @@ export class GemScene {
 
     this.selRing = new THREE.Mesh(
       new THREE.RingGeometry(0.46, 0.52, 48),
-      new THREE.MeshBasicMaterial({ color: new THREE.Color(2.5, 2.5, 2.5), transparent: true, toneMapped: false }),
+      new THREE.MeshBasicMaterial({
+        color: new THREE.Color(2.5, 2.5, 2.5),
+        transparent: true,
+        toneMapped: false,
+      }),
     );
     this.selRing.visible = false;
     this.selRing.position.z = -0.2;
@@ -965,9 +887,14 @@ export class GemScene {
         m.makeTranslation(p.x, p.y, -0.5);
         this.tiles.setMatrixAt(idx(x, y), m);
       }
+    // The cells are not drawn: the stones float over the scene on one soft veil.
+    this.tiles.visible = false;
     this.boardGroup.add(this.tiles);
-    this.frame = new THREE.Mesh(new RoundedBoxGeometry(SIZE + 0.5, SIZE + 0.5, 0.3, 4, 0.2), this.frameMat);
-    this.frame.position.z = -0.72;
+    this.frame = new THREE.Mesh(
+      new RoundedBoxGeometry(SIZE + 0.3, SIZE + 0.3, 0.02, 4, 0.5),
+      this.frameMat,
+    );
+    this.frame.position.z = -0.45;
     this.boardGroup.add(this.frame);
     this.paintTiles();
   }
@@ -988,27 +915,39 @@ export class GemScene {
     const turn = (this.worldCycle * 0.9) / (Math.PI * 2);
     const c = new THREE.Color();
     for (let y = 0; y < SIZE; y++)
-      for (let x = 0; x < SIZE; x++) this.tiles.setColorAt(idx(x, y), c.set((x + y) % 2 ? a : b).offsetHSL(turn, 0, 0));
+      for (let x = 0; x < SIZE; x++)
+        this.tiles.setColorAt(
+          idx(x, y),
+          c.set((x + y) % 2 ? a : b).offsetHSL(turn, 0, 0),
+        );
     this.tiles.instanceColor!.needsUpdate = true;
-    const edge = [0xff2bd6, 0x22d3ee, 0x8b5cf6, 0xffb86b, 0x40ffb0, 0xffb347, 0x9be15d, 0xff9ecf][this.worldIndex] ?? 0x3020ff;
-    this.frameMat.emissive.set(edge).offsetHSL(turn, 0, 0);
   }
 
   private makeView(gem: Gem, x: number, y: number): GemView {
     const group = new THREE.Group();
     const special = gem.special;
     const prism = special === "prism";
-    const color = prism ? new THREE.Color(1, 1, 1) : new THREE.Color(GEM_COLORS[gem.color]);
-    let material: THREE.Material = prism ? this.prismMaterial : this.materials[gem.color];
+    const color = prism
+      ? new THREE.Color(1, 1, 1)
+      : new THREE.Color(GEM_COLORS[gem.color]);
+    let material: THREE.Material = prism
+      ? this.prismMaterial
+      : this.materials[gem.color];
     if (special && !prism) {
       const m = this.materials[gem.color].clone();
       m.emissiveIntensity = 0.75;
       material = m;
     }
-    const body = new THREE.Mesh(prism ? this.prismGeometry : this.geometries[gem.color], material);
+    const body = new THREE.Mesh(
+      prism ? this.prismGeometry : this.geometries[gem.color],
+      material,
+    );
     group.add(body);
-    if (!prism && gem.color !== 5) {
-      const shell = new THREE.Mesh(this.domes[gem.color], this.shellMaterials[gem.color]);
+    if (!prism) {
+      const shell = new THREE.Mesh(
+        this.geometries[gem.color],
+        this.shellMaterials[gem.color],
+      );
       shell.userData.shared = true;
       shell.renderOrder = 2;
       body.add(shell);
@@ -1028,14 +967,26 @@ export class GemScene {
     let extra: THREE.Object3D | undefined;
     if (special === "row" || special === "col") {
       extra = new THREE.Group();
-      const barMat = new THREE.MeshBasicMaterial({ color: color.clone().lerp(new THREE.Color(1, 1, 1), 0.5).multiplyScalar(3), toneMapped: false });
+      const barMat = new THREE.MeshBasicMaterial({
+        color: color
+          .clone()
+          .lerp(new THREE.Color(1, 1, 1), 0.5)
+          .multiplyScalar(3),
+        toneMapped: false,
+      });
       for (const off of [-0.13, 0.13]) {
-        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.05, 0.05), barMat);
+        const bar = new THREE.Mesh(
+          new THREE.BoxGeometry(0.98, 0.05, 0.05),
+          barMat,
+        );
         bar.position.set(0, off, 0.3);
         extra.add(bar);
         for (const side of [-1, 1]) {
-          const tip = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.14, 8), barMat);
-          tip.rotation.z = -side * Math.PI / 2;
+          const tip = new THREE.Mesh(
+            new THREE.ConeGeometry(0.06, 0.14, 8),
+            barMat,
+          );
+          tip.rotation.z = (-side * Math.PI) / 2;
           tip.position.set(side * 0.52, off, 0.3);
           extra.add(tip);
         }
@@ -1044,9 +995,18 @@ export class GemScene {
       group.add(extra);
     } else if (special === "bomb") {
       extra = new THREE.Group();
-      const ringMat = new THREE.MeshBasicMaterial({ color: color.clone().lerp(new THREE.Color(1, 1, 1), 0.3).multiplyScalar(3.5), toneMapped: false });
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: color
+          .clone()
+          .lerp(new THREE.Color(1, 1, 1), 0.3)
+          .multiplyScalar(3.5),
+        toneMapped: false,
+      });
       for (let i = 0; i < 2; i++) {
-        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.03, 8, 40), ringMat);
+        const ring = new THREE.Mesh(
+          new THREE.TorusGeometry(0.5, 0.03, 8, 40),
+          ringMat,
+        );
         ring.rotation.x = i ? 1.1 : -1.1;
         extra.add(ring);
       }
@@ -1054,14 +1014,27 @@ export class GemScene {
     } else if (prism) {
       extra = new THREE.Mesh(
         new THREE.TorusGeometry(0.52, 0.025, 8, 48),
-        new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 3, 3), toneMapped: false }),
+        new THREE.MeshBasicMaterial({
+          color: new THREE.Color(3, 3, 3),
+          toneMapped: false,
+        }),
       );
       group.add(extra);
     }
     const p = world(x, y);
     group.position.copy(p);
     this.boardGroup.add(group);
-    const view: GemView = { gem, group, body, glow, extra, x, y, phase: Math.random() * Math.PI * 2, scale: 1 };
+    const view: GemView = {
+      gem,
+      group,
+      body,
+      glow,
+      extra,
+      x,
+      y,
+      phase: Math.random() * Math.PI * 2,
+      scale: 1,
+    };
     this.views.set(gem.id, view);
     return view;
   }
@@ -1076,12 +1049,18 @@ export class GemScene {
         o.geometry.dispose();
       }
     });
-    if (v.gem.special && v.gem.special !== "prism") (v.body.material as THREE.Material).dispose();
+    if (v.gem.special && v.gem.special !== "prism")
+      (v.body.material as THREE.Material).dispose();
     this.views.delete(id);
   }
 
   /** Shows a board at once, without animation. */
-  setBoard(cells: (Gem | null)[], ice: number[], worldIndex: number, worldCycle = 0) {
+  setBoard(
+    cells: (Gem | null)[],
+    ice: number[],
+    worldIndex: number,
+    worldCycle = 0,
+  ) {
     for (const id of [...this.views.keys()]) this.removeView(id);
     // A move still animating on the old board stops here.
     const pending = this.tweens;
@@ -1096,7 +1075,11 @@ export class GemScene {
       const target = v.group.position.clone();
       v.group.position.y += 9;
       const delay = (i % SIZE) * 0.03 + (SIZE - Math.floor(i / SIZE)) * 0.025;
-      this.tween(0.55, (k) => (v.group.position.y = target.y + 9 * (1 - easeOutBack(k))), delay);
+      this.tween(
+        0.55,
+        (k) => (v.group.position.y = target.y + 9 * (1 - easeOutBack(k))),
+        delay,
+      );
     });
     ice.forEach((n, i) => this.setIce(i, n));
     this.select(null);
@@ -1153,7 +1136,10 @@ export class GemScene {
 
   private cellAt(e: PointerEvent): { pos: Pos; at: THREE.Vector3 } | null {
     const rect = this.renderer.domElement.getBoundingClientRect();
-    const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+    const ndc = new THREE.Vector2(
+      ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      -((e.clientY - rect.top) / rect.height) * 2 + 1,
+    );
     this.raycaster.setFromCamera(ndc, this.camera);
     const at = new THREE.Vector3();
     if (!this.raycaster.ray.intersectPlane(this.plane, at)) return null;
@@ -1185,7 +1171,10 @@ export class GemScene {
 
   private onMove = (e: PointerEvent) => {
     const rect = this.renderer.domElement.getBoundingClientRect();
-    this.pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+    this.pointer.set(
+      ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      -((e.clientY - rect.top) / rect.height) * 2 + 1,
+    );
     if (!this.dragFrom || !this.inputOn) return;
     const hit = this.cellAt(e);
     if (!hit) return;
@@ -1193,7 +1182,10 @@ export class GemScene {
     const dy = hit.at.y - this.dragFrom.at.y;
     if (Math.max(Math.abs(dx), Math.abs(dy)) < 0.45) return;
     const from = this.dragFrom.pos;
-    const to = Math.abs(dx) > Math.abs(dy) ? { x: from.x + Math.sign(dx), y: from.y } : { x: from.x, y: from.y - Math.sign(dy) };
+    const to =
+      Math.abs(dx) > Math.abs(dy)
+        ? { x: from.x + Math.sign(dx), y: from.y }
+        : { x: from.x, y: from.y - Math.sign(dy) };
     this.dragFrom = null;
     if (to.x < 0 || to.y < 0 || to.x >= SIZE || to.y >= SIZE) return;
     this.select(null);
@@ -1212,7 +1204,12 @@ export class GemScene {
 
   // ------------------------------------------------------------- animation
 
-  private tween(dur: number, update: (k: number) => void, delay = 0, done?: () => void) {
+  private tween(
+    dur: number,
+    update: (k: number) => void,
+    delay = 0,
+    done?: () => void,
+  ) {
     update(0);
     this.tweens.push({ t: 0, dur, delay, update, done });
   }
@@ -1221,7 +1218,8 @@ export class GemScene {
   private wait(seconds: number) {
     return new Promise<void>((resolve, reject) => {
       this.tween(seconds, () => {}, 0, resolve);
-      this.tweens[this.tweens.length - 1].cancel = () => reject(new AnimationCancelled());
+      this.tweens[this.tweens.length - 1].cancel = () =>
+        reject(new AnimationCancelled());
     });
   }
 
@@ -1266,8 +1264,14 @@ export class GemScene {
       sfx.swap();
       const pa = world(a.x, a.y);
       const pb = world(b.x, b.y);
-      if (va) this.tween(0.18, (k) => va.group.position.lerpVectors(pa, pb, easeInOut(k)));
-      if (vb) this.tween(0.18, (k) => vb.group.position.lerpVectors(pb, pa, easeInOut(k)));
+      if (va)
+        this.tween(0.18, (k) =>
+          va.group.position.lerpVectors(pa, pb, easeInOut(k)),
+        );
+      if (vb)
+        this.tween(0.18, (k) =>
+          vb.group.position.lerpVectors(pb, pa, easeInOut(k)),
+        );
       await this.wait(0.19);
       const ia = idx(a.x, a.y);
       const ib = idx(b.x, b.y);
@@ -1276,7 +1280,14 @@ export class GemScene {
       if (vb) [vb.x, vb.y] = [a.x, a.y];
     }
     const multiplier = turn.inFever ? 2 : 1;
-    const big = !!turn.combo || turn.steps.some((s) => s.blasts.some((b) => b.kind === "wipe" || (b.kind === "prism" && b.targets.length > 6)));
+    const big =
+      !!turn.combo ||
+      turn.steps.some((s) =>
+        s.blasts.some(
+          (b) =>
+            b.kind === "wipe" || (b.kind === "prism" && b.targets.length > 6),
+        ),
+      );
     if (big) this.slowMotion(1.1);
     for (let i = 0; i < turn.steps.length; i++) {
       const step = turn.steps[i];
@@ -1288,7 +1299,10 @@ export class GemScene {
   }
 
   private slowMotion(seconds: number) {
-    this.slowUntil = Math.max(this.slowUntil, performance.now() / 1000 + seconds);
+    this.slowUntil = Math.max(
+      this.slowUntil,
+      performance.now() / 1000 + seconds,
+    );
   }
 
   private async playStep(step: Turn["steps"][number], multiplier: number) {
@@ -1314,7 +1328,9 @@ export class GemScene {
         const v = this.viewAt(this.cells, f);
         if (!v) continue;
         const from = v.group.position.clone();
-        this.tween(0.14, (k) => v.group.position.lerpVectors(from, to, easeInOut(k)));
+        this.tween(0.14, (k) =>
+          v.group.position.lerpVectors(from, to, easeInOut(k)),
+        );
       }
     }
     if (step.created.length) await this.wait(0.12);
@@ -1325,12 +1341,17 @@ export class GemScene {
     for (const blast of step.blasts) {
       this.playBlast(blast, t);
       const reach = blastCells(blast);
-      for (const i of reach) if (!clearDelay.has(i)) clearDelay.set(i, t + 0.06 + blastDelay(blast, i));
+      for (const i of reach)
+        if (!clearDelay.has(i))
+          clearDelay.set(i, t + 0.06 + blastDelay(blast, i));
       t += blast.kind === "prism" ? 0.18 : 0.09;
     }
     // How big this clear is, from 0 (a plain three) to 2: more gems and a
     // longer chain make everything below louder, wider and brighter.
-    const power = Math.min(2, Math.max(0, step.cleared.length - 3) / 8 + (step.chain - 1) * 0.3);
+    const power = Math.min(
+      2,
+      Math.max(0, step.cleared.length - 3) / 8 + (step.chain - 1) * 0.3,
+    );
     if (!step.blasts.length) sfx.pop(step.chain, step.cleared.length);
     if (power >= 0.3) sfx.boom(power);
 
@@ -1339,27 +1360,47 @@ export class GemScene {
     // rippling out from the middle of its line.
     const plain = step.cleared.filter((c) => !clearDelay.has(idx(c.x, c.y)));
     const ripple = this.matchBeams(plain);
-    if (plain.length) this.shake = Math.max(this.shake, 0.05 + 0.01 * plain.length);
+    if (plain.length)
+      this.shake = Math.max(this.shake, 0.05 + 0.01 * plain.length);
     if (step.cleared.length) this.shake = Math.max(this.shake, 0.22 * power);
     if (power >= 0.3) {
       // A shockwave from the middle of the clear, then more of everything as it grows.
       const mid = new THREE.Vector3();
       for (const c of step.cleared) mid.add(world(c.x, c.y));
       mid.divideScalar(step.cleared.length);
-      const tint = new THREE.Color(GEM_COLORS[Math.max(0, step.cleared[0].color)]);
-      this.tween(0.01, () => {}, 0.12, () => {
-        this.ring(mid, tint, 2 + 2.5 * power, 0.5 + 0.15 * power);
-        this.burst(mid, -1, Math.round(40 * power), { speed: 5 + 4 * power, life: 0.8, size: 0.26, boost: 1.4 });
-        if (power >= 0.7) {
-          this.ring(mid, new THREE.Color(1, 1, 1), 1.4 + 2 * power, 0.4);
-          this.flash(Math.min(0.5, 0.18 * power));
-        }
-        if (power >= 1.2) {
-          this.ring(mid, tint, 4 + 3 * power, 0.9);
-          this.burst(mid, -1, 90, { speed: 11, life: 1.3, size: 0.3, gravity: -6, drag: 1.4, boost: 1.6 });
-          this.slowMotion(0.3);
-        }
-      });
+      const tint = new THREE.Color(
+        GEM_COLORS[Math.max(0, step.cleared[0].color)],
+      );
+      this.tween(
+        0.01,
+        () => {},
+        0.12,
+        () => {
+          this.ring(mid, tint, 2.4 + 3 * power, 0.5 + 0.15 * power);
+          this.burst(mid, -1, Math.round(56 * power), {
+            speed: 5.5 + 4.5 * power,
+            life: 0.9,
+            size: 0.28,
+            boost: 1.5,
+          });
+          if (power >= 0.7) {
+            this.ring(mid, new THREE.Color(1, 1, 1), 1.4 + 2 * power, 0.4);
+            this.flash(Math.min(0.5, 0.18 * power));
+          }
+          if (power >= 1.2) {
+            this.ring(mid, tint, 4 + 3 * power, 0.9);
+            this.burst(mid, -1, 130, {
+              speed: 12,
+              life: 1.4,
+              size: 0.32,
+              gravity: -6,
+              drag: 1.4,
+              boost: 1.7,
+            });
+            this.slowMotion(0.3);
+          }
+        },
+      );
     }
 
     for (const c of step.cleared) {
@@ -1370,22 +1411,48 @@ export class GemScene {
       const delay = matched ? (ripple.get(i) ?? 0) : clearDelay.get(i)!;
       const start = v.scale;
       if (matched) {
-        this.tween(0.01, () => {}, delay, () => this.flare(v.group.position, c.color));
+        this.tween(
+          0.01,
+          () => {},
+          delay,
+          () => this.flare(v.group.position, c.color),
+        );
         this.tween(
           0.26,
           (k) => {
             // Swell with a quick wobble, then snap to nothing.
-            const swell = k < 0.55 ? 1 + 0.35 * easeOut(k / 0.55) : 1.35 * (1 - easeIn((k - 0.55) / 0.45));
+            const swell =
+              k < 0.55
+                ? 1 + 0.35 * easeOut(k / 0.55)
+                : 1.35 * (1 - easeIn((k - 0.55) / 0.45));
             v.scale = start * swell;
             v.body.rotation.z += 0.25;
           },
           delay,
           () => {
             const at = v.group.position;
-            this.ring(at, new THREE.Color(GEM_COLORS[Math.max(0, c.color)]), 0.95 + 0.5 * power, 0.35);
+            this.ring(
+              at,
+              new THREE.Color(GEM_COLORS[Math.max(0, c.color)]),
+              0.95 + 0.5 * power,
+              0.35,
+            );
             // Fast sparks, then heavier shards that fall away.
-            this.burst(at, c.color, Math.round(14 + 12 * power), { speed: 4.5 + 2.5 * power, size: 0.2, life: 0.5 + 0.2 * power, gravity: 0, boost: 1.3 });
-            this.burst(at, c.color, Math.round(10 + 8 * power), { speed: 2.6 + 1.5 * power, size: 0.3, life: 1, gravity: -11, drag: 1.2, boost: 1 });
+            this.burst(at, c.color, Math.round(18 + 16 * power), {
+              speed: 5 + 2.8 * power,
+              size: 0.22,
+              life: 0.55 + 0.2 * power,
+              gravity: 0,
+              boost: 1.4,
+            });
+            this.burst(at, c.color, Math.round(13 + 10 * power), {
+              speed: 2.8 + 1.6 * power,
+              size: 0.32,
+              life: 1.1,
+              gravity: -11,
+              drag: 1.2,
+              boost: 1.1,
+            });
             this.removeView(c.id);
           },
         );
@@ -1399,22 +1466,39 @@ export class GemScene {
         },
         delay,
         () => {
-          this.burst(v.group.position, c.color, Math.round((c.special ? 30 : 16) * (1 + 0.5 * power)), {
-            speed: (c.special ? 4.5 : 3) * (1 + 0.3 * power),
-          });
+          this.burst(
+            v.group.position,
+            c.color,
+            Math.round((c.special ? 30 : 16) * (1 + 0.5 * power)),
+            {
+              speed: (c.special ? 4.5 : 3) * (1 + 0.3 * power),
+            },
+          );
           this.removeView(c.id);
         },
       );
     }
     for (const ice of step.ice) {
       const i = idx(ice.x, ice.y);
-      this.tween(0.01, () => {}, clearDelay.get(i) ?? 0, () => {
-        this.setIce(i, ice.left);
-        this.shards(world(ice.x, ice.y));
-      });
+      this.tween(
+        0.01,
+        () => {},
+        clearDelay.get(i) ?? 0,
+        () => {
+          this.setIce(i, ice.left);
+          this.shards(world(ice.x, ice.y));
+        },
+      );
     }
     if (step.ice.length) sfx.ice();
-    const longest = Math.max(0, ...step.cleared.map((c) => clearDelay.get(idx(c.x, c.y)) ?? (ripple.get(idx(c.x, c.y)) ?? 0) + 0.08));
+    const longest = Math.max(
+      0,
+      ...step.cleared.map(
+        (c) =>
+          clearDelay.get(idx(c.x, c.y)) ??
+          (ripple.get(idx(c.x, c.y)) ?? 0) + 0.08,
+      ),
+    );
     await this.wait(longest + 0.2);
 
     // New specials pop in.
@@ -1424,7 +1508,14 @@ export class GemScene {
       const v = this.makeView(c.gem, c.x, c.y);
       v.scale = 0;
       this.tween(0.3, (k) => (v.scale = easeOutBack(k)));
-      this.ring(world(c.x, c.y), c.gem.special === "prism" ? new THREE.Color(1, 1, 1) : new THREE.Color(GEM_COLORS[c.gem.color]), 1.2, 0.4);
+      this.ring(
+        world(c.x, c.y),
+        c.gem.special === "prism"
+          ? new THREE.Color(1, 1, 1)
+          : new THREE.Color(GEM_COLORS[c.gem.color]),
+        1.2,
+        0.4,
+      );
     }
     if (step.created.length) sfx.made();
 
@@ -1433,7 +1524,11 @@ export class GemScene {
       const mid = new THREE.Vector3();
       for (const c of step.cleared) mid.add(world(c.x, c.y));
       mid.divideScalar(step.cleared.length);
-      this.floatText(`+${(step.score * multiplier).toLocaleString()}`, mid, step.chain > 1 ? "big" : "");
+      this.floatText(
+        `+${(step.score * multiplier).toLocaleString()}`,
+        mid,
+        step.chain > 1 ? "big" : "",
+      );
     }
     if (step.chain >= 2) this.banner(chainWord(step.chain), step.chain);
     // A word for a big clear on the swap's own match.
@@ -1472,7 +1567,9 @@ export class GemScene {
       }
       const dur = 0.16 + Math.sqrt(Math.max(drop, 0)) * 0.11;
       longest = Math.max(longest, dur);
-      this.tween(dur, (k) => view.group.position.lerpVectors(from, to, easeOutBounce(k)));
+      this.tween(dur, (k) =>
+        view.group.position.lerpVectors(from, to, easeOutBounce(k)),
+      );
     });
     this.cells = cells.map((g) => (g ? { ...g } : null));
     await this.wait(longest + 0.02);
@@ -1491,7 +1588,7 @@ export class GemScene {
       this.tween(0.7, (k) => {
         v.group.position.lerpVectors(from, to, easeInOut(k));
         v.group.position.z = Math.sin(k * Math.PI) * 1.5;
-        v.body.rotation.y = k * Math.PI * 2;
+        v.group.rotation.z = k < 1 ? k * Math.PI * 2 : 0;
       });
     });
     this.cells = cells.map((g) => (g ? { ...g } : null));
@@ -1501,8 +1598,16 @@ export class GemScene {
   /** The final celebration, after a win. */
   async celebrate() {
     for (let i = 0; i < 6; i++) {
-      const at = new THREE.Vector3((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 6, 0.5);
-      this.burst(at, Math.floor(Math.random() * 6), 50, { speed: 6, life: 1.4, gravity: -3 });
+      const at = new THREE.Vector3(
+        (Math.random() - 0.5) * 8,
+        (Math.random() - 0.5) * 6,
+        0.5,
+      );
+      this.burst(at, Math.floor(Math.random() * 6), 50, {
+        speed: 6,
+        life: 1.4,
+        gravity: -3,
+      });
       this.ring(at, new THREE.Color(GEM_COLORS[i % 6]), 3, 0.7);
       await this.wait(0.12);
     }
@@ -1511,50 +1616,100 @@ export class GemScene {
   // ---------------------------------------------------------------- effects
 
   private playBlast(blast: Blast, delay: number) {
-    this.tween(0.01, () => {}, delay, () => {
-      const at = world(blast.x, blast.y);
-      const color = blastColor(this.cells, blast);
-      switch (blast.kind) {
-        case "row":
-        case "col":
-          sfx.laser();
-          this.laser(blast, color);
-          this.shake = Math.max(this.shake, blast.width > 1 ? 0.22 : 0.1);
-          break;
-        case "bomb":
-          sfx.bomb();
-          this.ring(at, color, blast.radius * 1.6 + 1, 0.5);
-          this.ring(at, new THREE.Color(1, 1, 1), blast.radius * 1.2 + 0.8, 0.35);
-          this.burst(at, -1, 40 * blast.radius, { speed: 7 * blast.radius, life: 0.7 });
-          this.flash(0.25);
-          this.shake = Math.max(this.shake, 0.25 * blast.radius);
-          break;
-        case "prism":
-          sfx.prism();
-          for (const target of blast.targets) this.lightning(at, world(target.x, target.y), color);
-          this.ring(at, new THREE.Color(1, 1, 1), 2.2, 0.5);
-          this.shake = Math.max(this.shake, 0.12);
-          break;
-        case "wipe":
-          sfx.wipe();
-          this.flash(0.8);
-          for (let r = 0; r < 3; r++) this.ring(at, new THREE.Color(GEM_COLORS[r * 2]), 6 + r * 2, 0.8 + r * 0.2);
-          this.shake = Math.max(this.shake, 0.6);
-          this.slowMotion(1.4);
-          break;
-      }
-    });
+    this.tween(
+      0.01,
+      () => {},
+      delay,
+      () => {
+        const at = world(blast.x, blast.y);
+        const color = blastColor(this.cells, blast);
+        switch (blast.kind) {
+          case "row":
+          case "col":
+            sfx.laser();
+            this.laser(blast, color);
+            this.shake = Math.max(this.shake, blast.width > 1 ? 0.22 : 0.1);
+            break;
+          case "bomb":
+            sfx.bomb();
+            this.ring(at, color, blast.radius * 1.9 + 1.2, 0.55);
+            this.ring(
+              at,
+              new THREE.Color(1, 1, 1),
+              blast.radius * 1.2 + 0.8,
+              0.35,
+            );
+            this.burst(at, -1, 56 * blast.radius, {
+              speed: 7.5 * blast.radius,
+              life: 0.85,
+            });
+            this.flash(0.25);
+            this.shake = Math.max(this.shake, 0.3 * blast.radius);
+            break;
+          case "prism":
+            sfx.prism();
+            for (const target of blast.targets)
+              this.lightning(at, world(target.x, target.y), color);
+            this.ring(at, new THREE.Color(1, 1, 1), 2.2, 0.5);
+            this.shake = Math.max(this.shake, 0.12);
+            break;
+          case "wipe":
+            sfx.wipe();
+            this.flash(0.8);
+            for (let r = 0; r < 3; r++)
+              this.ring(
+                at,
+                new THREE.Color(GEM_COLORS[r * 2]),
+                6 + r * 2,
+                0.8 + r * 0.2,
+              );
+            this.shake = Math.max(this.shake, 0.6);
+            this.slowMotion(1.4);
+            break;
+        }
+      },
+    );
   }
 
-  private laser(blast: Extract<Blast, { kind: "row" | "col" }>, color: THREE.Color) {
+  private laser(
+    blast: Extract<Blast, { kind: "row" | "col" }>,
+    color: THREE.Color,
+  ) {
     const horizontal = blast.kind === "row";
     const length = SIZE + 3;
-    const hot = color.clone().lerp(new THREE.Color(1, 1, 1), 0.4).multiplyScalar(4);
-    const mat = new THREE.MeshBasicMaterial({ color: hot, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
-    const core = new THREE.MeshBasicMaterial({ color: new THREE.Color(6, 6, 6), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+    const hot = color
+      .clone()
+      .lerp(new THREE.Color(1, 1, 1), 0.4)
+      .multiplyScalar(4);
+    const mat = new THREE.MeshBasicMaterial({
+      color: hot,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    const core = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(6, 6, 6),
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false,
+    });
     const thick = 0.55 * blast.width;
-    const beam = new THREE.Mesh(new THREE.PlaneGeometry(horizontal ? length : thick, horizontal ? thick : length), mat);
-    const inner = new THREE.Mesh(new THREE.PlaneGeometry(horizontal ? length : thick * 0.25, horizontal ? thick * 0.25 : length), core);
+    const beam = new THREE.Mesh(
+      new THREE.PlaneGeometry(
+        horizontal ? length : thick,
+        horizontal ? thick : length,
+      ),
+      mat,
+    );
+    const inner = new THREE.Mesh(
+      new THREE.PlaneGeometry(
+        horizontal ? length : thick * 0.25,
+        horizontal ? thick * 0.25 : length,
+      ),
+      core,
+    );
     const p = world(blast.x, blast.y);
     const group = new THREE.Group();
     group.add(beam, inner);
@@ -1582,13 +1737,25 @@ export class GemScene {
     for (let k = 0; k < SIZE; k++) {
       for (let w = 0; w < blast.width; w++) {
         const off = w - (blast.width - 1) / 2;
-        const at = horizontal ? world(k, blast.y + off) : world(blast.x + off, k);
-        this.particles.emit(at, color, 6, { speed: 2.5, size: 0.3, life: 0.5, gravity: 0 });
+        const at = horizontal
+          ? world(k, blast.y + off)
+          : world(blast.x + off, k);
+        this.particles.emit(at, color, 6, {
+          speed: 2.5,
+          size: 0.3,
+          life: 0.5,
+          gravity: 0,
+        });
       }
     }
   }
 
-  private ring(at: THREE.Vector3, color: THREE.Color, radius: number, dur: number) {
+  private ring(
+    at: THREE.Vector3,
+    color: THREE.Color,
+    radius: number,
+    dur: number,
+  ) {
     const mat = new THREE.MeshBasicMaterial({
       color: color.clone().multiplyScalar(3),
       transparent: true,
@@ -1615,18 +1782,33 @@ export class GemScene {
     );
   }
 
-  private lightning(from: THREE.Vector3, to: THREE.Vector3, color: THREE.Color) {
+  private lightning(
+    from: THREE.Vector3,
+    to: THREE.Vector3,
+    color: THREE.Color,
+  ) {
     const mat = new THREE.LineBasicMaterial({
-      color: color.clone().lerp(new THREE.Color(1, 1, 1), 0.5).multiplyScalar(5),
+      color: color
+        .clone()
+        .lerp(new THREE.Color(1, 1, 1), 0.5)
+        .multiplyScalar(5),
       transparent: true,
       blending: THREE.AdditiveBlending,
       toneMapped: false,
     });
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(12 * 3), 3));
+    geo.setAttribute(
+      "position",
+      new THREE.BufferAttribute(new Float32Array(12 * 3), 3),
+    );
     const line = new THREE.Line(geo, mat);
     this.fx.add(line);
-    const entry = { line, from: from.clone().setZ(0.6), to: to.clone().setZ(0.6), until: 0 };
+    const entry = {
+      line,
+      from: from.clone().setZ(0.6),
+      to: to.clone().setZ(0.6),
+      until: 0,
+    };
     this.lightningLines.push(entry);
     this.jag(entry);
     this.tween(
@@ -1650,7 +1832,8 @@ export class GemScene {
     for (let i = 0; i < n; i++) {
       const k = i / (n - 1);
       const p = l.from.clone().lerp(l.to, k);
-      if (i > 0 && i < n - 1) p.addScaledVector(normal, (Math.random() - 0.5) * 0.45);
+      if (i > 0 && i < n - 1)
+        p.addScaledVector(normal, (Math.random() - 0.5) * 0.45);
       attr.setXYZ(i, p.x, p.y, p.z);
     }
     attr.needsUpdate = true;
@@ -1674,7 +1857,13 @@ export class GemScene {
       });
       const a = world(cells[0].x, cells[0].y);
       const b = world(cells[cells.length - 1].x, cells[cells.length - 1].y);
-      this.beam(a, b, new THREE.Color(GEM_COLORS[Math.max(0, color.get(idx(cells[0].x, cells[0].y))!)]));
+      this.beam(
+        a,
+        b,
+        new THREE.Color(
+          GEM_COLORS[Math.max(0, color.get(idx(cells[0].x, cells[0].y))!)],
+        ),
+      );
     };
     for (const [dx, dy] of [
       [1, 0],
@@ -1682,10 +1871,15 @@ export class GemScene {
     ]) {
       for (const c of cleared) {
         const same = (x: number, y: number) =>
-          x >= 0 && y >= 0 && x < SIZE && y < SIZE && color.get(idx(x, y)) === c.color;
+          x >= 0 &&
+          y >= 0 &&
+          x < SIZE &&
+          y < SIZE &&
+          color.get(idx(x, y)) === c.color;
         if (same(c.x - dx, c.y - dy)) continue; // not the start of a line
         const cells: Pos[] = [];
-        for (let x = c.x, y = c.y; same(x, y); x += dx, y += dy) cells.push({ x, y });
+        for (let x = c.x, y = c.y; same(x, y); x += dx, y += dy)
+          cells.push({ x, y });
         if (cells.length >= 3) line(cells);
       }
     }
@@ -1711,7 +1905,11 @@ export class GemScene {
       this.tween(
         0.32,
         (k) => {
-          mesh.scale.set(length * (0.6 + 0.5 * easeOut(Math.min(1, k * 3))), height * (1 - easeIn(k)) + 0.02, 1);
+          mesh.scale.set(
+            length * (0.6 + 0.5 * easeOut(Math.min(1, k * 3))),
+            height * (1 - easeIn(k)) + 0.02,
+            1,
+          );
           mat.opacity = 1 - k * k;
         },
         0,
@@ -1723,14 +1921,22 @@ export class GemScene {
       );
     };
     make(color.clone().multiplyScalar(1.5), 1.5);
-    make(color.clone().lerp(new THREE.Color(1, 1, 1), 0.6).multiplyScalar(1.3), 0.4);
+    make(
+      color
+        .clone()
+        .lerp(new THREE.Color(1, 1, 1), 0.6)
+        .multiplyScalar(1.3),
+      0.4,
+    );
   }
 
   /** A quick bloom of light on a gem as it pops. */
   private flare(at: THREE.Vector3, color: number) {
     const mat = new THREE.SpriteMaterial({
       map: this.glowTex,
-      color: new THREE.Color(GEM_COLORS[Math.max(0, color)]).lerp(new THREE.Color(1, 1, 1), 0.2).multiplyScalar(1.3),
+      color: new THREE.Color(GEM_COLORS[Math.max(0, color)])
+        .lerp(new THREE.Color(1, 1, 1), 0.2)
+        .multiplyScalar(1.3),
       transparent: true,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
@@ -1753,7 +1959,7 @@ export class GemScene {
     );
   }
 
-  /** A star winks on a random gem, the way a facet catches the light. */
+  /** A star winks on a random gem, the way a polished stone catches the light. */
   private glint() {
     const all = [...this.views.values()];
     const v = all[Math.floor(Math.random() * all.length)];
@@ -1790,13 +1996,27 @@ export class GemScene {
     );
   }
 
-  private burst(at: THREE.Vector3, color: number, count: number, opts: Parameters<Particles["emit"]>[3] = {}) {
-    const c = color < 0 ? new THREE.Color(1, 0.9, 0.7) : new THREE.Color(GEM_COLORS[color]);
+  private burst(
+    at: THREE.Vector3,
+    color: number,
+    count: number,
+    opts: Parameters<Particles["emit"]>[3] = {},
+  ) {
+    const c =
+      color < 0
+        ? new THREE.Color(1, 0.9, 0.7)
+        : new THREE.Color(GEM_COLORS[color]);
     this.particles.emit(at, c, count, opts);
   }
 
   private shards(at: THREE.Vector3) {
-    this.particles.emit(at, new THREE.Color(0.7, 0.9, 1), 14, { speed: 3.5, size: 0.22, life: 0.7, gravity: -9, boost: 1.6 });
+    this.particles.emit(at, new THREE.Color(0.7, 0.9, 1), 14, {
+      speed: 3.5,
+      size: 0.22,
+      life: 0.7,
+      gravity: -9,
+      boost: 1.6,
+    });
   }
 
   private flash(strength: number) {
@@ -1852,8 +2072,8 @@ export class GemScene {
     this.composer.setSize(w, h);
     this.bloom.resolution.set(w / 2, h / 2);
     this.camera.aspect = w / h;
-    // Fit the board (about 9.4 units with a margin) in both directions.
-    const fit = 9.6;
+    // Fit the board (8 units and its veil) in both directions, with a thin margin.
+    const fit = 9.0;
     const vFov = (this.camera.fov * Math.PI) / 180;
     const distH = fit / 2 / Math.tan(vFov / 2);
     const distW = fit / 2 / (Math.tan(vFov / 2) * this.camera.aspect);
@@ -1871,7 +2091,8 @@ export class GemScene {
     this.last = nowMs;
     const now = nowMs / 1000;
     const slow = now < this.slowUntil;
-    this.timeScale += ((slow ? 0.35 : 1) - this.timeScale) * Math.min(1, real * 10);
+    this.timeScale +=
+      ((slow ? 0.35 : 1) - this.timeScale) * Math.min(1, real * 10);
     const dt = real * this.timeScale;
     this.time += dt;
 
@@ -1897,9 +2118,13 @@ export class GemScene {
     for (const v of this.views.values()) {
       const t = this.time + v.phase;
       const hinted = this.hint?.some((p) => p.x === v.x && p.y === v.y);
-      const sel = this.selected && this.selected.x === v.x && this.selected.y === v.y;
+      const sel =
+        this.selected && this.selected.x === v.x && this.selected.y === v.y;
       v.body.rotation.x = Math.sin(t * 0.5) * 0.07;
-      v.body.rotation.y = v.gem.special === "prism" ? t * 1.5 : Math.sin(t * 0.4) * 0.09 + (sel ? t * 4 : 0);
+      v.body.rotation.y =
+        v.gem.special === "prism"
+          ? t * 1.5
+          : Math.sin(t * 0.4) * 0.09 + (sel ? Math.sin(t * 6) * 0.45 : 0);
       let s = v.scale * (sel ? 1.15 : 1);
       if (hinted) s *= 1 + Math.sin(this.time * 8) * 0.12;
       if (v.gem.special) s *= 1 + Math.sin(this.time * 5 + v.phase) * 0.05;
@@ -1912,10 +2137,13 @@ export class GemScene {
         }
       }
       const glow = v.glow.material as THREE.SpriteMaterial;
-      glow.opacity = v.gem.special ? 0.55 + 0.25 * Math.sin(t * 3) : this.fever * (0.5 + 0.3 * Math.sin(t * 4));
+      glow.opacity = v.gem.special
+        ? 0.55 + 0.25 * Math.sin(t * 3)
+        : this.fever * (0.5 + 0.3 * Math.sin(t * 4));
       v.glow.visible = glow.opacity > 0.02;
     }
-    if (this.prismMaterial) this.prismMaterial.emissive.setHSL((this.time * 0.25) % 1, 0.9, 0.55);
+    if (this.prismMaterial)
+      this.prismMaterial.emissive.setHSL((this.time * 0.25) % 1, 0.9, 0.55);
     this.selRing.rotation.z = this.time;
 
     for (const l of this.lightningLines) {
@@ -1931,8 +2159,10 @@ export class GemScene {
     u.time.value = this.time;
     u.fever.value = this.fever;
     this.bloom.strength = 0.4 + this.fever * 0.35;
-    this.frameMat.emissiveIntensity = 0.15 + this.fever * (0.8 + 0.4 * Math.sin(this.time * 6));
-    for (const m of this.materials) m.emissiveIntensity = 0.1 + this.fever * 0.2;
+    this.frameMat.opacity =
+      0.32 + this.fever * 0.08 * (1 + Math.sin(this.time * 6));
+    for (const m of this.materials)
+      m.emissiveIntensity = 0.22 + this.fever * 0.2;
 
     // Camera: a slight tilt, a touch of parallax, and shake.
     this.tilt.lerp(this.pointer, Math.min(1, real * 2));
@@ -1940,8 +2170,12 @@ export class GemScene {
     const sx = (Math.random() - 0.5) * this.shake;
     const sy = (Math.random() - 0.5) * this.shake;
     const d = this.baseDistance;
-    this.camera.position.set(this.tilt.x * 0.25 + sx, -d * 0.2 + this.tilt.y * 0.15 + sy, d);
-    this.camera.lookAt(sx * 0.5, -0.15 + sy * 0.5, 0);
+    this.camera.position.set(
+      this.tilt.x * 0.12 + sx,
+      this.tilt.y * 0.08 + sy,
+      d,
+    );
+    this.camera.lookAt(sx * 0.5, sy * 0.5, 0);
 
     this.particles.update(dt);
     if (this.time > this.nextGlint) {
@@ -1970,13 +2204,17 @@ export class GemScene {
 
 function blastCells(blast: Blast): number[] {
   const out: number[] = [];
-  const add = (x: number, y: number) => x >= 0 && y >= 0 && x < SIZE && y < SIZE && out.push(idx(x, y));
+  const add = (x: number, y: number) =>
+    x >= 0 && y >= 0 && x < SIZE && y < SIZE && out.push(idx(x, y));
   if (blast.kind === "row" || blast.kind === "col") {
     const half = (blast.width - 1) / 2;
     for (let o = -half; o <= half; o++)
-      for (let k = 0; k < SIZE; k++) blast.kind === "row" ? add(k, blast.y + o) : add(blast.x + o, k);
+      for (let k = 0; k < SIZE; k++)
+        blast.kind === "row" ? add(k, blast.y + o) : add(blast.x + o, k);
   } else if (blast.kind === "bomb") {
-    for (let y = -blast.radius; y <= blast.radius; y++) for (let x = -blast.radius; x <= blast.radius; x++) add(blast.x + x, blast.y + y);
+    for (let y = -blast.radius; y <= blast.radius; y++)
+      for (let x = -blast.radius; x <= blast.radius; x++)
+        add(blast.x + x, blast.y + y);
   } else if (blast.kind === "prism") {
     for (const t of blast.targets) add(t.x, t.y);
   } else for (let i = 0; i < SIZE * SIZE; i++) out.push(i);
@@ -1994,20 +2232,38 @@ function blastDelay(blast: Blast, i: number) {
 }
 
 function blastColor(cells: (Gem | null)[], blast: Blast) {
-  if (blast.kind === "prism") return new THREE.Color(GEM_COLORS[blast.color] ?? 0xffffff);
+  if (blast.kind === "prism")
+    return new THREE.Color(GEM_COLORS[blast.color] ?? 0xffffff);
   const g = cells[idx(blast.x, blast.y)];
   return new THREE.Color(g && g.color >= 0 ? GEM_COLORS[g.color] : 0xffffff);
 }
 
-const CHAIN_WORDS = ["", "", "Nice", "Great", "Brilliant", "Dazzling", "Radiant", "Unstoppable"];
+const CHAIN_WORDS = [
+  "",
+  "",
+  "Nice",
+  "Great",
+  "Brilliant",
+  "Dazzling",
+  "Radiant",
+  "Unstoppable",
+];
 /** The words of encouragement the game says aloud. */
-export const CHEERS = new Set([...CHAIN_WORDS.filter(Boolean), "Good!", "Awesome!", "Keep going!", "Round complete!"]);
+export const CHEERS = new Set([
+  ...CHAIN_WORDS.filter(Boolean),
+  "Good!",
+  "Awesome!",
+  "Keep going!",
+  "Round complete!",
+]);
 /** The banner for a chain; the game translates these words. */
-export const chainWord = (chain: number) => CHAIN_WORDS[Math.min(chain, CHAIN_WORDS.length - 1)];
+export const chainWord = (chain: number) =>
+  CHAIN_WORDS[Math.min(chain, CHAIN_WORDS.length - 1)];
 
 const easeIn = (k: number) => k * k;
 const easeOut = (k: number) => 1 - (1 - k) * (1 - k);
-const easeInOut = (k: number) => (k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2);
+const easeInOut = (k: number) =>
+  k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
 function easeOutBack(k: number) {
   const c1 = 1.70158;
   const c3 = c1 + 1;

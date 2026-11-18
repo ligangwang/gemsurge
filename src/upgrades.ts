@@ -5,8 +5,8 @@ import type { DingnGame, ShopItem } from "../sdk/dingn-sdk.js";
 import type { Special } from "./engine/board";
 import type { Boosts } from "./engine/session";
 
-export type UpgradeKind = "moves" | "blaster" | "bomb" | "prism" | "fever";
-export const UPGRADE_KINDS: UpgradeKind[] = ["moves", "blaster", "bomb", "prism", "fever"];
+export type UpgradeKind = "moves" | "blaster" | "bomb" | "prism" | "fever" | "undo";
+export const UPGRADE_KINDS: UpgradeKind[] = ["moves", "blaster", "bomb", "prism", "fever", "undo"];
 
 /** Each tier's price, matching game.json (dingn caps a price at 1,000). */
 export const PRICES: Record<UpgradeKind, number[]> = {
@@ -15,12 +15,14 @@ export const PRICES: Record<UpgradeKind, number[]> = {
   bomb: [120, 350, 700],
   prism: [400, 1000],
   fever: [100, 300, 600],
+  // One more undo a level after level 100; the first 100 levels have all three free.
+  undo: [100, 250, 500],
 };
 /** How much faster each Fever tier fills the meter. */
 export const FEVER_STEP = 0.15;
 
 export type Owned = Record<UpgradeKind, number>;
-export const NONE: Owned = { moves: 0, blaster: 0, bomb: 0, prism: 0, fever: 0 };
+export const NONE: Owned = { moves: 0, blaster: 0, bomb: 0, prism: 0, fever: 0, undo: 0 };
 
 export const upgradeId = (kind: UpgradeKind, tier: number) => `${kind}-${tier}`;
 
@@ -41,7 +43,7 @@ export function boostsFor(owned: Owned): Boosts {
   for (let i = 0; i < owned.blaster; i++) specials.push(i % 2 ? "col" : "row");
   for (let i = 0; i < owned.bomb; i++) specials.push("bomb");
   for (let i = 0; i < owned.prism; i++) specials.push("prism");
-  return { moves: owned.moves, specials, fever: 1 + owned.fever * FEVER_STEP };
+  return { moves: owned.moves, specials, fever: 1 + owned.fever * FEVER_STEP, undos: owned.undo };
 }
 
 /** The next tier to buy, or null when an upgrade is maxed out. */
@@ -88,6 +90,7 @@ export const UPGRADE_TITLES: Record<UpgradeKind, (tier: number) => { en: string;
   bomb: (t) => ({ en: `Start with ${t} bomb${t > 1 ? "s" : ""}`, zh: `开局带 ${t} 个炸弹` }),
   prism: (t) => ({ en: `Start with ${t} prism${t > 1 ? "s" : ""}`, zh: `开局带 ${t} 个棱镜` }),
   fever: (t) => ({ en: `Fever charge +${t * 15}%`, zh: `狂热充能 +${t * 15}%` }),
+  undo: (t) => ({ en: `${t} undo${t > 1 ? "s" : ""} a level after level 100`, zh: `100 关后每关撤回 ${t} 次` }),
 };
 
 export function shopManifest() {

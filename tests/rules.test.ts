@@ -83,7 +83,7 @@ test("owned upgrades become boosts", () => {
   );
   // prism-2 without prism-1 doesn't count.
   assert.deepEqual(owned, { ...NONE, moves: 2, bomb: 1, fever: 1 });
-  assert.deepEqual(boostsFor(owned), { moves: 2, specials: ["bomb"], fever: 1.15 });
+  assert.deepEqual(boostsFor(owned), { moves: 2, specials: ["bomb"], fever: 1.15, undos: 0 });
   assert.deepEqual(nextTier("moves", owned), { id: "moves-3", tier: 3, price: PRICES.moves[2] });
   assert.equal(nextTier("prism", { ...NONE, prism: 2 }), null);
   assert.equal(upgradeId("bomb", 3), "bomb-3");
@@ -230,4 +230,17 @@ test("generated ice levels each have their own mirrored shape", () => {
   }
   assert.ok(levels > 50);
   assert.ok(shapes.size > levels * 0.9, `${shapes.size} shapes in ${levels} levels`);
+});
+
+test("undo is free up to level 100, then an upgrade of one undo a tier", () => {
+  assert.equal(new Session(levelSpec(100)).undosLeft, 3);
+  assert.equal(new Session(levelSpec(101)).undosLeft, 0);
+  const two = boostsFor({ ...NONE, undo: 2 });
+  assert.equal(new Session(levelSpec(101), two).undosLeft, 2);
+  assert.equal(new Session(levelSpec(50), two).undosLeft, 3);
+  const s = new Session(levelSpec(101));
+  const [a, b] = findHint(s.board)!;
+  s.move(a, b);
+  assert.equal(s.canUndo, false);
+  assert.deepEqual(PRICES.undo, [100, 250, 500]);
 });

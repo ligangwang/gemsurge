@@ -16,7 +16,7 @@ in rounds of 10, across eight worlds. Play it at <https://dingn.com/play/gemsurg
 - **Fever**: chains, specials and combos fill the meter; Fever doubles points
   for 3 moves. Moves left when you win become blasters for a final **surge**.
 - **Rounds**: every 10 levels is a round. Finishing one holds a ceremony with a new title, Supernovas and coins, a lucky draw and a line of story; every 10th round is a milestone that pays more. The reward is shown ahead on the menu and on a round's last two levels.
-- **Undo**: take your last move back, up to 3 times a level.
+- **Undo**: take your last move back, up to 3 times a level. It is free up to level 100; after that each tier of the Undo upgrade gives one undo a level.
 - **Encouragement**: words such as Nice, Good and Awesome for chains and big clears, said aloud in a soft voice by the device's own speech (it varies by device; mute silences it).
 - **Levels**: 10,000 levels through eight worlds, a new one every 10 levels (Neon City, Deep Sea, Outer Space, Lantern Lake, Aurora Peaks, Golden Desert, Firefly Forest and Cloud Kingdom; they come round again in new colours after level 80; the first 30 levels are hand-made, the rest generated from them, each with its own mirrored ice shape, and no harder after level 1000), the first 100 eased with extra moves and lower targets, each with its
   own background. Goals are scores, gems of a colour, and ice
@@ -40,10 +40,10 @@ Gem Surge earns and spends dingn coins:
 - The daily board pays 10 coins once a day.
 - 19 badges (levels 5 to 1000, 3 stars, prisms, combos, Fever, chains of 5 and
   8, a board wipe, the daily board) pay what dingn gives their tier.
-- The **Upgrades** shop sells 16 permanent tiers (`src/upgrades.ts`, listed in
+- The **Upgrades** shop sells 19 permanent tiers (`src/upgrades.ts`, listed in
   `game.json`'s `shop`): extra moves (5 tiers, 60 to 800 coins), starting line
-  blasters (3), bombs (3), prisms (2, up to 1,000) and a faster Fever meter
-  (3). dingn asks the player to confirm each purchase. Upgrades don't apply
+  blasters (3), bombs (3), prisms (2, up to 1,000) a faster Fever meter
+  (3) and undos after level 100 (3, 100 to 500 coins). dingn asks the player to confirm each purchase. Upgrades don't apply
   to the daily board, so it stays fair.
 
 ## Develop
