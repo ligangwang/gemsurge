@@ -85,7 +85,19 @@ const note = (step: number, base = 523.25) =>
 
 // --- A spoken word of encouragement, in a soft, higher voice.
 
-const SOFT_VOICES = /female|woman|girl|ting-?ting|mei-?jia|sin-?ji|xiaoxiao|xiaoyi|huihui|yaoyao|samantha|karen|victoria|zira|aria|jenny|google/i;
+// Voices that sound young and bright come first; any other woman's voice is next best.
+const GIRL_VOICES = /xiaoyi|xiaoxiao|xiaomeng|xiaoshuang|ting-?ting|mei-?jia|sin-?ji|yaoyao|ana\b|jenny|aria|samantha|shelley|sandy|flo\b/i;
+const SOFT_VOICES = /female|woman|girl|huihui|karen|victoria|zira|moira|tessa|google/i;
+
+// Browsers load their voices late, so ask early: the first cheer then has them.
+if (typeof speechSynthesis !== "undefined") {
+  try {
+    speechSynthesis.getVoices();
+    speechSynthesis.addEventListener?.("voiceschanged", () => speechSynthesis.getVoices());
+  } catch {
+    // No speech here.
+  }
+}
 
 /** Says `text` aloud with the device's own speech, when it has one. */
 export function say(text: string, locale: string) {
@@ -94,12 +106,13 @@ export function say(text: string, locale: string) {
     const lang = locale.startsWith("zh") ? "zh" : "en";
     const voices = speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith(lang));
     const line = new SpeechSynthesisUtterance(text.replace(/[!！]/g, ""));
-    line.voice = voices.find((v) => SOFT_VOICES.test(v.name)) ?? voices[0] ?? null;
+    line.voice =
+      voices.find((v) => GIRL_VOICES.test(v.name)) ?? voices.find((v) => SOFT_VOICES.test(v.name)) ?? voices[0] ?? null;
     line.lang = lang === "zh" ? "zh-CN" : "en-US";
-    // A little higher and gentler than the default, but not a cartoon.
-    line.pitch = 1.35;
-    line.rate = 1;
-    line.volume = 0.7;
+    // A bright, girlish voice: clearly higher than the default and a touch quicker.
+    line.pitch = 1.65;
+    line.rate = 1.08;
+    line.volume = 1;
     speechSynthesis.cancel();
     speechSynthesis.speak(line);
   } catch {

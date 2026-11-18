@@ -26,16 +26,16 @@ afterEach(() => {
   setMuted(false);
 });
 
-test("cheers are spoken in a soft, slightly higher voice in the player's language", () => {
+test("cheers are spoken in a bright, girlish voice in the player's language", () => {
   const speak = speech();
   say("Awesome!", "en");
   say("太棒了！", "zh-CN");
   const [en, zh] = speak.mock.calls.map((c) => c[0] as Line);
   expect(en).toMatchObject({ text: "Awesome", lang: "en-US", voice: voices[1] });
   expect(zh).toMatchObject({ text: "太棒了", lang: "zh-CN", voice: voices[3] });
-  expect(en.pitch).toBeGreaterThan(1);
-  expect(en.pitch).toBeLessThan(1.5);
-  expect(en.volume).toBeLessThan(1);
+  expect(en.pitch).toBeGreaterThan(1.5);
+  expect(en.pitch).toBeLessThanOrEqual(2);
+  expect(en.volume).toBe(1);
 });
 
 test("mute silences the voice, and a device without speech is fine", () => {
