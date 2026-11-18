@@ -1,12 +1,13 @@
 // The level ladder, the daily board, and what a play pays.
 import { SIZE } from "./engine/board";
-import { below, hashSeed, shuffleInPlace } from "./engine/random";
+import { below, hashSeed, next, shuffleInPlace } from "./engine/random";
 import type { Goal, LevelSpec } from "./engine/session";
 
 export type World = { id: string; name: string };
 /**
- * Ten levels a world, each with its own look in the scene. The worlds come
- * round again after the last, in new colours each time (see `worldCycle`).
+ * Ten levels a world (one round, see rounds.ts), each with its own look in
+ * the scene. The worlds come round again after the last, in new colours each
+ * time (see `worldCycle`).
  */
 export const WORLDS: World[] = [
   { id: "neon", name: "Neon City" },
@@ -86,7 +87,9 @@ const TABLE: [number, number, string][] = [
 
 /** The first levels are laid out by hand in TABLE; the rest are generated from them. */
 export const HAND_MADE = TABLE.length;
-export const LAST_LEVEL = 1000;
+export const LAST_LEVEL = 10000;
+/** Generated levels get harder up to this level, then hold steady. */
+const HARDEST = 1000;
 
 /**
  * A generated level: one of the hand-made levels from the second world on,
@@ -97,7 +100,7 @@ export const LAST_LEVEL = 1000;
 function generated(n: number): [number, number, string] {
   const rng = { seed: hashSeed(`gemsurge-generated-${n}`) };
   const [moves, colors, text] = TABLE[LEVELS_PER_WORLD + below(rng, HAND_MADE - LEVELS_PER_WORLD)];
-  const far = (n - HAND_MADE) / (LAST_LEVEL - HAND_MADE);
+  const far = Math.min(1, (n - HAND_MADE) / (HARDEST - HAND_MADE));
   const swap = shuffleInPlace(rng, Array.from({ length: colors }, (_, i) => i));
   const grow = (target: number, step: number) => Math.round((target * (1 + 0.3 * far)) / step) * step;
   const goals = text.split(" ").map((part) => {
@@ -109,6 +112,40 @@ function generated(n: number): [number, number, string] {
     return part;
   });
   return [moves - Math.round(2 * far), colors, goals.join(" ")];
+}
+
+/**
+ * A generated level's own ice: a new four-way mirrored shape for each level,
+ * with as many cells and as many double layers as the hand-made pattern it
+ * stands in for, so it is about as hard.
+ */
+function variedIce(level: number, pattern: number[]): number[] {
+  const rng = { seed: hashSeed(`gemsurge-ice-${level}`) };
+  const half = SIZE / 2;
+  const cells = Math.max(1, Math.round(pattern.filter((n) => n > 0).length / 4));
+  const doubles = Math.round(pattern.filter((n) => n > 1).length / 4);
+  // Grow a shape in the top-left quarter, one touching cell at a time; the
+  // rest of the board mirrors it. The board's rim is the hardest place to
+  // match, so the shape leans away from it.
+  const rim = (q: number) => q % half === 0 || q < half;
+  const order = shuffleInPlace(rng, Array.from({ length: half * half }, (_, i) => i));
+  const quarter = [order.find((q) => !rim(q))!];
+  while (quarter.length < cells) {
+    const touching = order.filter(
+      (q) =>
+        !quarter.includes(q) &&
+        quarter.some((p) => Math.abs((p % half) - (q % half)) + Math.abs(Math.floor(p / half) - Math.floor(q / half)) === 1),
+    );
+    quarter.push((next(rng) < 0.7 && touching.find((q) => !rim(q))) || touching[0]);
+  }
+  const ice = new Array(SIZE * SIZE).fill(0);
+  quarter.slice(0, cells).forEach((q, rank) => {
+    const x = q % half;
+    const y = Math.floor(q / half);
+    for (const [cx, cy] of [[x, y], [SIZE - 1 - x, y], [x, SIZE - 1 - y], [SIZE - 1 - x, SIZE - 1 - y]])
+      ice[cy * SIZE + cx] = rank < doubles ? 2 : 1;
+  });
+  return ice;
 }
 
 function parseGoals(text: string): { goals: Goal[]; ice?: string } {
@@ -160,7 +197,7 @@ export function levelSpec(level: number): LevelSpec {
     moves,
     colors,
     goals,
-    ice: iceCells(ice),
+    ice: ice && n > HAND_MADE ? variedIce(n, iceCells(ice)) : iceCells(ice),
     stars: [base, two, three],
     seed: hashSeed(`gemsurge-level-${n}`),
   };
@@ -200,7 +237,7 @@ export const NOVA_COST = 100;
  */
 export function coinsFor(level: number, stars: number) {
   if (!stars) return 0;
-  const world = Math.floor((level - 1) / LEVELS_PER_WORLD);
-  return Math.min(10, 2 + stars * 2 + world);
+  const tens = Math.floor((level - 1) / 10);
+  return Math.min(10, 2 + stars * 2 + tens);
 }
 export const DAILY_COINS = 10;

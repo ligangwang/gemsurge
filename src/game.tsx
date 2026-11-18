@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findHint, type Pos } from "./engine/board";
 import { FEVER_MOVES, Session, type Goal, type Turn } from "./engine/session";
-import { AnimationCancelled, GEM_OUTLINES, GemScene, STONE_CSS } from "./gem-scene";
+import { AnimationCancelled, CHEERS, GEM_OUTLINES, GemScene, STONE_CSS } from "./gem-scene";
 import { useDingn, useLocale } from "./dingn";
 import {
   COLOR_NAMES,
@@ -32,7 +32,8 @@ import {
   type Owned,
   type UpgradeKind,
 } from "./upgrades";
-import { setMuted, sfx } from "./sound";
+import { say, setMuted, sfx } from "./sound";
+import { DRAW, ROUND, draw, isMilestone, lastLevelOf, rewardOf, roundOf, storyOf, titleOf, worldOf } from "./rounds";
 
 type Screen = "menu" | "play" | "end" | "shop";
 type EndInfo = {
@@ -45,6 +46,16 @@ type EndInfo = {
   best: boolean;
   /** Supernovas this play charged. */
   novas: number;
+  /** Set when this win finished a round for the first time. */
+  round: RoundEnd | null;
+};
+type RoundEnd = {
+  round: number;
+  /** Supernovas from the round's reward and from the lucky draw. */
+  novas: number;
+  luck: { index: number; novas: number };
+  /** dingn coins paid for the round, or null when signed out. */
+  coins: number | null;
 };
 
 const HINT_AFTER = 7000;
@@ -123,6 +134,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       return;
     }
     s.setBannerTranslator(t);
+    s.setBannerListener((text, shown) => CHEERS.has(text) && say(shown, sdk.locale));
     scene.current = s;
     // A board to look at behind the menu.
     const demo = new Session(levelSpec(Math.max(1, top)));
@@ -203,6 +215,8 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       }
       sc.setFever(s.fever);
       unlock(playBadges(s));
+      // A nudge when the moves are running low.
+      if (pair && !s.outcome && s.movesLeft === 5) sc.banner("Keep going!", 2);
       rerender();
       if (s.outcome) await finish(s);
     } catch (err) {
@@ -216,6 +230,20 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
         armHint();
       }
     }
+  }
+
+  /** Takes the last move back, so the player can choose again. */
+  function undo() {
+    const s = session.current;
+    const sc = scene.current;
+    if (!s || !sc || busy.current || screen !== "play" || !s.undo()) return;
+    sc.setBoard(s.board.cells, s.board.ice, s.spec.world, worldCycle(s.spec.level));
+    sc.setFever(s.fever);
+    sc.setInput(true);
+    setShown(s.score);
+    sfx.swap();
+    armHint();
+    rerender();
   }
 
   async function finish(s: Session) {
@@ -259,7 +287,15 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     let best = false;
     let coins = 0;
     let note = "";
+    let round: RoundEnd | null = null;
     if (level > 0) {
+      // The first win on a round's last level finishes the round.
+      if (won && level % ROUND === 0 && !next.stars[level - 1]) {
+        const prize = rewardOf(roundOf(level));
+        const luck = draw(Math.random());
+        next.novasWon += prize.novas + luck.novas;
+        round = { round: roundOf(level), novas: prize.novas, luck, coins: null };
+      }
       best = s.score > next.best[level - 1];
       next.stars[level - 1] = Math.max(next.stars[level - 1], stars);
       next.best[level - 1] = Math.max(next.best[level - 1], s.score);
@@ -300,8 +336,24 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
         }
       }
     }
+    if (round && signedIn) {
+      // dingn pays at most 10 coins a call.
+      let paidForRound = 0;
+      for (let left = rewardOf(round.round).coins; left > 0; left -= 10) {
+        try {
+          paidForRound += (await sdk.rewards.earn(Math.min(10, left))).coins;
+        } catch {
+          break;
+        }
+      }
+      round.coins = paidForRound;
+    }
     if (!show) return;
-    setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: paid, note, best, novas: charged });
+    setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: paid, note, best, novas: charged, round });
+    if (round) {
+      scene.current?.banner("Round complete!", 6);
+      sfx.fanfare();
+    }
     if (charged) setTimeout(() => sfx.fever(), 900);
     setScreen("end");
     stars && [1, 2, 3].slice(0, stars).forEach((n, i) => setTimeout(() => sfx.star(n), 300 + i * 250));
@@ -390,11 +442,22 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
           novas={novas(saved)}
           charge={novaCharge(saved)}
           onNova={() => play(null)}
+          onUndo={undo}
           canNova={screen === "play" && !s.outcome}
         />
       )}
 
-      {screen === "end" && end && s && (
+      {screen === "end" && end && s && end.round && (
+        <RoundPanel
+          end={end}
+          round={end.round}
+          onNext={() => start(Math.min(s.spec.level + 1, LAST_LEVEL))}
+          onMenu={toMenu}
+          last={s.spec.level >= LAST_LEVEL}
+        />
+      )}
+
+      {screen === "end" && end && s && !end.round && (
         <EndPanel
           end={end}
           session={s}
@@ -445,8 +508,12 @@ function Menu(props: {
   const { t } = useLocale();
   const sdk = useDingn();
   const { saved, top } = props;
-  // The map shows three worlds at a time, starting on the page with the next level to play.
+  // The map shows three rounds (worlds) at a time, starting on the page with the next level to play.
   const WORLDS_A_PAGE = 3;
+  const round = roundOf(props.nextLevel);
+  const title = titleOf(round);
+  const cleared = top - (round - 1) * ROUND;
+  const finished = top >= LAST_LEVEL;
   const PAGE = WORLDS_A_PAGE * LEVELS_PER_WORLD;
   const pages = Math.ceil(LAST_LEVEL / PAGE);
   const [page, setPage] = useState(() => Math.min(pages - 1, Math.floor((props.nextLevel - 1) / PAGE)));
@@ -481,6 +548,26 @@ function Menu(props: {
             </button>
           </p>
         )}
+        <div className="gem-round" aria-label={t("Your round")}>
+          <p className="round-title">
+            <span className="medal" aria-hidden>
+              🏅
+            </span>
+            {t(title.name)}
+            {title.numeral}
+          </p>
+          <p className="round-progress">
+            {t("Round {0}", String(round))} · {Math.max(0, cleared)} / {ROUND}
+          </p>
+          <div className="round-bar" aria-hidden>
+            <div className="fill" style={{ width: `${(Math.max(0, cleared) / ROUND) * 100}%` }} />
+          </div>
+          {!finished && (
+            <p className="round-next">
+              {t("Finish level {0} to win:", String(lastLevelOf(round)))} <RoundPrize round={round} />
+            </p>
+          )}
+        </div>
       </header>
       <section className="gem-worlds" aria-label={t("Levels")}>
         <div className="gem-pager">
@@ -499,7 +586,9 @@ function Menu(props: {
           if (first + wi * LEVELS_PER_WORLD > LAST_LEVEL) return null;
           return (
           <div key={wi} className={`gem-world world-${w.id}`}>
-            <h3>{t(w.name)}</h3>
+            <h3>
+              {t("Round {0}", String(page * WORLDS_A_PAGE + wi + 1))} · {t(w.name)}
+            </h3>
             <div className="gem-levels">
               {Array.from({ length: LEVELS_PER_WORLD }, (_, k) => {
                 const n = first + wi * LEVELS_PER_WORLD + k;
@@ -567,6 +656,7 @@ function Hud(props: {
   charge: number;
   canNova: boolean;
   onNova: () => void;
+  onUndo: () => void;
 }) {
   const { t } = useLocale();
   const s = props.session;
@@ -633,6 +723,11 @@ function Hud(props: {
             </span>
           </div>
         ))}
+        {spec.level > 0 && lastLevelOf(roundOf(spec.level)) - spec.level <= 1 && (
+          <p className="goal-note round-note">
+            {t("Finish level {0} to win:", String(lastLevelOf(roundOf(spec.level))))} <RoundPrize round={roundOf(spec.level)} />
+          </p>
+        )}
         {spec.allMoves && <p className="goal-note">{t("Use all {0} moves. Everyone gets this board today.", String(spec.moves))}</p>}
       </div>
       <div className={`hud-fever${s.fever ? " on" : ""}`}>
@@ -641,6 +736,11 @@ function Hud(props: {
           <div className="fill" style={{ width: `${(s.fever ? s.feverMoves / FEVER_MOVES : s.meter) * 100}%` }} />
         </div>
       </div>
+      {spec.level > 0 && (
+        <button className="secondary-button hud-undo" disabled={!props.canNova || !s.canUndo} onClick={props.onUndo}>
+          ↶ {t("Undo")} ×{s.undosLeft}
+        </button>
+      )}
       {spec.level > 0 && (
         <div className="hud-nova">
           <button className="button nova" disabled={!props.canNova || props.novas < 1} onClick={props.onNova}>
@@ -668,6 +768,7 @@ function Hud(props: {
           <li>{t("Swap two specials together for a bigger blast.")}</li>
           <li>{t("Chains and blasts fill the Fever meter: Fever doubles your points for 3 moves.")}</li>
           <li>{t("Moves left at the end turn into blasters for a final surge.")}</li>
+          <li>{t("Undo takes your last move back, up to 3 times a level.")}</li>
           <li>{t("Every 100 coins you earn by playing charge a Supernova, which clears the whole board.")}</li>
         </ul>
       </details>
@@ -725,6 +826,11 @@ function EndPanel(props: {
             <span className="coin" aria-hidden /> {t("+{0} coins", String(end.coins))}
           </p>
         )}
+        {won && !daily && s.spec.level % ROUND === ROUND - 1 && (
+          <p className="end-nova">
+            {t("One more level finishes the round!")} <RoundPrize round={roundOf(s.spec.level)} />
+          </p>
+        )}
         {end.novas > 0 && <p className="end-nova">✹ {t("Supernova charged! Use it on any level.")}</p>}
         {end.note &&
           (end.note === "Sign in to earn coins and badges" ? (
@@ -746,6 +852,99 @@ function EndPanel(props: {
           {!won && props.signedIn && (
             <button className="secondary-button" onClick={props.onShop}>
               {t("Get upgrades")}
+            </button>
+          )}
+          <button className="secondary-button" onClick={props.onMenu}>
+            {t("Menu")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------- round
+
+/** What finishing a round wins, in a line: the next title, Supernovas, a draw and the next world. */
+function RoundPrize({ round }: { round: number }) {
+  const { t } = useLocale();
+  const next = titleOf(round + 1);
+  const prize = rewardOf(round);
+  return (
+    <span className="round-prize">
+      🏅 {t(next.name)}
+      {next.numeral} · ✹ ×{prize.novas} · {t("a lucky draw")} · {t(worldOf(round + 1).name)}
+      {prize.milestone ? ` · ${t("milestone bonus")}` : ""}
+    </span>
+  );
+}
+
+/** The ceremony for finishing a round: a new title, the reward, the draw and a line of the story. */
+function RoundPanel(props: { end: EndInfo; round: RoundEnd; last: boolean; onNext: () => void; onMenu: () => void }) {
+  const { t } = useLocale();
+  const { end, round } = props;
+  const title = titleOf(round.round + 1);
+  const milestone = isMilestone(round.round);
+  // The draw spins for a moment before it lands.
+  const [landed, setLanded] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setLanded(true);
+      sfx.star(3);
+    }, 2200);
+    return () => clearTimeout(timer);
+  }, []);
+  return (
+    <div className="gem-end round-end" role="dialog" aria-label={t("Round complete!")}>
+      <div className={`gem-panel round-panel${milestone ? " milestone" : ""}`}>
+        <div className="round-rays" aria-hidden />
+        <p className="eyebrow">
+          {t("Level {0}", String(lastLevelOf(round.round)))} · {end.score.toLocaleString()}
+        </p>
+        <h2>{milestone ? t("Milestone! Round {0} complete!", String(round.round)) : t("Round {0} complete!", String(round.round))}</h2>
+        <div className="end-stars" aria-label={t("{0} stars", String(end.stars))}>
+          {[1, 2, 3].map((n) => (
+            <span key={n} className={n <= end.stars ? "on" : ""} style={{ animationDelay: `${0.25 * n}s` }}>
+              ★
+            </span>
+          ))}
+        </div>
+        <p className="round-new">{t("New title")}</p>
+        <p className="round-rank">
+          🏅 {t(title.name)}
+          {title.numeral}
+        </p>
+        <ul className="round-rewards">
+          <li>
+            ✹ {t("Supernova")} ×{round.novas}
+          </li>
+          {round.coins !== null && round.coins > 0 && (
+            <li>
+              <span className="coin" aria-hidden /> {t("+{0} coins", String(round.coins + (end.coins ?? 0)))}
+            </li>
+          )}
+          <li className={`round-draw${landed ? " landed" : ""}`}>
+            🎁 {t("Lucky draw")}:{" "}
+            {landed ? (
+              <strong>
+                ✹ ×{round.luck.novas}
+                {round.luck.index === DRAW.length - 1 ? ` ${t("Jackpot!")}` : ""}
+              </strong>
+            ) : (
+              <span className="spinning">✹ ✹ ✹</span>
+            )}
+          </li>
+        </ul>
+        <p className="round-story">“{t(storyOf(round.round))}”</p>
+        {!props.last && (
+          <p className="round-next">
+            {t("Next")}: {t("Round {0}", String(round.round + 1))} · {t(worldOf(round.round + 1).name)}
+          </p>
+        )}
+        <div className="gem-actions">
+          {!props.last && (
+            <button className="button big" onClick={props.onNext}>
+              {t("Start round {0}", String(round.round + 1))}
             </button>
           )}
           <button className="secondary-button" onClick={props.onMenu}>

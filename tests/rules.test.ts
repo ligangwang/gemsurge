@@ -2,16 +2,17 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import game from "../game.json" with { type: "json" };
 import zh from "../src/zh-CN.json" with { type: "json" };
-import { SIZE } from "../src/engine/board";
+import { SIZE, findHint } from "../src/engine/board";
 import { Session } from "../src/engine/session";
 import { DAILY_COINS, HAND_MADE, LAST_LEVEL, WORLDS, LEVELS_PER_WORLD, coinsFor, dailySpec, levelSpec, worldCycle } from "../src/levels";
 import { DAILY, levelBadges, CHAIN_5, CHAIN_8, COMBO, FEVER, PRISM, THREE_STARS, WIPE } from "../src/badges";
 import { boostsFor, nextTier, NONE, ownedFrom, PRICES, shopManifest, upgradeId } from "../src/upgrades";
-import { novas, novaCharge, empty, highest, merge, parse } from "../src/save";
+import { BEST_KEPT, novas, novaCharge, empty, highest, merge, parse, store } from "../src/save";
+import { DRAW, ROUND, ROUNDS, STORY, TITLES, draw, isMilestone, lastLevelOf, rewardOf, roundOf, storyOf, titleOf, worldOf } from "../src/rounds";
 
 test("every level has goals it can meet", () => {
   assert.equal(HAND_MADE, 30);
-  assert.equal(LAST_LEVEL, 1000);
+  assert.equal(LAST_LEVEL, 10000);
   for (let n = 1; n <= LAST_LEVEL; n++) {
     const spec = levelSpec(n);
     assert.equal(spec.level, n);
@@ -142,4 +143,91 @@ test("a Supernova clears the whole board and costs no move", () => {
   assert.ok(s.iceLeft < ice);
   assert.ok(s.score > 0);
   assert.equal(s.novas, 1);
+});
+
+test("a full save of 10,000 levels fits in 16 KB and reads back", async () => {
+  const saved = { ...empty(), stars: new Array(LAST_LEVEL).fill(3), best: new Array(LAST_LEVEL).fill(123456), earned: 99999, novasWon: 40 };
+  let written: unknown = null;
+  const sdk = { player: { signedIn: false }, storage: { set: async (_: string, v: unknown) => void (written = v), get: async () => null }, progress: {} };
+  await store(sdk as never, saved);
+  assert.ok(JSON.stringify(written).length < 16000, `save is ${JSON.stringify(written).length} bytes`);
+  const back = parse(written as never);
+  assert.deepEqual(back.stars, saved.stars);
+  assert.equal(back.best[LAST_LEVEL - 1], 123456);
+  assert.equal(back.best[LAST_LEVEL - BEST_KEPT], 123456);
+  assert.equal(back.best[LAST_LEVEL - BEST_KEPT - 1], 0);
+  assert.equal(back.novasWon, 40);
+  // A short save keeps every best score, and an old save's list of stars still reads.
+  const short = { ...empty(), stars: [3, 2, ...new Array(LAST_LEVEL - 2).fill(0)], best: [900, 800, ...new Array(LAST_LEVEL - 2).fill(0)] };
+  await store(sdk as never, short);
+  assert.deepEqual(parse(written as never).best.slice(0, 3), [900, 800, 0]);
+  assert.deepEqual(parse({ stars: [3, 1], best: [50, 40] }).best.slice(0, 2), [50, 40]);
+});
+
+test("rounds: ten levels each, a title, a reward and a story line", () => {
+  assert.equal(ROUND, 10);
+  assert.equal(ROUNDS, 1000);
+  assert.equal(roundOf(1), 1);
+  assert.equal(roundOf(10), 1);
+  assert.equal(roundOf(11), 2);
+  assert.equal(lastLevelOf(3), 30);
+  assert.equal(TITLES.length, 25);
+  assert.deepEqual(titleOf(1), { name: "Novice Traveller", numeral: "" });
+  assert.deepEqual(titleOf(25), { name: "Grand Master", numeral: "" });
+  assert.deepEqual(titleOf(26), { name: "Novice Traveller", numeral: " II" });
+  assert.deepEqual(titleOf(1000), { name: "Grand Master", numeral: " XL" });
+  assert.equal(worldOf(1).id, "neon");
+  assert.equal(worldOf(4).id, levelSpec(31).world === 3 ? "lake" : "");
+  // Every 100 levels is a milestone, which pays more.
+  assert.equal(isMilestone(10), true);
+  assert.equal(isMilestone(9), false);
+  assert.ok(rewardOf(10).novas > rewardOf(9).novas);
+  assert.ok(rewardOf(10).coins > rewardOf(9).coins);
+  assert.ok(rewardOf(40).novas > rewardOf(4).novas);
+  assert.ok(Math.abs(DRAW.reduce((sum, d) => sum + d.chance, 0) - 1) < 1e-9);
+  assert.equal(draw(0).novas, 1);
+  assert.equal(draw(0.999).novas, 5);
+  for (let round = 1; round <= ROUNDS; round++) assert.ok(storyOf(round));
+  for (const text of [...TITLES, ...STORY, storyOf(100), storyOf(101), storyOf(102)])
+    assert.ok((zh as Record<string, string>)[text], `no Chinese for "${text}"`);
+});
+
+test("a move can be taken back three times a level", () => {
+  const s = new Session(levelSpec(1));
+  assert.equal(s.canUndo, false);
+  for (let n = 0; n < 4; n++) {
+    const before = { cells: JSON.stringify(s.board.cells), moves: s.movesLeft, score: s.score };
+    const [a, b] = findHint(s.board)!;
+    s.move(a, b);
+    assert.equal(s.movesLeft, before.moves - 1);
+    if (n < 3) {
+      assert.equal(s.undo(), true);
+      assert.deepEqual(
+        { cells: JSON.stringify(s.board.cells), moves: s.movesLeft, score: s.score },
+        before,
+      );
+      assert.equal(s.undosLeft, 2 - n);
+      assert.equal(s.undo(), false, "only the last move comes back");
+    } else assert.equal(s.undo(), false, "the fourth undo is refused");
+  }
+});
+
+test("generated ice levels each have their own mirrored shape", () => {
+  const shapes = new Set<string>();
+  let levels = 0;
+  for (let n = 31; n <= 400; n++) {
+    const ice = levelSpec(n).ice;
+    if (!ice.some((c) => c > 0)) continue;
+    levels++;
+    shapes.add(ice.join(""));
+    for (let i = 0; i < ice.length; i++) {
+      const x = i % 8;
+      const y = Math.floor(i / 8);
+      assert.equal(ice[i], ice[y * 8 + (7 - x)]);
+      assert.equal(ice[i], ice[(7 - y) * 8 + x]);
+    }
+    assert.deepEqual(levelSpec(n).ice, ice, "the same level is always the same shape");
+  }
+  assert.ok(levels > 50);
+  assert.ok(shapes.size > levels * 0.9, `${shapes.size} shapes in ${levels} levels`);
 });
