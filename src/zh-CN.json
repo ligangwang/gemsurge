@@ -22,11 +22,9 @@
   "Score": "分数",
   "Collect {0}": "收集{0}",
   "Ruby": "红宝石",
-  "Topaz": "黄玉",
   "Emerald": "祖母绿",
   "Sapphire": "蓝宝石",
   "Amethyst": "紫水晶",
-  "Pearl": "珍珠",
   "Break the ice": "打碎冰块",
   "Use all {0} moves. Everyone gets this board today.": "用完全部 {0} 步。今天每个人拿到的都是这个棋盘。",
   "Fever": "狂热",
@@ -168,5 +166,9 @@
   "Awesome!": "太棒了！",
   "Keep going!": "加油！",
   "Undo": "撤回",
-  "Undo takes your last move back, up to 3 times a level.": "撤回可以收回上一步，每关最多 3 次。"
+  "Undo takes your last move back, up to 3 times a level. After level 100 it is an upgrade you buy with coins.": "撤回可以收回上一步，每关最多 3 次。100 关以后需要用金币在升级里购买。",
+  "Undo is free up to level 100. After that, each tier gives one undo a level.": "前 100 关免费撤回。100 关以后，每升一级每关多 1 次撤回。",
+  "Buy Undo in Upgrades to use it after level 100.": "100 关以后，在“升级”里购买撤回才能使用。",
+  "Gold": "黄金",
+  "Diamond": "钻石"
 }

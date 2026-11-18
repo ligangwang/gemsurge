@@ -3,7 +3,7 @@
 // behind them all.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findHint, type Pos } from "./engine/board";
-import { FEVER_MOVES, Session, type Goal, type Turn } from "./engine/session";
+import { FEVER_MOVES, FREE_UNDO_LEVELS, Session, type Goal, type Turn } from "./engine/session";
 import { AnimationCancelled, CHEERS, GEM_OUTLINES, GemScene, STONE_CSS } from "./gem-scene";
 import { useDingn, useLocale } from "./dingn";
 import {
@@ -741,6 +741,9 @@ function Hud(props: {
           ↶ {t("Undo")} ×{s.undosLeft}
         </button>
       )}
+      {spec.level > FREE_UNDO_LEVELS && !props.owned.undo && (
+        <p className="hud-note">{t("Buy Undo in Upgrades to use it after level 100.")}</p>
+      )}
       {spec.level > 0 && (
         <div className="hud-nova">
           <button className="button nova" disabled={!props.canNova || props.novas < 1} onClick={props.onNova}>
@@ -768,7 +771,7 @@ function Hud(props: {
           <li>{t("Swap two specials together for a bigger blast.")}</li>
           <li>{t("Chains and blasts fill the Fever meter: Fever doubles your points for 3 moves.")}</li>
           <li>{t("Moves left at the end turn into blasters for a final surge.")}</li>
-          <li>{t("Undo takes your last move back, up to 3 times a level.")}</li>
+          <li>{t("Undo takes your last move back, up to 3 times a level. After level 100 it is an upgrade you buy with coins.")}</li>
           <li>{t("Every 100 coins you earn by playing charge a Supernova, which clears the whole board.")}</li>
         </ul>
       </details>
@@ -964,6 +967,7 @@ const UPGRADE_TEXT: Record<UpgradeKind, { name: string; what: string }> = {
   bomb: { name: "Bombs", what: "Every level starts with a bomb on the board: one more a tier." },
   prism: { name: "Prisms", what: "Every level starts with a prism on the board: one more a tier." },
   fever: { name: "Fever charge", what: "The Fever meter fills 15% faster a tier." },
+  undo: { name: "Undo", what: "Undo is free up to level 100. After that, each tier gives one undo a level." },
 };
 
 function Shop(props: {

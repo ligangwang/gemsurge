@@ -537,3 +537,5 @@
 
 .hud-undo { width: 100%; margin-top: 14px; }
 .hud-undo:disabled { opacity: 0.45; }
+.hud-note { margin: 8px 0 0; font-size: 13px; opacity: 0.7; }
+.icon-undo { background: linear-gradient(135deg, #7fd0ff, #b84dff); clip-path: polygon(0 45%, 40% 5%, 40% 30%, 100% 30%, 100% 95%, 75% 95%, 75% 60%, 40% 60%, 40% 85%); }

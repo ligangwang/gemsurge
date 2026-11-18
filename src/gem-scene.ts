@@ -26,9 +26,9 @@ import type { Turn } from "./engine/session";
 import type { Cleared } from "./engine/board";
 import { sfx } from "./sound";
 
-export const GEM_COLORS = [0xff2450, 0xffc400, 0x18e070, 0x3a84ff, 0xb450ff, 0xfff0fa];
+export const GEM_COLORS = [0xff2450, 0xffc400, 0x12b060, 0x3a84ff, 0xb450ff, 0xe8f6ff];
 /** The stones themselves are a little deeper, since the light inside brightens them. */
-const STONE_COLORS = [0xe8102e, 0xffb000, 0x00b54c, 0x1458f0, 0x8a2ce8, 0xfff0fa];
+const STONE_COLORS = [0xe8102e, 0xffb000, 0x067a3c, 0x1458f0, 0x8a2ce8, 0xf2faff];
 /** CSS versions for the HUD. */
 export const GEM_CSS = GEM_COLORS.map((c) => `#${c.toString(16).padStart(6, "0")}`);
 /** The stones' own colours, for pictures of them outside the scene. */
@@ -76,128 +76,41 @@ export class AnimationCancelled extends Error {
 
 // --------------------------------------------------------------- geometry
 
-type Cut = {
-  /** The girdle: the gem's outline seen from the front, anticlockwise. */
-  outline: THREE.Vector2[];
-  /** How far the flat top (the table) is shrunk from the outline. */
-  table: number;
-  /** Height of the crown above the girdle and depth of the pavilion below it. */
-  crown: number;
-  pavilion: number;
-  /**
-   * A brilliant cut turns the rings between table, girdle and point half a
-   * step, which makes kite and star facets. A step cut keeps them lined up,
-   * for the long terraces of an emerald cut.
-   */
-  brilliant: boolean;
-  /** A step cut ends in a ridge this long instead of a point. */
-  keel?: number;
-};
-
-/**
- * Cuts a gem: a table and crown facing the player, a thin girdle, and a
- * pavilion behind. Every facet is flat, so each catches the light on its own.
- * Only the pavilion is seen, through the smooth dome from domeGem.
- */
-function cutGem({ outline, table, crown, pavilion, brilliant, keel = 0 }: Cut) {
-  const n = outline.length;
-  const ring = (scale: number, z: number, half = false) =>
-    outline.map((p, i) => {
-      const q = half ? p.clone().add(outline[(i + 1) % n]).multiplyScalar(0.5) : p;
-      return new THREE.Vector3(q.x * scale, q.y * scale, z);
-    });
-  const top = ring(table, crown, brilliant);
-  const upper = ring(brilliant ? 0.8 : (1 + table) / 2, crown * (brilliant ? 0.6 : 0.55));
-  const girdle = ring(1, 0, brilliant);
-  const under = ring(1, -0.035, brilliant);
-  // Two rings down the pavilion, so the back of the stone breaks the light
-  // into many small facets.
-  const lower = ring(brilliant ? 0.74 : 0.78, -pavilion * 0.36);
-  const deep = ring(brilliant ? 0.42 : 0.5, -pavilion * 0.72, brilliant);
-  const point = (p: THREE.Vector3) =>
-    new THREE.Vector3(Math.sign(p.x) * Math.min(Math.abs(p.x), keel), 0, -pavilion);
-
-  const tris: THREE.Vector3[][] = [];
-  const centre = new THREE.Vector3(0, 0, crown);
-  for (let i = 0; i < n; i++) tris.push([centre, top[i], top[(i + 1) % n]]);
-  // Joins two rings. When `b` sits half a step round from `a`, the band is a
-  // zigzag of triangles; otherwise it is a row of four-sided facets.
-  const band = (a: THREE.Vector3[], b: THREE.Vector3[], offset: -1 | 0 | 1) => {
-    for (let i = 0; i < n; i++) {
-      const j = (i + 1) % n;
-      if (offset === 0) tris.push([a[i], a[j], b[j]], [a[i], b[j], b[i]]);
-      else if (offset === 1) tris.push([a[i], a[j], b[i]], [a[j], b[j], b[i]]);
-      else tris.push([b[i], b[j], a[j]], [a[i], b[i], a[j]]);
-    }
-  };
-  if (brilliant) {
-    band(upper, top, 1);
-    band(upper, girdle, 1);
-    band(girdle, under, 0);
-    band(lower, under, 1);
-    band(lower, deep, 1);
-  } else {
-    band(top, upper, 0);
-    band(upper, girdle, 0);
-    band(girdle, under, 0);
-    band(under, lower, 0);
-    band(lower, deep, 0);
-  }
-  for (let i = 0; i < n; i++) tris.push([deep[i], deep[(i + 1) % n], point(deep[i])], [deep[(i + 1) % n], point(deep[(i + 1) % n]), point(deep[i])]);
-
-  // Wind every facet to face outwards, and drop the slivers a keel leaves.
-  const positions: number[] = [];
-  const shades: number[] = [];
-  const mid = new THREE.Vector3(0, 0, (crown - pavilion) / 2);
-  const normal = new THREE.Vector3();
-  const out = new THREE.Vector3();
-  for (const [a, b, c] of tris) {
-    normal.subVectors(b, a).cross(out.subVectors(c, a));
-    if (normal.lengthSq() < 1e-10) continue;
-    out.copy(a).add(b).add(c).divideScalar(3).sub(mid);
-    const [p, q, r] = normal.dot(out) < 0 ? [a, c, b] : [a, b, c];
-    positions.push(p.x, p.y, p.z, q.x, q.y, q.z, r.x, r.y, r.z);
-    // Light bounces around inside a cut stone, so neighbouring facets are
-    // never the same brightness. The table is the brightest.
-    const onTable = a.z === crown && b.z === crown && c.z === crown;
-    // Facets deep in the stone are brighter than those at its rim, which
-    // rounds the stone off towards its edge.
-    const depth = Math.min(1, Math.max(0, -(a.z + b.z + c.z) / 3 / pavilion));
-    const shade = onTable ? 1.25 : [0.82, 1.08, 0.92, 1.18, 0.86, 1.0][(shades.length / 9) % 6 | 0] * (0.72 + 0.4 * depth);
-    for (let k = 0; k < 9; k++) shades.push(shade);
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  g.setAttribute("color", new THREE.Float32BufferAttribute(shades, 3));
-  g.computeVertexNormals();
-  return g;
-}
-
-/** Points round a shape whose radius at each angle comes from `radius`. */
-const outlineOf = (count: number, radius: (angle: number) => number, turn = 0) =>
-  Array.from({ length: count }, (_, i) => {
-    const a = (i / count) * Math.PI * 2 + turn;
-    return new THREE.Vector2(Math.cos(a), Math.sin(a)).multiplyScalar(radius(a));
-  });
-
 /** A rounded box shape (a superellipse) `w` by `h` across; a higher `power` is squarer. */
 const cushion = (w: number, h: number, power: number) => (a: number) =>
   (Math.abs(Math.cos(a) / w) ** power + Math.abs(Math.sin(a) / h) ** power) ** (-1 / power);
 
 /**
- * The polished top of a stone: a smooth dome over the outline, like the top
- * of a cabochon. It has no facets, so the light slides over it in one curve.
+ * A smooth polished stone (a cabochon): a dome over the outline with no
+ * facets, so the light slides over it in one curve. Its colour is deepest at
+ * the rim and under the highlight, and glows low on the right, where light
+ * that came in through the top gathers on its way out.
  */
 function domeGem(radius: (angle: number) => number, height: number, turn = 0) {
   const around = 72;
-  const rings = 12;
+  const rings = 14;
   const positions: number[] = [0, 0, height];
+  const shades: number[] = [];
+  // `edge` is 0 at the middle of the stone and 1 at its rim; the glow is a
+  // crescent low on the right, opposite the window the top reflects.
+  const shadeAt = (angle: number, edge: number) => {
+    const facing = Math.max(0, Math.cos(angle + Math.PI * 0.28));
+    // Light that came in at the top gathers into a bright crescent on its way
+    // out, and a thin line of it runs round the rim: that depth is what makes
+    // a stone read as a see-through gem and not as something opaque.
+    const glow = Math.exp(-((edge - 0.66) ** 2) / 0.045) * facing ** 2.2;
+    const rim = Math.exp(-((edge - 0.93) ** 2) / 0.004) * (0.25 + 0.75 * facing);
+    const shade = (0.3 + 2.3 * glow + 0.9 * rim) * (1 - 0.55 * edge ** 10);
+    shades.push(shade, shade, shade);
+  };
+  shadeAt(0, 0);
   for (let k = 1; k <= rings; k++) {
     const lean = (k / rings) * (Math.PI / 2);
     for (let i = 0; i < around; i++) {
       const a = (i / around) * Math.PI * 2 + turn;
-      const reach = radius(a) * Math.sin(lean);
+      const reach = radius(a) * Math.sin(lean) ** 0.75;
       positions.push(Math.cos(a) * reach, Math.sin(a) * reach, height * Math.cos(lean));
+      shadeAt(a, Math.sin(lean));
     }
   }
   const index: number[] = [];
@@ -212,33 +125,28 @@ function domeGem(radius: (angle: number) => number, height: number, turn = 0) {
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  g.setAttribute("color", new THREE.Float32BufferAttribute(new Float32Array(positions.length).fill(1), 3));
+  g.setAttribute("color", new THREE.Float32BufferAttribute(shades, 3));
   g.setIndex(index);
   g.computeVertexNormals();
   return g;
 }
 
+/** The diamond: a lozenge standing on its point, with rounded corners. */
+const LOZENGE = cushion(0.44, 0.47, 1.45);
+
 const ROUND = () => 0.45;
 /** A pear: round at the bottom, drawn up to a soft tip. */
 const PEAR = (a: number) => 0.33 * (1 + 0.5 * Math.max(0, Math.sin(a)) ** 3);
-const CUSHION = cushion(0.38, 0.47, 3.2);
-const OVAL = cushion(0.49, 0.37, 2);
+const CUSHION = cushion(0.385, 0.465, 3.2);
+const OVAL = cushion(0.465, 0.375, 2);
 /** A trillion with bowed sides and rounded corners. */
 const TRILLION = (a: number) => {
   const third = (Math.PI * 2) / 3;
   const fromSide = ((((a - Math.PI / 2) % third) + third) % third) - third / 2;
   const side = 0.33 / Math.cos(fromSide);
-  return (side ** -4 + 0.52 ** -4) ** (-1 / 4);
+  return (side ** -4 + 0.51 ** -4) ** (-1 / 4);
 };
 
-/** The domed tops of the five stones, in colour order (the pearl has none). */
-function makeDomes(): THREE.BufferGeometry[] {
-  const topaz = domeGem(PEAR, DOME);
-  topaz.translate(0, -0.07, 0);
-  const amethyst = domeGem(TRILLION, DOME);
-  amethyst.translate(0, -0.04, 0);
-  return [domeGem(ROUND, DOME), topaz, domeGem(CUSHION, DOME), domeGem(OVAL, DOME), amethyst];
-}
 /**
  * Each stone's outline as an SVG path in a box from -0.6 to 0.6, so the goals
  * can show the same shapes as the board.
@@ -249,7 +157,7 @@ export const GEM_OUTLINES = [
   [CUSHION, 0],
   [OVAL, 0],
   [TRILLION, -0.04],
-  [() => 0.38, 0],
+  [LOZENGE, 0],
 ].map(([radius, lift]) => {
   const points = Array.from({ length: 48 }, (_, i) => {
     const a = (i / 48) * Math.PI * 2;
@@ -259,50 +167,56 @@ export const GEM_OUTLINES = [
   return `M${points.join("L")}Z`;
 });
 
+/** How far a stone domes up from the board. */
 const DOME = 0.2;
 
 /**
- * Six cuts with six different outlines, so a gem reads by shape as well as
- * colour. Every outline is a smooth curve with no hard corners: round, pear,
- * cushion, oval, a soft trillion, and the pearl.
+ * Six smooth stones with six different outlines, so a gem reads by shape as
+ * well as colour: round, pear, cushion, oval, a soft trillion, and the diamond's lozenge.
  */
 function makeGeometries(): THREE.BufferGeometry[] {
-  const N = 24;
-  const ruby = cutGem({ outline: outlineOf(N, ROUND), table: 0.56, crown: 0.17, pavilion: 0.34, brilliant: true });
-  const topaz = cutGem({
-    outline: outlineOf(N, PEAR, Math.PI / N),
-    table: 0.5,
-    crown: 0.17,
-    pavilion: 0.3,
-    brilliant: true,
-  });
+  const topaz = domeGem(PEAR, DOME);
   topaz.translate(0, -0.07, 0);
-  const emerald = cutGem({
-    outline: outlineOf(N, CUSHION, Math.PI / N),
-    table: 0.52,
-    crown: 0.16,
-    pavilion: 0.3,
-    brilliant: false,
-    keel: 0.1,
-  });
-  const sapphire = cutGem({ outline: outlineOf(N, OVAL), table: 0.55, crown: 0.17, pavilion: 0.32, brilliant: true });
-  const amethyst = cutGem({
-    outline: outlineOf(N, TRILLION),
-    table: 0.5,
-    crown: 0.16,
-    pavilion: 0.3,
-    brilliant: true,
-  });
+  const amethyst = domeGem(TRILLION, DOME);
   amethyst.translate(0, -0.04, 0);
-  const pearl = new THREE.SphereGeometry(0.38, 32, 24);
-  pearl.setAttribute("color", new THREE.Float32BufferAttribute(new Float32Array(pearl.attributes.position.count * 3).fill(1), 3));
-  return [ruby, topaz, emerald, sapphire, amethyst, pearl];
+  return [domeGem(ROUND, DOME), topaz, domeGem(CUSHION, DOME), domeGem(OVAL, DOME), amethyst, domeGem(LOZENGE, DOME)];
 }
 
 /**
+ * The setting a stone sits in: a thin band of polished metal round its
+ * outline, as on a ring. It is what says "jewel" at a glance.
+ */
+function bezel(radius: (angle: number) => number, lift = 0) {
+  const around = 72;
+  const positions: number[] = [];
+  const at = (i: number, grow: number, z: number) => {
+    const a = (i / around) * Math.PI * 2;
+    const reach = radius(a) + grow;
+    return [Math.cos(a) * reach, Math.sin(a) * reach + lift, z];
+  };
+  for (let i = 0; i < around; i++) {
+    // The band's sloping top, then its outer wall.
+    const rows = [[-0.02, 0.075], [BEZEL, 0.045], [BEZEL, -0.05]];
+    for (let k = 0; k < 2; k++) {
+      const [g0, z0] = rows[k];
+      const [g1, z1] = rows[k + 1];
+      positions.push(...at(i, g0, z0), ...at(i, g1, z1), ...at(i + 1, g1, z1));
+      positions.push(...at(i, g0, z0), ...at(i + 1, g1, z1), ...at(i + 1, g0, z0));
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  g.computeVertexNormals();
+  return g;
+}
+/** How wide a setting's band is. */
+const BEZEL = 0.035;
+const makeBezels = () => [bezel(ROUND), bezel(PEAR, -0.07), bezel(CUSHION), bezel(OVAL), bezel(TRILLION, -0.04), bezel(LOZENGE)];
+
+/**
  * What the gems reflect: a dark jeweller's studio with a few bright lamps.
- * Most facets pick up the dark and stay deep in colour, and the few that face
- * a lamp flash, which is what makes a cut stone look cut.
+ * The pearl, the prism and the board pick their highlights up from it; the
+ * smooth stones reflect the window in windowTexture instead.
  */
 function studioTexture() {
   const c = document.createElement("canvas");
@@ -377,33 +291,6 @@ function starTexture() {
 }
 
 /**
- * What the facets at the back of a stone send out to the eye: mostly bright
- * light, broken up by dark patches. A cut stone is a set of little mirrors
- * that return the light from above, and the dark patches are what make
- * neighbouring facets flash differently.
- */
-function brightTexture() {
-  const c = document.createElement("canvas");
-  c.width = 512;
-  c.height = 256;
-  const g = c.getContext("2d")!;
-  g.fillStyle = "#f4f4fa";
-  g.fillRect(0, 0, 512, 256);
-  // Patches placed by a fixed little generator, so every player sees the same stones.
-  let seed = 7;
-  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  for (let i = 0; i < 130; i++) {
-    const shade = Math.floor(10 + rnd() * 120);
-    g.fillStyle = `rgb(${shade},${shade},${shade + 12})`;
-    g.fillRect(rnd() * 512, rnd() * 256, 10 + rnd() * 34, 8 + rnd() * 26);
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.mapping = THREE.EquirectangularReflectionMapping;
-  return t;
-}
-
-/**
  * What the domed tops reflect: a dim room with one soft window up and to the
  * left and a faint fill light low on the right. On a smooth dome that makes a
  * single curved highlight, the way a polished stone shows a window.
@@ -414,16 +301,18 @@ function windowTexture() {
   c.height = 256;
   const g = c.getContext("2d")!;
   const room = g.createLinearGradient(0, 0, 0, 256);
-  room.addColorStop(0, "#3a3c52");
+  room.addColorStop(0, "#8088b8");
   room.addColorStop(0.6, "#14151f");
   room.addColorStop(1, "#08080c");
   g.fillStyle = room;
   g.fillRect(0, 0, 512, 256);
-  g.filter = "blur(4px)";
+  // A crisp window with a glazing bar: a hard-edged highlight is what glass
+  // and polished stone show, where a soft blob looks like sugar.
+  g.filter = "blur(1px)";
   g.fillStyle = "#ffffff";
-  g.beginPath();
-  g.roundRect(410, 60, 50, 36, 12);
-  g.fill();
+  g.fillRect(408, 56, 24, 40);
+  g.fillRect(436, 56, 24, 40);
+  g.filter = "blur(4px)";
   g.fillStyle = "#56608c";
   g.beginPath();
   g.roundRect(310, 160, 50, 22, 10);
@@ -753,7 +642,8 @@ export class GemScene {
   private boardGroup = new THREE.Group();
   private fx = new THREE.Group();
   private geometries = makeGeometries();
-  private domes = makeDomes();
+  private bezels = makeBezels();
+  private bezelMaterial = new THREE.MeshStandardMaterial({ color: 0xffc040, emissive: 0x7a4a00, emissiveIntensity: 0.55, metalness: 1, roughness: 0.3, envMapIntensity: 2.2 });
   private prismGeometry = new THREE.IcosahedronGeometry(0.46, 0);
   private materials: THREE.MeshPhysicalMaterial[];
   private shellMaterials: THREE.MeshPhysicalMaterial[];
@@ -816,9 +706,6 @@ export class GemScene {
     const studio = studioTexture();
     this.scene.environment = pmrem.fromEquirectangular(studio).texture;
     studio.dispose();
-    const bright = brightTexture();
-    const inside = pmrem.fromEquirectangular(bright).texture;
-    bright.dispose();
     const room = windowTexture();
     const windowLight = pmrem.fromEquirectangular(room).texture;
     room.dispose();
@@ -849,33 +736,40 @@ export class GemScene {
     // gem comes from the studio it reflects, which keeps them crisp and small.
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x6a5a8a, 2.8));
 
-    this.materials = STONE_COLORS.map(
-      (c, i) =>
-        new THREE.MeshPhysicalMaterial({
+    // The body of each stone: its colour, shaded by the glow and rim baked
+    // into the geometry. The diamond is clear, with a play of colour.
+    this.materials = STONE_COLORS.map((c, i) =>
+      i === 1
+        ? // The yellow piece is solid gold: polished metal, lit by the studio.
+          new THREE.MeshPhysicalMaterial({
+            color: 0xffc23a,
+            emissive: 0xe8a018,
+            emissiveIntensity: 1.1,
+            metalness: 0.85,
+            roughness: 0.3,
+            envMapIntensity: 2.4,
+            clearcoat: 1,
+            clearcoatRoughness: 0.1,
+          })
+        : new THREE.MeshPhysicalMaterial({
           color: c,
           emissive: c,
-          emissiveIntensity: i === 5 ? 0.25 : 0.12,
-          envMap: i === 5 ? null : inside,
-          roughness: i === 5 ? 0.3 : 0.14,
-          metalness: i === 5 ? 0 : 0.92,
-          // A cut stone is see-through: what you see is the facets at the
-          // back (the pavilion), lit from inside, under a glassy top.
-          side: i === 5 ? THREE.FrontSide : THREE.BackSide,
-          clearcoat: 1,
+          emissiveIntensity: i === 5 ? 0.95 : 0.3,
+          envMap: windowLight,
+          roughness: i === 5 ? 0.08 : 0.25,
+          metalness: 0,
+          clearcoat: i === 5 ? 1 : 0,
           clearcoatRoughness: 0.05,
-          iridescence: i === 5 ? 0.8 : 0,
+          iridescence: i === 5 ? 1 : 0,
           iridescenceIOR: 1.6,
-          envMapIntensity: i === 5 ? 3 : 1.05,
-          sheen: i === 5 ? 1 : 0,
+          envMapIntensity: i === 5 ? 1.2 : 0.3,
+          sheen: 0,
           sheenColor: new THREE.Color(0xffc0ff),
-          flatShading: false,
           vertexColors: true,
-          specularIntensity: 1,
-          ior: 2.2,
         }),
     );
-    // The glassy top of each stone: only its reflections and a veil of
-    // colour, added over the facets seen through it.
+    // The polished surface of each stone: only its reflections and a veil
+    // of colour, added over the body.
     this.shellMaterials = STONE_COLORS.map(
       (c) =>
         new THREE.MeshPhysicalMaterial({
@@ -886,8 +780,7 @@ export class GemScene {
           clearcoat: 1,
           clearcoatRoughness: 0.03,
           envMap: windowLight,
-          envMapIntensity: 1.5,
-          vertexColors: true,
+          envMapIntensity: 2.4,
           transparent: true,
           blending: THREE.AdditiveBlending,
           depthWrite: false,
@@ -1007,11 +900,16 @@ export class GemScene {
     }
     const body = new THREE.Mesh(prism ? this.prismGeometry : this.geometries[gem.color], material);
     group.add(body);
-    if (!prism && gem.color !== 5) {
-      const shell = new THREE.Mesh(this.domes[gem.color], this.shellMaterials[gem.color]);
+    if (!prism) {
+      const shell = new THREE.Mesh(this.geometries[gem.color], this.shellMaterials[gem.color]);
       shell.userData.shared = true;
       shell.renderOrder = 2;
       body.add(shell);
+      if (gem.color !== 1) {
+        const setting = new THREE.Mesh(this.bezels[gem.color], this.bezelMaterial);
+        setting.userData.shared = true;
+        body.add(setting);
+      }
     }
     const glow = new THREE.Sprite(
       new THREE.SpriteMaterial({
@@ -1348,15 +1246,15 @@ export class GemScene {
       mid.divideScalar(step.cleared.length);
       const tint = new THREE.Color(GEM_COLORS[Math.max(0, step.cleared[0].color)]);
       this.tween(0.01, () => {}, 0.12, () => {
-        this.ring(mid, tint, 2 + 2.5 * power, 0.5 + 0.15 * power);
-        this.burst(mid, -1, Math.round(40 * power), { speed: 5 + 4 * power, life: 0.8, size: 0.26, boost: 1.4 });
+        this.ring(mid, tint, 2.4 + 3 * power, 0.5 + 0.15 * power);
+        this.burst(mid, -1, Math.round(56 * power), { speed: 5.5 + 4.5 * power, life: 0.9, size: 0.28, boost: 1.5 });
         if (power >= 0.7) {
           this.ring(mid, new THREE.Color(1, 1, 1), 1.4 + 2 * power, 0.4);
           this.flash(Math.min(0.5, 0.18 * power));
         }
         if (power >= 1.2) {
           this.ring(mid, tint, 4 + 3 * power, 0.9);
-          this.burst(mid, -1, 90, { speed: 11, life: 1.3, size: 0.3, gravity: -6, drag: 1.4, boost: 1.6 });
+          this.burst(mid, -1, 130, { speed: 12, life: 1.4, size: 0.32, gravity: -6, drag: 1.4, boost: 1.7 });
           this.slowMotion(0.3);
         }
       });
@@ -1384,8 +1282,8 @@ export class GemScene {
             const at = v.group.position;
             this.ring(at, new THREE.Color(GEM_COLORS[Math.max(0, c.color)]), 0.95 + 0.5 * power, 0.35);
             // Fast sparks, then heavier shards that fall away.
-            this.burst(at, c.color, Math.round(14 + 12 * power), { speed: 4.5 + 2.5 * power, size: 0.2, life: 0.5 + 0.2 * power, gravity: 0, boost: 1.3 });
-            this.burst(at, c.color, Math.round(10 + 8 * power), { speed: 2.6 + 1.5 * power, size: 0.3, life: 1, gravity: -11, drag: 1.2, boost: 1 });
+            this.burst(at, c.color, Math.round(18 + 16 * power), { speed: 5 + 2.8 * power, size: 0.22, life: 0.55 + 0.2 * power, gravity: 0, boost: 1.4 });
+            this.burst(at, c.color, Math.round(13 + 10 * power), { speed: 2.8 + 1.6 * power, size: 0.32, life: 1.1, gravity: -11, drag: 1.2, boost: 1.1 });
             this.removeView(c.id);
           },
         );
@@ -1523,11 +1421,11 @@ export class GemScene {
           break;
         case "bomb":
           sfx.bomb();
-          this.ring(at, color, blast.radius * 1.6 + 1, 0.5);
+          this.ring(at, color, blast.radius * 1.9 + 1.2, 0.55);
           this.ring(at, new THREE.Color(1, 1, 1), blast.radius * 1.2 + 0.8, 0.35);
-          this.burst(at, -1, 40 * blast.radius, { speed: 7 * blast.radius, life: 0.7 });
+          this.burst(at, -1, 56 * blast.radius, { speed: 7.5 * blast.radius, life: 0.85 });
           this.flash(0.25);
-          this.shake = Math.max(this.shake, 0.25 * blast.radius);
+          this.shake = Math.max(this.shake, 0.3 * blast.radius);
           break;
         case "prism":
           sfx.prism();
@@ -1753,7 +1651,7 @@ export class GemScene {
     );
   }
 
-  /** A star winks on a random gem, the way a facet catches the light. */
+  /** A star winks on a random gem, the way a polished stone catches the light. */
   private glint() {
     const all = [...this.views.values()];
     const v = all[Math.floor(Math.random() * all.length)];
@@ -1852,8 +1750,8 @@ export class GemScene {
     this.composer.setSize(w, h);
     this.bloom.resolution.set(w / 2, h / 2);
     this.camera.aspect = w / h;
-    // Fit the board (about 9.4 units with a margin) in both directions.
-    const fit = 9.6;
+    // Fit the board (8.5 units with its frame) in both directions, with a thin margin.
+    const fit = 8.8;
     const vFov = (this.camera.fov * Math.PI) / 180;
     const distH = fit / 2 / Math.tan(vFov / 2);
     const distW = fit / 2 / (Math.tan(vFov / 2) * this.camera.aspect);
@@ -1932,7 +1830,7 @@ export class GemScene {
     u.fever.value = this.fever;
     this.bloom.strength = 0.4 + this.fever * 0.35;
     this.frameMat.emissiveIntensity = 0.15 + this.fever * (0.8 + 0.4 * Math.sin(this.time * 6));
-    for (const m of this.materials) m.emissiveIntensity = 0.1 + this.fever * 0.2;
+    for (const m of this.materials) m.emissiveIntensity = 0.22 + this.fever * 0.2;
 
     // Camera: a slight tilt, a touch of parallax, and shake.
     this.tilt.lerp(this.pointer, Math.min(1, real * 2));
