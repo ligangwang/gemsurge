@@ -1020,7 +1020,7 @@ function Wheel({ turn, won }: { turn: number; won: number }) {
       aria-hidden
       style={{ transform: `rotate(${turn}deg)`, transitionDuration: `${SPIN_MS}ms` }}
     >
-      <circle r="103" fill="#ffe9a8" />
+      <circle r="100.5" fill="#120e26" stroke="#ffe9a8" strokeWidth="5" />
       {WHEEL.map((novas, i) => {
         const mid = (i + 0.5) * step;
         const [x, y] = at(mid, 78).split(" ");
