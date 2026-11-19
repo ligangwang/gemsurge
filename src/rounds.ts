@@ -128,3 +128,15 @@ export function draw(roll: number) {
   }
   return { index: 0, novas: DRAW[0].novas };
 }
+
+/**
+ * The wheel the draw is spun on: 20 equal slices, each holding a prize, so a
+ * prize's share of the wheel is its chance. The draw decides the prize; the
+ * wheel then stops on one of that prize's slices.
+ */
+export const WHEEL = [1, 2, 1, 3, 1, 2, 1, 2, 1, 5, 1, 2, 1, 3, 1, 2, 1, 2, 1, 3];
+/** A slice of the wheel holding `novas`; `roll` in [0, 1) picks among them. */
+export function sliceFor(novas: number, roll: number) {
+  const slices = WHEEL.flatMap((n, i) => (n === novas ? [i] : []));
+  return slices[Math.min(slices.length - 1, Math.floor(roll * slices.length))] ?? 0;
+}

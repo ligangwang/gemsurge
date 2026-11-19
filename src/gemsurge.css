@@ -527,13 +527,23 @@
 .round-new { margin: 10px 0 0; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #cdd2e0; }
 .round-rank { margin: 2px 0 10px; font-size: 34px; font-weight: 900; color: #ffd23f; text-shadow: 0 0 24px rgba(255, 200, 80, 0.7); animation: rank-in 0.9s 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
 @keyframes rank-in { from { transform: scale(0.2); opacity: 0; } }
-.round-rewards { list-style: none; margin: 0 auto; padding: 0; display: grid; gap: 6px; font-size: 17px; font-weight: 700; }
-.round-rewards li { animation: fade-in 0.5s 1s both; }
-.round-draw .spinning { display: inline-block; animation: draw-spin 0.35s linear infinite; color: #ffb347; }
-@keyframes draw-spin { 50% { transform: translateY(-4px) scale(1.15); opacity: 0.5; } }
-.round-draw.landed strong { color: #ffd23f; display: inline-block; animation: rank-in 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
+.round-rewards { list-style: none; margin: 0 auto; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 17px; font-weight: 700; line-height: 1.5; }
+.round-rewards li { flex: none; min-height: 1.5em; }
+.round-draw { margin: 14px auto 0; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.round-draw-title { margin: 0; font-size: 17px; font-weight: 800; color: #ffe9a8; }
+.wheel-box { position: relative; width: min(210px, 56vw); aspect-ratio: 1; filter: drop-shadow(0 0 18px rgba(255, 200, 100, 0.45)); }
+.wheel { display: block; width: 100%; height: 100%; transition: transform 4.2s cubic-bezier(0.12, 0.7, 0.12, 1); }
+.wheel text { fill: #fff; font-size: 17px; font-weight: 900; }
+.wheel text.hub { fill: #ffd23f; font-size: 20px; }
+.wheel g { transition: opacity 0.4s; }
+.wheel g.dim { opacity: 0.35; }
+.wheel-pin { position: absolute; left: 50%; top: -8px; width: 0; height: 0; margin-left: -10px; border: 10px solid transparent; border-top: 20px solid #ff5fa2; border-bottom: 0; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.5)); }
+.round-draw.spinning .wheel-pin { animation: pin-tick 0.18s ease-in-out infinite; transform-origin: 50% 0; }
+@keyframes pin-tick { 50% { transform: rotate(-14deg); } }
+.round-won { margin: 0; font-size: 19px; font-weight: 800; animation: rank-in 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
+.round-won strong { color: #ffd23f; }
 .round-story { margin: 14px 0 0; font-style: italic; color: #e6e9f5; }
-@media (prefers-reduced-motion: reduce) { .round-rays { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .round-rays, .round-draw.spinning .wheel-pin { animation: none; } }
 
 .hud-undo { width: 100%; margin-top: 14px; }
 .hud-undo:disabled { opacity: 0.45; }

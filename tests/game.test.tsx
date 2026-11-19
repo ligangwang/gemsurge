@@ -241,13 +241,17 @@ test("finishing a round's last level holds the ceremony: a new title, a reward a
   expect(screen.getByText("New title")).toBeTruthy();
   expect(screen.getAllByText(/Pebble Picker/).length).toBeGreaterThan(0);
   expect(screen.getByText(/Lucky draw/)).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Start round 2" })).toBeTruthy();
+  // The draw is the player's to spin, and the round goes on once it lands.
+  expect(screen.queryByRole("button", { name: "Start round 2" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Spin the wheel" }));
+  expect(await screen.findByRole("button", { name: "Start round 2" }, { timeout: 8000 })).toBeTruthy();
+  expect(screen.getByRole("status").textContent).toMatch(/You won.*Supernova ×\d/);
   const last = calls.save.mock.calls.at(-1)![0] as { novasWon: number };
   expect(last.novasWon).toBeGreaterThanOrEqual(2);
   // The level's own coins, then 10 more for the round.
   expect(calls.earn).toHaveBeenLastCalledWith(10);
   expect(calls.earn.mock.calls.length).toBeGreaterThanOrEqual(2);
-});
+}, 20000);
 
 test("undo takes the last move back, three times a level", async () => {
   play();
