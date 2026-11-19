@@ -128,6 +128,8 @@ test("a level plays to the end, saves and pays coins for a win", async () => {
   if (s.outcome === "won") {
     expect(await screen.findByText("Level complete!")).toBeTruthy();
     expect(calls.earn).toHaveBeenCalledWith(2 + s.stars * 2);
+    // Chain reactions are paid on top, in a call of their own.
+    if (s.chainCoins) expect(calls.earn).toHaveBeenCalledWith(s.chainCoins);
     expect(calls.save).toHaveBeenCalledWith(expect.objectContaining({ stars: String(s.stars) }));
     expect(screen.getByRole("button", { name: "Next level" })).toBeTruthy();
   } else {

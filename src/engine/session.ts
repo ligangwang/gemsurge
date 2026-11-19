@@ -43,6 +43,10 @@ export const NO_BOOSTS: Boosts = { moves: 0, specials: [], fever: 1 };
 /** Fever lasts this many moves and doubles their score. */
 export const FEVER_MOVES = 3;
 /** How many moves a play can take back. */
+/** Coins a chain reaction of this many clears in a row is worth: 2 is the first cascade. */
+export const chainCoinsFor = (chain: number) => (chain < 2 ? 0 : chain >= 5 ? 5 : chain - 1);
+/** The most a play's chain reactions can pay, which is also the most dingn pays in one go. */
+export const CHAIN_COIN_CAP = 10;
 export const UNDOS = 3;
 /** Up to this level every play has all its undos; after it they are an upgrade. */
 export const FREE_UNDO_LEVELS = 100;
@@ -75,6 +79,8 @@ export class Session {
   meter = 0;
   feverMoves = 0;
   bestChain = 0;
+  /** Coins this play's chain reactions have earned, paid when the level ends. */
+  chainCoins = 0;
   specialsMade = 0;
   combos: string[] = [];
   prismsFired = 0;
@@ -165,6 +171,7 @@ export class Session {
       meter: this.meter,
       feverMoves: this.feverMoves,
       bestChain: this.bestChain,
+      chainCoins: this.chainCoins,
       specialsMade: this.specialsMade,
       combos: [...this.combos],
       prismsFired: this.prismsFired,
@@ -220,6 +227,7 @@ export class Session {
     result.collected.forEach((n, c) => (this.collected[c] += n));
     this.iceLeft = this.board.ice.reduce((a, b) => a + b, 0);
     this.bestChain = Math.max(this.bestChain, result.chain);
+    this.chainCoins = Math.min(CHAIN_COIN_CAP, this.chainCoins + chainCoinsFor(result.chain));
     this.specialsMade += result.specialsMade;
     if (result.combo) this.combos.push(result.combo);
     for (const s of result.steps)
