@@ -323,6 +323,24 @@ function windowTexture() {
   return t;
 }
 
+/** The veil behind the stones: a rounded panel whose edge fades away into the scene. */
+function veilTexture() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 256;
+  const g = c.getContext("2d")!;
+  // Rounded panels laid one inside the next, each a little brighter, make
+  // an edge that fades out over a sixth of the panel's width.
+  const steps = 24;
+  g.fillStyle = `rgba(255,255,255,${(1.8 / steps).toFixed(3)})`;
+  for (let i = 0; i < steps; i++) {
+    const inset = 4 + i * 1.6;
+    g.beginPath();
+    g.roundRect(inset, inset, 256 - inset * 2, 256 - inset * 2, 52 - i);
+    g.fill();
+  }
+  return new THREE.CanvasTexture(c);
+}
+
 function glowTexture() {
   const c = document.createElement("canvas");
   c.width = c.height = 64;
@@ -890,10 +908,8 @@ export class GemScene {
     // The cells are not drawn: the stones float over the scene on one soft veil.
     this.tiles.visible = false;
     this.boardGroup.add(this.tiles);
-    this.frame = new THREE.Mesh(
-      new RoundedBoxGeometry(SIZE + 0.3, SIZE + 0.3, 0.02, 4, 0.5),
-      this.frameMat,
-    );
+    this.frameMat.alphaMap = veilTexture();
+    this.frame = new THREE.Mesh(new THREE.PlaneGeometry(SIZE + 1.5, SIZE + 1.5), this.frameMat);
     this.frame.position.z = -0.45;
     this.boardGroup.add(this.frame);
     this.paintTiles();
