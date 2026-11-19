@@ -323,24 +323,6 @@ function windowTexture() {
   return t;
 }
 
-/** The veil behind the stones: a rounded panel whose edge fades away into the scene. */
-function veilTexture() {
-  const c = document.createElement("canvas");
-  c.width = c.height = 256;
-  const g = c.getContext("2d")!;
-  // Rounded panels laid one inside the next, each a little brighter, make
-  // an edge that fades out over a sixth of the panel's width.
-  const steps = 24;
-  g.fillStyle = `rgba(255,255,255,${(1.8 / steps).toFixed(3)})`;
-  for (let i = 0; i < steps; i++) {
-    const inset = 4 + i * 1.6;
-    g.beginPath();
-    g.roundRect(inset, inset, 256 - inset * 2, 256 - inset * 2, 52 - i);
-    g.fill();
-  }
-  return new THREE.CanvasTexture(c);
-}
-
 function glowTexture() {
   const c = document.createElement("canvas");
   c.width = c.height = 64;
@@ -681,13 +663,6 @@ export class GemScene {
   private iceGeo = new RoundedBoxGeometry(0.94, 0.94, 0.08, 2, 0.03);
   private iceMats: THREE.MeshStandardMaterial[];
   private tiles!: THREE.InstancedMesh;
-  private frame!: THREE.Mesh;
-  private frameMat = new THREE.MeshBasicMaterial({
-    color: 0x05060f,
-    transparent: true,
-    opacity: 0.32,
-    depthWrite: false,
-  });
   private selRing: THREE.Mesh;
   private tweens: Tween[] = [];
   private last = performance.now();
@@ -905,13 +880,9 @@ export class GemScene {
         m.makeTranslation(p.x, p.y, -0.5);
         this.tiles.setMatrixAt(idx(x, y), m);
       }
-    // The cells are not drawn: the stones float over the scene on one soft veil.
+    // The cells are not drawn: the stones float straight over the scene.
     this.tiles.visible = false;
     this.boardGroup.add(this.tiles);
-    this.frameMat.alphaMap = veilTexture();
-    this.frame = new THREE.Mesh(new THREE.PlaneGeometry(SIZE + 1.5, SIZE + 1.5), this.frameMat);
-    this.frame.position.z = -0.45;
-    this.boardGroup.add(this.frame);
     this.paintTiles();
   }
 
@@ -2088,7 +2059,7 @@ export class GemScene {
     this.composer.setSize(w, h);
     this.bloom.resolution.set(w / 2, h / 2);
     this.camera.aspect = w / h;
-    // Fit the board (8 units and its veil) in both directions, with a thin margin.
+    // Fit the board (8 units) in both directions, with a thin margin.
     const fit = 9.0;
     const vFov = (this.camera.fov * Math.PI) / 180;
     const distH = fit / 2 / Math.tan(vFov / 2);
@@ -2175,8 +2146,6 @@ export class GemScene {
     u.time.value = this.time;
     u.fever.value = this.fever;
     this.bloom.strength = 0.4 + this.fever * 0.35;
-    this.frameMat.opacity =
-      0.32 + this.fever * 0.08 * (1 + Math.sin(this.time * 6));
     for (const m of this.materials)
       m.emissiveIntensity = 0.22 + this.fever * 0.2;
 
