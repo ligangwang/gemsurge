@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import game from "../game.json" with { type: "json" };
 import zh from "../src/zh-CN.json" with { type: "json" };
 import { SIZE, findHint } from "../src/engine/board";
-import { Session } from "../src/engine/session";
+import { CHAIN_COIN_CAP, Session, chainCoinsFor } from "../src/engine/session";
 import { DAILY_COINS, HAND_MADE, LAST_LEVEL, WORLDS, LEVELS_PER_WORLD, coinsFor, dailySpec, levelSpec, worldCycle } from "../src/levels";
 import { DAILY, levelBadges, CHAIN_5, CHAIN_8, COMBO, FEVER, PRISM, THREE_STARS, WIPE } from "../src/badges";
 import { boostsFor, nextTier, NONE, ownedFrom, PRICES, shopManifest, upgradeId } from "../src/upgrades";
@@ -243,4 +243,28 @@ test("undo is free up to level 100, then an upgrade of one undo a tier", () => {
   s.move(a, b);
   assert.equal(s.canUndo, false);
   assert.deepEqual(PRICES.undo, [100, 250, 500]);
+});
+
+test("chain reactions earn coins, more for longer chains, up to a cap a play", () => {
+  assert.deepEqual([1, 2, 3, 4, 5, 9].map(chainCoinsFor), [0, 1, 2, 3, 5, 5]);
+  const s = new Session(levelSpec(1));
+  let expected = 0;
+  while (!s.outcome) {
+    const [a, b] = findHint(s.board)!;
+    const turn = s.move(a, b)!;
+    expected = Math.min(CHAIN_COIN_CAP, expected + chainCoinsFor(turn.chain));
+    assert.equal(s.chainCoins, expected);
+  }
+  // Taking a move back takes its chain coins back too.
+  const u = new Session(levelSpec(2));
+  for (let n = 0; n < 20 && !u.outcome; n++) {
+    const coins = u.chainCoins;
+    const [a, b] = findHint(u.board)!;
+    u.move(a, b);
+    if (u.chainCoins > coins && u.canUndo) {
+      u.undo();
+      assert.equal(u.chainCoins, coins);
+      break;
+    }
+  }
 });

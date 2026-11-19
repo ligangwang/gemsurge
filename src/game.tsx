@@ -41,6 +41,8 @@ type EndInfo = {
   stars: number;
   score: number;
   coins: number | null;
+  /** How many of those coins were for chain reactions. */
+  chain: number;
   /** Why no coins were paid, when none were. */
   note: string;
   best: boolean;
@@ -188,6 +190,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     sc.showHint(null);
     try {
       const before = s.score;
+      const chainBefore = s.chainCoins;
       const turn = pair ? s.move(pair[0], pair[1]) : s.nova();
       if (!turn) {
         if (pair) await sc.playInvalid(pair[0], pair[1]);
@@ -215,6 +218,8 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       }
       sc.setFever(s.fever);
       unlock(playBadges(s));
+      // A chain reaction earns coins, paid with the level's own when it ends.
+      if (s.spec.level > 0 && s.chainCoins > chainBefore) sc.banner(`+${s.chainCoins - chainBefore} 🪙`, 3);
       // A nudge when the moves are running low.
       if (pair && !s.outcome && s.movesLeft === 5) sc.banner("Keep going!", 2);
       rerender();
@@ -286,6 +291,8 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     };
     let best = false;
     let coins = 0;
+    // What the play's chain reactions earned, paid on top of the level's coins.
+    let chain = 0;
     let note = "";
     let round: RoundEnd | null = null;
     if (level > 0) {
@@ -301,6 +308,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       next.best[level - 1] = Math.max(next.best[level - 1], s.score);
       if (won) coins = coinsFor(level, stars);
       else if (s.progress().some((g) => g.have >= g.target / 2)) coins = 1;
+      chain = s.chainCoins;
     } else {
       const prev = next.daily?.day === today ? next.daily : null;
       best = !prev || s.score > prev.score;
@@ -311,20 +319,24 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     }
     // Every coin a play is worth charges the Supernova, signed in or not.
     const ready = novas(next);
-    next.earned += coins;
+    next.earned += coins + chain;
     const charged = novas(next) - ready;
     savedRef.current = next;
     setSaved(next);
     store(sdk, next).catch(() => {});
     unlock(endBadges(s, highest(next)));
     let paid: number | null = null;
-    if (coins > 0) {
+    let chainPaid = 0;
+    if (coins + chain > 0) {
       if (!signedIn) note = "Sign in to earn coins and badges";
       else {
         try {
-          const r = await sdk.rewards.earn(coins);
-          paid = r.coins;
-          if (!r.coins) note = "You've earned all of today's coins from this game.";
+          // dingn pays at most 10 coins a call, so the chains are paid on their own.
+          const r = coins > 0 ? await sdk.rewards.earn(coins) : { coins: 0 };
+          const c = chain > 0 ? await sdk.rewards.earn(chain) : { coins: 0 };
+          paid = r.coins + c.coins;
+          chainPaid = c.coins;
+          if (!paid) note = "You've earned all of today's coins from this game.";
           else if (level === 0) {
             const after = { ...savedRef.current, daily: { ...next.daily!, paid: true } };
             savedRef.current = after;
@@ -349,7 +361,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       round.coins = paidForRound;
     }
     if (!show) return;
-    setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: paid, note, best, novas: charged, round });
+    setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: paid, chain: chainPaid, note, best, novas: charged, round });
     if (round) {
       scene.current?.banner("Round complete!", 6);
       sfx.fanfare();
@@ -744,6 +756,11 @@ function Hud(props: {
       {spec.level > FREE_UNDO_LEVELS && !props.owned.undo && (
         <p className="hud-note">{t("Buy Undo in Upgrades to use it after level 100.")}</p>
       )}
+      {spec.level > 0 && s.chainCoins > 0 && (
+        <p className="hud-note hud-chain">
+          <span className="coin" aria-hidden /> {t("Chain reactions: +{0} coins", String(s.chainCoins))}
+        </p>
+      )}
       {spec.level > 0 && (
         <div className="hud-nova">
           <button className="button nova" disabled={!props.canNova || props.novas < 1} onClick={props.onNova}>
@@ -771,6 +788,7 @@ function Hud(props: {
           <li>{t("Swap two specials together for a bigger blast.")}</li>
           <li>{t("Chains and blasts fill the Fever meter: Fever doubles your points for 3 moves.")}</li>
           <li>{t("Moves left at the end turn into blasters for a final surge.")}</li>
+          <li>{t("Chain reactions earn coins: the longer the chain, the more, up to 10 a level.")}</li>
           <li>{t("Undo takes your last move back, up to 3 times a level. After level 100 it is an upgrade you buy with coins.")}</li>
           <li>{t("Every 100 coins you earn by playing charge a Supernova, which clears the whole board.")}</li>
         </ul>
@@ -827,6 +845,7 @@ function EndPanel(props: {
         {end.coins !== null && end.coins > 0 && (
           <p className="end-coins">
             <span className="coin" aria-hidden /> {t("+{0} coins", String(end.coins))}
+            {end.chain > 0 && <small> ({t("{0} for chain reactions", String(end.chain))})</small>}
           </p>
         )}
         {won && !daily && s.spec.level % ROUND === ROUND - 1 && (
