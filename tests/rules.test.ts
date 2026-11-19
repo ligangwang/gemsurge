@@ -8,7 +8,7 @@ import { DAILY_COINS, HAND_MADE, LAST_LEVEL, WORLDS, LEVELS_PER_WORLD, coinsFor,
 import { DAILY, levelBadges, CHAIN_5, CHAIN_8, COMBO, FEVER, PRISM, THREE_STARS, WIPE } from "../src/badges";
 import { boostsFor, nextTier, NONE, ownedFrom, PRICES, shopManifest, upgradeId } from "../src/upgrades";
 import { BEST_KEPT, novas, novaCharge, empty, highest, merge, parse, store } from "../src/save";
-import { DRAW, ROUND, ROUNDS, STORY, TITLES, draw, isMilestone, lastLevelOf, rewardOf, roundOf, storyOf, titleOf, worldOf } from "../src/rounds";
+import { DRAW, ROUND, ROUNDS, STORY, TITLES, WHEEL, draw, isMilestone, lastLevelOf, rewardOf, roundOf, sliceFor, storyOf, titleOf, worldOf } from "../src/rounds";
 
 test("every level has goals it can meet", () => {
   assert.equal(HAND_MADE, 30);
@@ -266,5 +266,12 @@ test("chain reactions earn coins, more for longer chains, up to a cap a play", (
       assert.equal(u.chainCoins, coins);
       break;
     }
+  }
+});
+
+test("the draw's wheel shows the true odds and stops on the prize that was drawn", () => {
+  for (const { novas, chance } of DRAW) {
+    assert.equal(WHEEL.filter((n) => n === novas).length / WHEEL.length, chance);
+    for (const roll of [0, 0.3, 0.6, 0.999]) assert.equal(WHEEL[sliceFor(novas, roll)], novas);
   }
 });

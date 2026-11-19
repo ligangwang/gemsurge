@@ -15,7 +15,7 @@ in rounds of 10, across eight worlds. Play it at <https://dingn.com/play/gemsurg
   prisms clear the whole board.
 - **Fever**: chains, specials and combos fill the meter; Fever doubles points
   for 3 moves. Moves left when you win become blasters for a final **surge**.
-- **Rounds**: every 10 levels is a round. Finishing one holds a ceremony with a new title, Supernovas and coins, a lucky draw and a line of story; every 10th round is a milestone that pays more. The reward is shown ahead on the menu and on a round's last two levels.
+- **Rounds**: every 10 levels is a round. Finishing one holds a ceremony with a new title, Supernovas and coins, a lucky draw on a wheel the player spins (its slices are the true odds) and a line of story; every 10th round is a milestone that pays more. The reward is shown ahead on the menu and on a round's last two levels.
 - **Chain coins**: a chain reaction earns coins (1 for the first cascade, up to 5 for a chain of five), at most 10 a level, paid with the level's own coins when it ends.
 - **Undo**: take your last move back, up to 3 times a level. It is free up to level 100; after that each tier of the Undo upgrade gives one undo a level.
 - **Encouragement**: words such as Nice, Good and Awesome for chains and big clears, said aloud in a bright, girlish voice by the device's own speech (it varies by device; mute silences it).

@@ -33,7 +33,7 @@ import {
   type UpgradeKind,
 } from "./upgrades";
 import { say, setMuted, sfx } from "./sound";
-import { DRAW, ROUND, draw, isMilestone, lastLevelOf, rewardOf, roundOf, storyOf, titleOf, worldOf } from "./rounds";
+import { DRAW, ROUND, WHEEL, draw, isMilestone, lastLevelOf, rewardOf, roundOf, sliceFor, storyOf, titleOf, worldOf } from "./rounds";
 
 type Screen = "menu" | "play" | "end" | "shop";
 type EndInfo = {
@@ -907,15 +907,32 @@ function RoundPanel(props: { end: EndInfo; round: RoundEnd; last: boolean; onNex
   const { end, round } = props;
   const title = titleOf(round.round + 1);
   const milestone = isMilestone(round.round);
-  // The draw spins for a moment before it lands.
-  const [landed, setLanded] = useState(false);
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setLanded(true);
-      sfx.star(3);
-    }, 2200);
-    return () => clearTimeout(timer);
-  }, []);
+  // The prize is already won and saved; the player spins the wheel to see it.
+  const [stage, setStage] = useState<"ready" | "spinning" | "landed">("ready");
+  const [turn, setTurn] = useState(0);
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+  const spin = () => {
+    if (stage !== "ready") return;
+    const slice = sliceFor(round.luck.novas, Math.random());
+    const step = 360 / WHEEL.length;
+    // Six full turns, then on to the slice, stopping a little off its middle.
+    setTurn(360 * 6 - (slice + 0.5) * step + (Math.random() - 0.5) * step * 0.6);
+    setStage("spinning");
+    // Ticks that slow down with the wheel.
+    for (let i = 0, at = 0; at < SPIN_MS - 300; i++) {
+      timers.current.push(setTimeout(() => sfx.select(), at));
+      at += 60 + i * i * 1.6;
+    }
+    timers.current.push(
+      setTimeout(() => {
+        setStage("landed");
+        if (round.luck.index === DRAW.length - 1) sfx.fanfare();
+        else sfx.star(3);
+      }, SPIN_MS),
+    );
+  };
+  const landed = stage === "landed";
   return (
     <div className="gem-end round-end" role="dialog" aria-label={t("Round complete!")}>
       <div className={`gem-panel round-panel${milestone ? " milestone" : ""}`}>
@@ -945,36 +962,82 @@ function RoundPanel(props: { end: EndInfo; round: RoundEnd; last: boolean; onNex
               <span className="coin" aria-hidden /> {t("+{0} coins", String(round.coins + (end.coins ?? 0)))}
             </li>
           )}
-          <li className={`round-draw${landed ? " landed" : ""}`}>
-            🎁 {t("Lucky draw")}:{" "}
-            {landed ? (
-              <strong>
-                ✹ ×{round.luck.novas}
-                {round.luck.index === DRAW.length - 1 ? ` ${t("Jackpot!")}` : ""}
-              </strong>
-            ) : (
-              <span className="spinning">✹ ✹ ✹</span>
-            )}
-          </li>
         </ul>
-        <p className="round-story">“{t(storyOf(round.round))}”</p>
-        {!props.last && (
-          <p className="round-next">
-            {t("Next")}: {t("Round {0}", String(round.round + 1))} · {t(worldOf(round.round + 1).name)}
-          </p>
-        )}
-        <div className="gem-actions">
-          {!props.last && (
-            <button className="button big" onClick={props.onNext}>
-              {t("Start round {0}", String(round.round + 1))}
+        <div className={`round-draw ${stage}`}>
+          <p className="round-draw-title">🎁 {t("Lucky draw")}</p>
+          <div className="wheel-box">
+            <Wheel turn={turn} won={landed ? round.luck.novas : 0} />
+            <span className="wheel-pin" aria-hidden />
+          </div>
+          {landed ? (
+            <p className="round-won" role="status">
+              {t("You won")} <strong>✹ {t("Supernova")} ×{round.luck.novas}</strong>
+              {round.luck.index === DRAW.length - 1 ? ` · ${t("Jackpot!")}` : ""}
+            </p>
+          ) : (
+            <button className="button big" onClick={spin} disabled={stage !== "ready"}>
+              {stage === "ready" ? t("Spin the wheel") : t("Spinning…")}
             </button>
           )}
-          <button className="secondary-button" onClick={props.onMenu}>
-            {t("Menu")}
-          </button>
         </div>
+        {landed && (
+          <>
+            <p className="round-story">“{t(storyOf(round.round))}”</p>
+            {!props.last && (
+              <p className="round-next">
+                {t("Next")}: {t("Round {0}", String(round.round + 1))} · {t(worldOf(round.round + 1).name)}
+              </p>
+            )}
+            <div className="gem-actions">
+              {!props.last && (
+                <button className="button big" onClick={props.onNext}>
+                  {t("Start round {0}", String(round.round + 1))}
+                </button>
+              )}
+              <button className="secondary-button" onClick={props.onMenu}>
+                {t("Menu")}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
+  );
+}
+
+/** How long the wheel turns before it stops. */
+const SPIN_MS = 4200;
+const SLICE_COLORS: Record<number, string> = { 1: "#22306e", 2: "#5a2a9c", 3: "#0b7a4a", 5: "#d9a21b" };
+
+/** The lucky draw's wheel: a slice for each twentieth of the odds. */
+function Wheel({ turn, won }: { turn: number; won: number }) {
+  const step = (Math.PI * 2) / WHEEL.length;
+  const at = (angle: number, r: number) => [Math.sin(angle) * r, -Math.cos(angle) * r].map((n) => n.toFixed(2)).join(" ");
+  return (
+    <svg
+      className="wheel"
+      viewBox="-104 -104 208 208"
+      aria-hidden
+      style={{ transform: `rotate(${turn}deg)`, transitionDuration: `${SPIN_MS}ms` }}
+    >
+      <circle r="100.5" fill="#120e26" stroke="#ffe9a8" strokeWidth="5" />
+      {WHEEL.map((novas, i) => {
+        const mid = (i + 0.5) * step;
+        const [x, y] = at(mid, 78).split(" ");
+        return (
+          <g key={i} className={won && novas !== won ? "dim" : ""}>
+            <path d={`M0 0 L${at(i * step, 98)} A98 98 0 0 1 ${at((i + 1) * step, 98)} Z`} fill={SLICE_COLORS[novas]} stroke="#ffe9a8" strokeWidth="1" />
+            <text x={x} y={y} transform={`rotate(${((mid * 180) / Math.PI).toFixed(1)} ${x} ${y})`} textAnchor="middle" dominantBaseline="central">
+              {novas}
+            </text>
+          </g>
+        );
+      })}
+      <circle r="20" fill="#1a1436" stroke="#ffe9a8" strokeWidth="3" />
+      <text className="hub" textAnchor="middle" dominantBaseline="central">
+        ✹
+      </text>
+    </svg>
   );
 }
 
