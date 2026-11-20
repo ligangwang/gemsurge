@@ -130,8 +130,20 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   const dailyDone = saved.daily?.day === today;
   /** A friend's challenge the page opened with, until a different round is played. */
   const challenge = useRef<Round | null>(readChallenge(sdk.challenge));
-  /** The day of the daily board in play (an older one, for a friend's challenge). */
-  const playingDay = useRef(today);
+  /** Each session's daily-board day, kept with the session so a late reward reads its own. */
+  const [sessionDay] = useState(() => new WeakMap<Session, string>());
+  /**
+   * Whether a session is played for the score alone, paying and saving
+   * nothing: a friend's challenge on an older daily board, or on a level the
+   * player has not reached.
+   */
+  const scoreOnly = (s: Session) =>
+    s.spec.level === 0
+      ? (sessionDay.get(s) ?? today) !== utcDay()
+      : s.spec.level > highest(savedRef.current) + 1;
+  /** Set once the player's upgrades are known, so a challenge level starts with them. */
+  const [ownedLoaded, setOwnedLoaded] = useState(false);
+  const challengeStarted = useRef(false);
 
   useEffect(() => setMuted(muted), [muted]);
 
@@ -140,7 +152,11 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   useEffect(() => {
     let live = true;
     badges.reset();
-    loadOwned(sdk).then((o) => live && setOwned(o));
+    loadOwned(sdk).then((o) => {
+      if (!live) return;
+      setOwned(o);
+      setOwnedLoaded(true);
+    });
     if (signedIn)
       loadSaved(sdk).then((account) => {
         if (!live) return;
@@ -195,27 +211,30 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Opened by a friend's challenge link: go straight to that round.
+  // Opened by a friend's challenge link: go straight to that round. A level
+  // waits for the player's upgrades (the daily board is played without them).
   useEffect(() => {
     const c = challenge.current;
-    if (!c || !scene.current) return;
+    if (challengeStarted.current || !c || !scene.current) return;
+    if (c.kind === "level" && !ownedLoaded) return;
+    challengeStarted.current = true;
     if (c.kind === "daily") start(0, c.day);
     else start(c.level);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [ownedLoaded]);
 
   const unlock = (ids: string[]) => {
     badges.unlock(sdk, ids).catch(() => {});
   };
 
   function start(level: number, day = today) {
-    playingDay.current = level === 0 ? day : today;
     // Playing a different round leaves the friend's challenge behind.
     const c = challenge.current;
     if (c && !sameRound(c, level === 0 ? { kind: "daily", day, score: 0 } : { kind: "level", level, score: 0 }))
       challenge.current = null;
     const spec = level === 0 ? dailySpec(day) : levelSpec(level);
     const s = new Session(spec, level === 0 ? boostsFor(NONE) : boostsFor(owned));
+    sessionDay.set(s, level === 0 ? day : today);
     session.current = s;
     setShown(0);
     setEnd(null);
@@ -282,7 +301,8 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
         sfx.fever();
       }
       sc.setFever(s.fever);
-      unlock(playBadges(s));
+      // A round played for the score alone earns no badges either.
+      if (!scoreOnly(s)) unlock(playBadges(s));
       // A chain reaction earns coins, paid with the level's own when it ends.
       if (s.spec.level > 0 && s.chainCoins > chainBefore) sc.banner(`+${s.chainCoins - chainBefore} 🪙`, 3);
       // A nudge when the moves are running low.
@@ -350,12 +370,12 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     const won = s.outcome === "won";
     const level = s.spec.level;
     const stars = s.stars;
-    const day = playingDay.current;
+    const day = sessionDay.get(s) ?? today;
     const played: Round = level === 0 ? { kind: "daily", day, score: s.score } : { kind: "level", level, score: s.score };
     const rival = challenge.current && sameRound(challenge.current, played) ? challenge.current : null;
     // A friend's challenge on an older daily board, or on a level not reached
     // yet, is played for the score alone: nothing is saved or paid.
-    if ((level === 0 && day !== today) || level > highest(savedRef.current) + 1) {
+    if (scoreOnly(s)) {
       if (!show) return;
       setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: null, chain: 0, note: "", best: false, novas: 0, round: null, played, rival });
       setScreen("end");
@@ -524,7 +544,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       {webgl && (screen === "play" || screen === "end") && s && (
         <Hud
           session={s}
-          day={playingDay.current}
+          day={sessionDay.get(s) ?? today}
           shown={shown}
           goalsShown={goalsShown}
           muted={muted}
@@ -555,7 +575,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
           session={s}
           signedIn={signedIn}
           onNext={() => start(Math.min(s.spec.level + 1, LAST_LEVEL))}
-          onRetry={() => start(s.spec.level, playingDay.current)}
+          onRetry={() => start(s.spec.level, sessionDay.get(s) ?? today)}
           onMenu={toMenu}
           onShop={() => {
             toMenu();

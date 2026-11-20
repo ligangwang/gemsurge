@@ -304,19 +304,22 @@ test("a friend's challenge opens that daily board and says whether it was beaten
   expect(screen.getByRole("heading", { name: "2026-11-01" })).toBeTruthy();
   await playOut();
   expect(await screen.findByText(/Your friend scored 999,999\./)).toBeTruthy();
-  // An older day's board is played for the score alone: no coins, and it is
-  // not saved as today's (the save on sign-in still has no daily board).
+  // An older day's board is played for the score alone: no coins or badges,
+  // and it is not saved as today's (the save on sign-in has no daily board).
   expect(calls.earn).not.toHaveBeenCalled();
+  expect(calls.unlock).not.toHaveBeenCalled();
   expect((stored.get("gemsurge") as { daily: unknown }).daily).toBeNull();
 });
 
 test("a friend's challenge on a level not reached yet plays it without unlocking anything", async () => {
   sdk.challenge = { mode: "level", seed: "40", score: 1, unit: "points" };
   play();
-  expect(screen.getByRole("heading", { name: "Level 40" })).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: "Level 40" })).toBeTruthy();
   await playOut();
   if (session().score > 1) expect(await screen.findByText("You beat your friend's 1!")).toBeTruthy();
   expect(calls.earn).not.toHaveBeenCalled();
+  // Nor badges, during play or after it.
+  expect(calls.unlock).not.toHaveBeenCalled();
   // No level is cleared or unlocked by it.
   expect((stored.get("gemsurge") as { stars: string }).stars).toBe("");
 });
@@ -325,4 +328,14 @@ test("a challenge for another game, or a malformed one, opens the menu", () => {
   sdk.challenge = { mode: "ladder", seed: "2026-11-16", score: 10, unit: "digits" };
   play();
   expect(screen.getByRole("heading", { name: /Gem Surge/ })).toBeTruthy();
+});
+
+
+test("a friend's level challenge starts with the upgrades the player owns", async () => {
+  owned.push("moves-1");
+  sdk.challenge = { mode: "level", seed: "1", score: 100, unit: "points" };
+  play();
+  await screen.findByRole("heading", { name: "Level 1" });
+  // Level 1 has 26 moves; the extra-moves upgrade adds to them.
+  expect(session().movesLeft).toBeGreaterThan(26);
 });
