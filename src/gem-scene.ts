@@ -25,6 +25,7 @@ import {
 import type { Turn } from "./engine/session";
 import type { Cleared } from "./engine/board";
 import { sfx } from "./sound";
+import { Scenery } from "./scenery";
 
 export const GEM_COLORS = [
   0xff2450, 0xe8f6ff, 0x16c878, 0x2a96ff, 0xb450ff, 0xffc81e, 0xffb39c,
@@ -764,191 +765,6 @@ function glowTexture() {
 
 // ------------------------------------------------------------- background
 
-const BG_VERTEX = /* glsl */ `
-varying vec2 vUv;
-void main() { vUv = uv; gl_Position = vec4(position.xy, 0.9999, 1.0); }`;
-
-const BG_FRAGMENT = /* glsl */ `
-precision highp float;
-varying vec2 vUv;
-uniform float time;
-uniform float world;
-uniform float cycle;
-uniform float fever;
-uniform float aspect;
-float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float noise(vec2 p) {
-  vec2 i = floor(p), f = fract(p);
-  vec2 u = f * f * (3.0 - 2.0 * f);
-  return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
-}
-float fbm(vec2 p) { float v = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { v += a * noise(p); p *= 2.03; a *= 0.5; } return v; }
-vec3 neon(vec2 uv) {
-  vec3 col = mix(vec3(0.01, 0.0, 0.04), vec3(0.1, 0.01, 0.18), smoothstep(0.0, 0.7, uv.y));
-  vec2 c = vec2((uv.x - 0.5) * aspect, uv.y - 0.5);
-  // A striped sun on the horizon.
-  float d = length(c - vec2(0.0, 0.08));
-  float sun = smoothstep(0.32, 0.3, d) * step(0.0, c.y - 0.0);
-  float stripes = step(0.5, fract((c.y - 0.08) * 22.0 - time * 0.3)) + step(0.2, c.y);
-  col += sun * mix(vec3(1.0, 0.2, 0.55), vec3(1.0, 0.75, 0.2), smoothstep(0.0, 0.35, c.y)) * min(stripes, 1.0);
-  col += vec3(0.9, 0.1, 0.6) * 0.18 * exp(-abs(c.y) * 12.0);
-  // A synthwave grid floor below the horizon.
-  if (c.y < 0.0) {
-    float z = 0.18 / max(-c.y, 0.001);
-    vec2 g = vec2(c.x * z * 2.0, z + time * 0.6);
-    vec2 gl = abs(fract(g) - 0.5) / fwidth(g);
-    float line = 1.0 - min(min(gl.x, gl.y), 1.0);
-    col = mix(vec3(0.02, 0.0, 0.05), col, 0.25) + line * vec3(0.0, 0.9, 1.0) * clamp(1.2 - z * 0.08, 0.0, 1.0);
-  }
-  // Skyline.
-  float bx = floor(c.x * 18.0);
-  float h = 0.02 + hash(vec2(bx, 3.0)) * 0.12;
-  if (c.y > 0.0 && c.y < h) {
-    col = vec3(0.03, 0.0, 0.08);
-    vec2 w = fract(vec2(c.x * 90.0, c.y * 60.0));
-    if (w.x < 0.4 && w.y < 0.5 && hash(floor(vec2(c.x * 90.0, c.y * 60.0))) > 0.6) col += vec3(1.0, 0.6, 0.9) * 0.6;
-  }
-  return col;
-}
-vec3 sea(vec2 uv) {
-  vec3 col = mix(vec3(0.0, 0.03, 0.08), vec3(0.0, 0.22, 0.38), uv.y);
-  vec2 p = vec2((uv.x - 0.5) * aspect, uv.y);
-  // God rays from the surface.
-  float rays = fbm(vec2(p.x * 3.0 + p.y * 0.8, time * 0.15));
-  col += vec3(0.2, 0.6, 0.7) * pow(rays, 3.0) * smoothstep(0.1, 1.0, uv.y) * 0.9;
-  // Caustics.
-  float c = fbm(p * 6.0 + vec2(time * 0.2, time * 0.13));
-  col += vec3(0.1, 0.5, 0.6) * smoothstep(0.55, 0.8, c) * 0.25;
-  // Sea floor silhouettes.
-  float floorY = 0.12 + fbm(vec2(p.x * 2.0, 1.0)) * 0.12;
-  if (uv.y < floorY) col = mix(col, vec3(0.0, 0.04, 0.07), 0.85);
-  return col;
-}
-vec3 space(vec2 uv) {
-  vec2 p = vec2((uv.x - 0.5) * aspect, uv.y - 0.5);
-  vec3 col = vec3(0.01, 0.0, 0.03);
-  float n = fbm(p * 2.5 + vec2(time * 0.01, 0.0));
-  float n2 = fbm(p * 4.0 - vec2(0.0, time * 0.015) + n);
-  col += vec3(0.45, 0.1, 0.6) * pow(n2, 2.5) * 1.6;
-  col += vec3(0.1, 0.35, 0.8) * pow(n, 3.0) * 1.2;
-  // Stars.
-  vec2 s = p * 120.0;
-  float star = hash(floor(s));
-  float tw = 0.6 + 0.4 * sin(time * 2.0 + star * 50.0);
-  col += step(0.992, star) * smoothstep(0.5, 0.0, length(fract(s) - 0.5)) * tw * 1.5;
-  // A ringed planet.
-  vec2 q = p - vec2(0.55, 0.25);
-  float d = length(q);
-  col = mix(col, vec3(0.9, 0.5, 0.3) * (0.3 + 0.7 * smoothstep(0.12, -0.05, q.x + q.y)), smoothstep(0.1, 0.098, d));
-  float ring = abs(length(vec2(q.x, q.y * 3.5 + q.x * 1.2)) - 0.17);
-  col += vec3(1.0, 0.8, 0.6) * smoothstep(0.012, 0.0, ring) * step(0.1, d + step(0.0, q.y * 3.5 + q.x * 1.2)) * 0.6;
-  return col;
-}
-vec3 lake(vec2 uv) {
-  vec2 p = vec2((uv.x - 0.5) * aspect, uv.y);
-  // Still water at dusk: everything above the shore is mirrored below it.
-  float shore = 0.42;
-  float ripple = 0.006 * sin(uv.y * 140.0 + time * 0.8 + p.x * 6.0);
-  float y = uv.y > shore ? uv.y : 2.0 * shore - uv.y + ripple;
-  vec3 col = mix(vec3(0.85, 0.5, 0.45), vec3(0.1, 0.1, 0.32), smoothstep(shore, 1.0, y));
-  // A soft moon.
-  float moon = length(vec2(p.x - 0.5, y - 0.8));
-  col += vec3(1.0, 0.95, 0.8) * (smoothstep(0.06, 0.055, moon) * 0.35 + exp(-moon * 9.0) * 0.2);
-  // Low hills on the far shore.
-  float hill = shore + 0.05 + 0.04 * sin(p.x * 3.0 + 1.0) + 0.02 * sin(p.x * 7.0);
-  if (y < hill) col = vec3(0.1, 0.09, 0.24);
-  // Paper lanterns drifting up.
-  vec2 g = vec2(p.x * 12.0 + 0.2 * sin(y * 5.0 + time * 0.1), y * 12.0 - time * 0.06);
-  float lit = hash(floor(g));
-  col += step(0.82, lit) * smoothstep(0.22, 0.0, length(fract(g) - 0.5)) * vec3(0.9, 0.5, 0.2) * (0.5 + 0.2 * sin(time + lit * 30.0));
-  if (uv.y < shore) col = col * 0.7 + vec3(0.0, 0.02, 0.06);
-  return col;
-}
-vec3 aurora(vec2 uv) {
-  vec2 p = vec2((uv.x - 0.5) * aspect, uv.y);
-  vec3 col = mix(vec3(0.0, 0.02, 0.06), vec3(0.01, 0.05, 0.14), uv.y);
-  vec2 s = p * 110.0;
-  col += step(0.993, hash(floor(s))) * smoothstep(0.5, 0.0, length(fract(s) - 0.5));
-  // Three slow ribbons of light.
-  for (int i = 0; i < 3; i++) {
-    float k = float(i);
-    float y = 0.56 + 0.1 * k + 0.07 * sin(p.x * 2.0 + time * 0.15 + k * 1.7) + 0.05 * fbm(vec2(p.x * 1.5 + k, time * 0.05));
-    float d = uv.y - y;
-    float band = exp(-max(d, 0.0) * 7.0) * smoothstep(-0.03, 0.0, d);
-    float folds = 0.6 + 0.4 * fbm(vec2(p.x * 8.0, time * 0.1 + k));
-    col += mix(vec3(0.1, 0.9, 0.5), vec3(0.5, 0.3, 0.9), k / 2.0) * band * folds * 0.35;
-  }
-  // Snowy peaks.
-  float peak = 0.16 + abs(fract(p.x * 1.3 + 0.2) - 0.5) * 0.36 + fbm(vec2(p.x * 6.0, 2.0)) * 0.06;
-  if (uv.y < peak) col = mix(vec3(0.04, 0.07, 0.15), vec3(0.7, 0.82, 1.0), smoothstep(peak - 0.09, peak, uv.y) * 0.7);
-  return col;
-}
-vec3 desert(vec2 uv) {
-  vec2 p = vec2((uv.x - 0.5) * aspect, uv.y);
-  vec3 col = mix(vec3(0.75, 0.36, 0.14), vec3(0.16, 0.07, 0.26), smoothstep(0.25, 1.0, uv.y));
-  // A low sun.
-  float d = length(p - vec2(0.0, 0.46));
-  col += vec3(1.0, 0.8, 0.45) * (smoothstep(0.15, 0.14, d) * 0.6 + exp(-d * 5.0) * 0.35);
-  // Three lines of dunes, darker as they come nearer.
-  for (int i = 0; i < 3; i++) {
-    float k = float(i);
-    float h = 0.4 - k * 0.11 + 0.05 * sin(p.x * (2.0 + k * 1.3) + k * 2.0 + 1.0) + 0.015 * sin(p.x * 7.0 + k);
-    if (uv.y < h) col = mix(vec3(0.6, 0.3, 0.12), vec3(0.16, 0.06, 0.06), k / 2.0) * (0.75 + 0.25 * smoothstep(h - 0.12, h, uv.y));
-  }
-  return col;
-}
-vec3 forest(vec2 uv) {
-  vec2 p = vec2((uv.x - 0.5) * aspect, uv.y);
-  vec3 col = mix(vec3(0.0, 0.05, 0.03), vec3(0.03, 0.2, 0.12), uv.y);
-  // Shafts of light through the leaves.
-  col += vec3(0.3, 0.5, 0.2) * pow(fbm(vec2(p.x * 3.0 - uv.y * 0.6, time * 0.1)), 3.0) * uv.y * 0.8;
-  // Two rows of tree trunks.
-  for (int i = 0; i < 2; i++) {
-    float k = float(i);
-    float tx = p.x * (5.0 + k * 4.0) + k * 0.37;
-    float id = floor(tx);
-    float w = 0.12 + hash(vec2(id, 7.0 + k)) * 0.12;
-    if (abs(fract(tx) - 0.5) < w && hash(vec2(id, 1.0 + k)) > 0.35) col = mix(col, vec3(0.0, 0.03, 0.02), 0.55 + 0.4 * k);
-  }
-  // Fireflies.
-  vec2 g = vec2(p.x * 9.0 + sin(time * 0.3 + uv.y * 4.0) * 0.3, uv.y * 9.0 + time * 0.08);
-  float fly = hash(floor(g));
-  col += step(0.9, fly) * smoothstep(0.25, 0.0, length(fract(g) - 0.5)) * vec3(0.9, 1.0, 0.4) * (0.5 + 0.5 * sin(time * 1.5 + fly * 40.0));
-  return col;
-}
-vec3 clouds(vec2 uv) {
-  vec2 p = vec2((uv.x - 0.5) * aspect, uv.y);
-  vec3 col = mix(vec3(0.8, 0.45, 0.4), vec3(0.12, 0.26, 0.6), smoothstep(0.0, 0.9, uv.y));
-  float far = fbm(vec2(p.x * 2.0 + time * 0.03, uv.y * 4.0));
-  float near = fbm(vec2(p.x * 3.5 - time * 0.02, uv.y * 6.0 + 3.0));
-  col = mix(col, vec3(0.95, 0.85, 0.85), smoothstep(0.5, 0.75, far) * 0.6);
-  col = mix(col, vec3(1.0, 0.75, 0.8), smoothstep(0.55, 0.8, near) * 0.5 * (1.0 - uv.y));
-  return col * 0.75;
-}
-// Turns every colour round the colour wheel, for the worlds' later visits.
-vec3 turnHue(vec3 c, float a) {
-  const vec3 k = vec3(0.57735);
-  return c * cos(a) + cross(k, c) * sin(a) + k * dot(k, c) * (1.0 - cos(a));
-}
-void main() {
-  vec3 col = world < 0.5 ? neon(vUv)
-    : world < 1.5 ? sea(vUv)
-    : world < 2.5 ? space(vUv)
-    : world < 3.5 ? lake(vUv)
-    : world < 4.5 ? aurora(vUv)
-    : world < 5.5 ? desert(vUv)
-    : world < 6.5 ? forest(vUv)
-    : clouds(vUv);
-  if (cycle > 0.5) col = max(turnHue(col, cycle * 0.9), 0.0);
-  // Fever: hue-shifting energy around the edges.
-  vec2 e = vUv - 0.5;
-  float edge = smoothstep(0.25, 0.75, length(e * vec2(aspect, 1.0)) / max(aspect, 1.0) * 1.6);
-  vec3 hue = 0.5 + 0.5 * cos(6.2831 * (vec3(0.0, 0.33, 0.67) + time * 0.4 + vUv.y));
-  col += fever * hue * edge * 0.55;
-  col *= 1.0 - 0.35 * length(e);
-  gl_FragColor = vec4(col, 1.0);
-}`;
-
 // --------------------------------------------------------------- particles
 
 const PARTICLES = 4000;
@@ -1070,7 +886,9 @@ export class GemScene {
   private bloom: UnrealBloomPass;
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(36, 1, 0.1, 100);
-  private bg: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+  /** Each world's scene (a photo all round, and its extras), drawn behind the board. */
+  private scenery = new Scenery();
+  private shade!: THREE.Mesh;
   private boardGroup = new THREE.Group();
   private fx = new THREE.Group();
   private geometries = makeGeometries();
@@ -1149,7 +967,12 @@ export class GemScene {
       samples: 4,
     });
     this.composer = new EffectComposer(this.renderer, target);
-    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    // The world's scenery first, then the board over it.
+    this.composer.addPass(new RenderPass(this.scenery.scene, this.scenery.camera));
+    const boardPass = new RenderPass(this.scene, this.camera);
+    boardPass.clear = false;
+    boardPass.clearDepth = true;
+    this.composer.addPass(boardPass);
     this.bloom = new UnrealBloomPass(
       new THREE.Vector2(256, 256),
       0.4,
@@ -1158,26 +981,6 @@ export class GemScene {
     );
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
-
-    this.bg = new THREE.Mesh(
-      new THREE.PlaneGeometry(2, 2),
-      new THREE.ShaderMaterial({
-        uniforms: {
-          time: { value: 0 },
-          world: { value: 0 },
-          cycle: { value: 0 },
-          fever: { value: 0 },
-          aspect: { value: 1 },
-        },
-        vertexShader: BG_VERTEX,
-        fragmentShader: BG_FRAGMENT,
-        depthWrite: false,
-        depthTest: false,
-      }),
-    );
-    this.bg.frustumCulled = false;
-    this.bg.renderOrder = -10;
-    this.scene.add(this.bg);
 
     // Soft light from above with no highlights of its own: every glint on a
     // gem comes from the studio it reflects, which keeps them crisp and small.
@@ -1262,6 +1065,24 @@ export class GemScene {
         m.makeTranslation(p.x, p.y, -0.5);
         this.tiles.setMatrixAt(idx(x, y), m);
       }
+    // Over the bright scenery, a soft dark pane behind the board keeps the
+    // stones easy to see.
+    const pane = document.createElement("canvas");
+    pane.width = pane.height = 256;
+    const pg = pane.getContext("2d")!;
+    pg.filter = "blur(10px)";
+    pg.fillStyle = "#000";
+    pg.beginPath();
+    pg.roundRect(20, 20, 216, 216, 28);
+    pg.fill();
+    const paneTex = new THREE.CanvasTexture(pane);
+    this.shade = new THREE.Mesh(
+      new THREE.PlaneGeometry(SIZE + 0.9, SIZE + 0.9),
+      new THREE.MeshBasicMaterial({ map: paneTex, color: 0x02100c, transparent: true, opacity: 0.5, depthWrite: false }),
+    );
+    this.shade.position.z = -0.7;
+    this.shade.renderOrder = -2;
+    this.boardGroup.add(this.shade);
     // The cells are not drawn: the stones float straight over the scene,
     // with only faint lines between them to show the board.
     this.tiles.visible = false;
@@ -1497,8 +1318,7 @@ export class GemScene {
   setWorld(i: number, cycle = 0) {
     this.worldIndex = i;
     this.worldCycle = cycle;
-    this.bg.material.uniforms.world.value = i;
-    this.bg.material.uniforms.cycle.value = cycle;
+    this.scenery.setWorld(i, cycle);
     this.paintTiles();
   }
 
@@ -2498,6 +2318,8 @@ export class GemScene {
     this.composer.setSize(w, h);
     this.bloom.resolution.set(w / 2, h / 2);
     this.camera.aspect = w / h;
+    const ratio = this.renderer.getPixelRatio();
+    this.scenery.resize(w * ratio, h * ratio);
     // Fit the board (8 units) in both directions, as big as it goes: the
     // margin only leaves room for a line blaster's tips on an edge gem.
     const fit = 8.4;
@@ -2506,7 +2328,6 @@ export class GemScene {
     const distW = fit / 2 / (Math.tan(vFov / 2) * this.camera.aspect);
     this.baseDistance = Math.max(distH, distW);
     this.camera.updateProjectionMatrix();
-    this.bg.material.uniforms.aspect.value = w / h;
   }
   private baseDistance = 16;
 
@@ -2582,9 +2403,7 @@ export class GemScene {
 
     // Fever and the background.
     this.fever += (this.feverTarget - this.fever) * Math.min(1, real * 3);
-    const u = this.bg.material.uniforms;
-    u.time.value = this.time;
-    u.fever.value = this.fever;
+    this.scenery.setFever(this.fever);
     this.bloom.strength = 0.28 + this.fever * 0.35;
     for (const m of this.materials) m.uniforms.uGlow.value = this.fever * 0.3;
 
@@ -2602,6 +2421,7 @@ export class GemScene {
     this.camera.lookAt(sx * 0.5, sy * 0.5, 0);
 
     this.particles.update(dt);
+    this.scenery.update(real, this.tilt);
     if (this.time > this.nextGlint) {
       this.nextGlint = this.time + 0.9 + Math.random() * 1.3;
       this.glint();

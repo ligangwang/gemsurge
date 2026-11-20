@@ -205,7 +205,7 @@ test("speaks Chinese", () => {
   play();
   expect(screen.getByRole("button", { name: "开始" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "每日棋盘" })).toBeTruthy();
-  expect(screen.getByText(/霓虹都市/)).toBeTruthy();
+  expect(screen.getByText(/水晶森林/)).toBeTruthy();
   expect(screen.getByText("登录以赚取金币和徽章")).toBeTruthy();
 });
 

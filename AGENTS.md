@@ -22,4 +22,6 @@ Notes for AI coding agents working on Gem Surge.
   match). When you change prices or tiers, update both.
 - Gem Surge is an original game: don't copy names, art, levels or sounds from
   other match-3 games. The gems are three.js shapes and the sounds are
-  synthesised, so there are no third-party assets to credit.
+  synthesised. The only third-party assets are the background photos in
+  `public/scenes/` (CC0, from Poly Haven), each listed in
+  `public/scenes/CREDITS.md`.
