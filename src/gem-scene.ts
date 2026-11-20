@@ -27,11 +27,11 @@ import type { Cleared } from "./engine/board";
 import { sfx } from "./sound";
 
 export const GEM_COLORS = [
-  0xff2450, 0xffc400, 0x12b060, 0x3a84ff, 0xb450ff, 0xe8f6ff,
+  0xff2450, 0xffc81e, 0x7ed62a, 0x2a96ff, 0xb450ff, 0xe8f6ff,
 ];
 /** The stones themselves are a little deeper, since the light inside brightens them. */
 const STONE_COLORS = [
-  0xb00a26, 0xe08c00, 0x067a3c, 0x0e3cc0, 0x6218c0, 0xe4f2ff,
+  0xc8102e, 0xffc400, 0x6cc21c, 0x0c6ee8, 0x7a30d8, 0xf2f6ff,
 ];
 /** CSS versions for the HUD. */
 export const GEM_CSS = GEM_COLORS.map(
@@ -85,6 +85,11 @@ export class AnimationCancelled extends Error {
 
 // --------------------------------------------------------------- geometry
 
+/** A rounded box shape (a superellipse) `w` by `h` across; a higher `power` is squarer. */
+const cushion = (w: number, h: number, power: number) => (a: number) =>
+  (Math.abs(Math.cos(a) / w) ** power + Math.abs(Math.sin(a) / h) ** power) **
+  (-1 / power);
+
 /**
  * A closed outline as a polar function: the stone's radius at each angle.
  * Built from points along the edge, so pointed and indented shapes (the
@@ -126,21 +131,6 @@ function traced(f: (t: number) => [number, number], steps = 720) {
   return pts.map(([x, y]) => [x - cx, y - cy] as [number, number]);
 }
 
-/** Points along a polygon's edges, so its corners stay sharp. */
-function polygon(corners: [number, number][], perSide = 40) {
-  const pts: [number, number][] = [];
-  corners.forEach(([x0, y0], i) => {
-    const [x1, y1] = corners[(i + 1) % corners.length];
-    for (let k = 0; k < perSide; k++) {
-      const t = k / perSide;
-      pts.push([x0 + (x1 - x0) * t, y0 + (y1 - y0) * t]);
-    }
-  });
-  return pts;
-}
-
-const ROUND = () => 0.46;
-
 /** A heart, its notch at the top and its point at the bottom. */
 const HEART = polar(
   traced((t) => {
@@ -158,18 +148,10 @@ const HEART = polar(
   }),
 );
 
-/** A pear: a round bulb drawn up to a point. */
-const PEAR = polar(
-  traced((t) => {
-    const a = t * Math.PI * 2;
-    return [0.47 * Math.sin(a) * Math.sin(a / 2) ** 0.85, 0.48 * Math.cos(a)];
-  }),
-);
-
 /** A marquise: two arcs meeting in a point at each end. */
 const MARQUISE = (() => {
-  const h = 0.48;
-  const w = 0.28;
+  const h = 0.49;
+  const w = 0.44;
   const c = (h * h - w * w) / (2 * w);
   const r = c + w;
   const reach = Math.asin(h / r);
@@ -195,24 +177,51 @@ const TRILLION = (a: number) => {
   return (side ** -6 + 0.53 ** -6) ** (-1 / 6);
 };
 
-/** The square emerald cut: a square with its corners cut off. */
-const OCTAGON_CORNERS = (s: number, cut: number): [number, number][] => [
-  [s - cut, s],
-  [-s + cut, s],
-  [-s, s - cut],
-  [-s, -s + cut],
-  [-s + cut, -s],
-  [s - cut, -s],
-  [s, -s + cut],
-  [s, s - cut],
-];
-const OCTAGON = polar(polygon(OCTAGON_CORNERS(0.42, 0.13)));
+/** Points along a polygon's edges, so its corners stay sharp. */
+function polygon(corners: [number, number][], perSide = 40) {
+  const pts: [number, number][] = [];
+  corners.forEach(([x0, y0], i) => {
+    const [x1, y1] = corners[(i + 1) % corners.length];
+    for (let k = 0; k < perSide; k++) {
+      const t = k / perSide;
+      pts.push([x0 + (x1 - x0) * t, y0 + (y1 - y0) * t]);
+    }
+  });
+  return pts;
+}
+
+/** The yellow stone: a pear, a round bulb drawn up to a point. */
+const PEAR = polar(
+  traced((t) => {
+    const a = t * Math.PI * 2;
+    return [0.47 * Math.sin(a) * Math.sin(a / 2) ** 0.85, 0.49 * Math.cos(a)];
+  }),
+);
+/** The amethyst: a cushion wider than it is tall. */
+const WIDE = cushion(0.49, 0.4, 3.4);
+/** The diamond: a square with its corners cut off, standing on a point. */
+const RADIANT = (() => {
+  const s = 0.38;
+  const c = 0.07;
+  const square: [number, number][] = [
+    [s - c, s],
+    [-s + c, s],
+    [-s, s - c],
+    [-s, -s + c],
+    [-s + c, -s],
+    [s - c, -s],
+    [s, -s + c],
+    [s, s - c],
+  ];
+  const k = Math.SQRT1_2;
+  return polar(polygon(square.map(([x, y]) => [(x - y) * k, (x + y) * k])));
+})();
 
 /**
  * Each stone's outline as an SVG path in a box from -0.6 to 0.6, so the goals
  * can show the same shapes as the board.
  */
-export const GEM_OUTLINES = [HEART, PEAR, OCTAGON, MARQUISE, TRILLION, ROUND].map(
+export const GEM_OUTLINES = [HEART, PEAR, TRILLION, MARQUISE, WIDE, RADIANT].map(
   (radius) => {
     const points = Array.from({ length: 96 }, (_, i) => {
       const a = (i / 96) * Math.PI * 2;
@@ -279,8 +288,40 @@ const at = (radius: (a: number) => number, a: number, scale: number, z: number) 
  * and `turn` where the first one points, so the outline's corners and tips
  * fall on a facet edge.
  */
-function brilliant(radius: (a: number) => number, mains = 8, turn = Math.PI / 2) {
-  const f = new Facets();
+function brilliant(
+  radius: (a: number) => number,
+  mains = 8,
+  turn = Math.PI / 2,
+  {
+    contrast = 1,
+    sparkle = 0,
+    lift = 0,
+    fine = 4,
+  }: {
+    /** Added to every facet's shade, for a stone lit through. */
+    lift?: number;
+    /** 1 keeps the light and dark as cut; lower is a brighter, more even stone. */
+    contrast?: number;
+    /** How much each small facet varies on its own, for a crushed-ice glitter. */
+    sparkle?: number;
+    /** How many girdle facets between a main point and the next midpoint. */
+    fine?: number;
+  } = {},
+) {
+  const facets = new Facets();
+  // A fixed sequence, so every stone of a colour is cut the same.
+  let seed = 7;
+  const next = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) - 0.5;
+  const f = {
+    tri: (p: number[], q: number[], r: number[], shade: number) =>
+      facets.tri(
+        p,
+        q,
+        r,
+        1 + lift + (shade - 1) * contrast + sparkle * next(),
+      ),
+    geometry: () => facets.geometry(),
+  };
   const step = (Math.PI * 2) / mains;
   const main = (j: number) => turn + j * step;
   const mid = (j: number) => main(j) + step / 2;
@@ -289,8 +330,6 @@ function brilliant(radius: (a: number) => number, mains = 8, turn = Math.PI / 2)
   const girdle = (a: number) => at(radius, a, 1, 0);
   const centre = [0, 0, CROWN];
   const culet = [0, 0, -PAVILION];
-  // How many girdle points between a main point and the next midpoint.
-  const fine = 4;
   for (let j = 0; j < mains; j++) {
     const odd = j % 2;
     // The table, split into a pinwheel: through it you see the back facets.
@@ -323,90 +362,245 @@ function brilliant(radius: (a: number) => number, mains = 8, turn = Math.PI / 2)
 }
 
 /**
- * A step cut, for the square emerald: rows of long facets stepping up from
- * the girdle to a wide table. Through the table you see the steps on the
- * back, as rings split by the diagonals to the corners, every piece its own
- * light or dark: the "hall of mirrors" that makes an emerald cut sparkle.
+ * A table cut: a wide flat table, through which the back of the stone shows,
+ * ringed by one row of large triangles pointing down and up in turn. `mains`
+ * is the number of table corners.
  */
-function stepCut(corners: (scale: number) => [number, number][]) {
+function tableCut(
+  radius: (a: number) => number,
+  mains: number,
+  turn = Math.PI / 2,
+  tableScale = 0.6,
+) {
   const f = new Facets();
-  // How bright each of the eight sides is, going round from the top. The
-  // pattern turns a step with each ring, so neighbouring pieces differ.
-  const tones = [1.8, 1.0, 0.3, 0.7, 1.6, 0.45, 0.22, 1.2];
-  const tone = (side: number, ring: number) => tones[(side + 3 * ring) % 8];
-  const crown: [number, number][] = [
-    // [scale, height]: the girdle, two steps, and the table's edge.
-    [1, 0],
-    [0.86, CROWN * 0.55],
-    [0.72, CROWN * 0.88],
-    [0.6, CROWN],
-  ];
-  // Rings seen through the table, from its edge in to the middle.
-  const table = [0.6, 0.47, 0.35, 0.23, 0.11];
-  const band = (
-    outer: number[][],
-    inner: number[][],
-    shade: (side: number) => number,
-  ) =>
-    outer.forEach((p, j) => {
-      const q = outer[(j + 1) % outer.length];
-      const u = inner[j];
-      const v = inner[(j + 1) % inner.length];
-      f.tri(p, q, v, shade(j));
-      f.tri(p, v, u, shade(j));
-    });
-  const ring = (scale: number, z: number) =>
-    corners(scale).map(([x, y]) => [x, y, z]);
-  for (let i = 0; i < crown.length - 1; i++)
-    band(ring(...crown[i]), ring(...crown[i + 1]), (j) => tone(j, i) * 1.1);
-  for (let i = 0; i < table.length - 1; i++)
-    band(ring(table[i], CROWN), ring(table[i + 1], CROWN), (j) =>
-      tone(j, i + 5) * (i % 2 ? 0.75 : 1.15),
-    );
-  const middle = ring(table[table.length - 1], CROWN);
-  for (let j = 1; j < middle.length - 1; j++)
-    f.tri(middle[0], middle[j], middle[j + 1], 1.8);
-  // The pavilion.
-  const base = ring(1, 0);
+  const step = (Math.PI * 2) / mains;
+  const main = (j: number) => turn + j * step;
+  const mid = (j: number) => main(j) + step / 2;
+  const table = (j: number) => at(radius, main(j), tableScale, CROWN);
+  const girdle = (a: number) => at(radius, a, 1, 0);
+  const centre = [0, 0, CROWN];
   const culet = [0, 0, -PAVILION];
-  base.forEach((p, j) => f.tri(culet, base[(j + 1) % base.length], p, 0.3));
+  const fine = 6;
+  for (let j = 0; j < mains; j++) {
+    f.tri(centre, table(j), table(j + 1), 1);
+    // A triangle hanging from the table's edge to a point on the girdle.
+    f.tri(table(j), table(j + 1), girdle(mid(j)), j % 2 ? 1.3 : 0.9);
+    // A triangle standing on the girdle, its tip at the table's corner.
+    for (let k = 0; k < fine; k++) {
+      const a0 = mid(j - 1) + (k / fine) * step;
+      const a1 = mid(j - 1) + ((k + 1) / fine) * step;
+      f.tri(table(j), girdle(a0), girdle(a1), j % 2 ? 0.5 : 0.75);
+      f.tri(culet, girdle(a1), girdle(a0), 0.3);
+    }
+  }
   return f.geometry();
 }
 
 /**
- * Six cut stones with six different outlines, so a gem reads by shape as well
- * as colour: a heart, a pear, a square emerald cut, a marquise, a trillion,
- * and a round brilliant for the diamond.
+ * Six cut stones, each with its own outline and its own cut, so a gem reads
+ * by shape as well as colour.
  */
 function makeGeometries(): THREE.BufferGeometry[] {
   return [
-    brilliant(HEART, 8),
-    brilliant(PEAR, 8),
-    stepCut((s) => OCTAGON_CORNERS(0.42 * s, 0.13 * s)),
+    // The ruby heart: a wide table ringed by big triangles.
+    tableCut(HEART, 10, Math.PI / 2, 0.62),
+    // The yellow pear: a brilliant with many small facets, like crushed ice.
+    brilliant(PEAR, 12, Math.PI / 2, { fine: 6 }),
+    // The green trillion: a table and six bold triangles.
+    tableCut(TRILLION, 6, Math.PI / 2, 0.5),
+    // The plump sapphire: a classic brilliant with a star round its table.
     brilliant(MARQUISE, 8),
-    brilliant(TRILLION, 6),
-    brilliant(ROUND, 8),
+    // The amethyst cushion: a big open table and eight broad triangles.
+    tableCut(WIDE, 8, Math.PI / 8, 0.64),
+    // The diamond, which joins from level 11: a brilliant with many fine
+    // facets, standing on its point.
+    brilliant(RADIANT, 8, Math.PI / 2, { fine: 5 }),
   ];
 }
 
 /**
- * Lets the facets' baked light and dark shade the stone's glow too, so a
- * dark facet stays dark instead of glowing evenly like coloured plastic.
+ * How each cut stone is lit from inside: `wedges` facets on its back, the
+ * first at `turn`, meeting at `culet` (off-centre for the heart and pear);
+ * `fire` spreads the colours apart; `deep` and `bright` are how dark its
+ * shadows and how strong its flashes are.
  */
-function shadeGlow(material: THREE.MeshPhysicalMaterial) {
-  material.onBeforeCompile = (shader) => {
-    shader.fragmentShader = shader.fragmentShader.replace(
-      "#include <emissivemap_fragment>",
-      "#include <emissivemap_fragment>\n\ttotalEmissiveRadiance *= vColor.rgb;",
-    );
-  };
-  material.customProgramCacheKey = () => "facet-glow";
-  return material;
+const CUTS: Record<
+  number,
+  {
+    wedges: number;
+    culet: [number, number];
+    fire: number;
+    deep: number;
+    bright: number;
+    /** For a colourless stone: how strongly its patches take warm and cool light. */
+    tint?: number;
+  }
+> = {
+  0: { wedges: 10, culet: [0, -0.1], fire: 0.03, deep: 0.17, bright: 1.3 },
+  1: { wedges: 24, culet: [0, -0.1], fire: 0.08, deep: 0.26, bright: 1.05 },
+  2: { wedges: 6, culet: [0, -0.04], fire: 0.06, deep: 0.18, bright: 1.25 },
+  3: { wedges: 16, culet: [0, 0], fire: 0.04, deep: 0.2, bright: 1.4 },
+  4: { wedges: 8, culet: [0, 0], fire: 0.05, deep: 0.17, bright: 1.3 },
+  5: { wedges: 16, culet: [0, 0], fire: 0.16, deep: 0.2, bright: 0.95, tint: 0.7 },
+};
+
+const GEM_VERTEX = /* glsl */ `
+varying vec3 vPos;
+varying vec3 vNormal;
+varying vec3 vView;
+varying mat3 vToWorld;
+varying float vShade;
+void main() {
+  vPos = position;
+  vNormal = normal;
+  vView = (inverse(modelMatrix) * vec4(cameraPosition, 1.0)).xyz - position;
+  vToWorld = mat3(modelMatrix);
+  vShade = color.r;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+
+/**
+ * A cut stone, the way one really looks: you see into it. Light that enters
+ * a facet on top bounces off two facets on the back and comes out again, so
+ * every patch of the stone shows a different lamp of the room, or none: bright
+ * flashes beside deep shadow, in shapes smaller than the facets themselves.
+ * The back facets are worked out here from where the light lands, not drawn.
+ */
+const GEM_FRAGMENT = /* glsl */ `
+uniform vec3 uColor;
+uniform sampler2D uRoom;
+uniform float uGlow;
+uniform float uWedges;
+uniform vec2 uCulet;
+uniform float uFire;
+uniform float uDeep;
+uniform float uBright;
+uniform float uTint;
+varying vec3 vPos;
+varying vec3 vNormal;
+varying vec3 vView;
+varying mat3 vToWorld;
+varying float vShade;
+
+/** The room's light from a direction given in the stone's own space. */
+vec3 room(vec3 d) {
+  d = normalize(vToWorld * d);
+  vec2 uv = vec2(atan(d.z, d.x) / 6.2831853 + 0.5, 0.5 + asin(clamp(d.y, -1.0, 1.0)) / 3.14159265);
+  vec3 e = texture2D(uRoom, uv).rgb;
+  // Lamps are far brighter than the walls.
+  return e * e * (1.0 + 3.0 * e);
+}
+
+/** A number for the back facet last looked at, different for each. */
+float facetId = 0.0;
+
+/** The facet on the back of the stone under a point: its outward normal. */
+vec3 backFacet(vec2 p) {
+  p -= uCulet;
+  float turn = 1.5707963;
+  float w = 6.2831853 / uWedges;
+  // Near the girdle the facets are split in two and steeper.
+  float outer = step(0.3, length(p));
+  float ww = w / (1.0 + outer);
+  float n = floor((atan(p.y, p.x) - turn) / ww);
+  // No two facets are cut quite alike: each leans and slopes its own way,
+  // so each sends back a different part of the room.
+  float odd = fract(sin(n * 12.9898 + outer * 78.233) * 43758.5453);
+  facetId = odd;
+  float lean = (mod(n, 2.0) - 0.5) * 0.3 + (odd - 0.5) * 0.25;
+  float a = (n + 0.5) * ww + turn + lean;
+  float slope = mix(0.87, 1.15, outer) + (odd - 0.5) * 0.3;
+  return normalize(vec3(cos(a) * slope, sin(a) * slope, -1.0));
+}
+
+/** What comes back out of the stone for light of one colour. */
+vec3 inside(vec3 V, vec3 N, float ior) {
+  vec3 T = refract(-V, N, 1.0 / ior);
+  vec2 hit = vPos.xy + T.xy / max(0.3, -T.z) * (vPos.z + 0.1);
+  vec3 d = reflect(T, backFacet(hit));
+  // It crosses to the far side; if it is not heading there, it leaks out.
+  vec2 across = normalize(d.xy + vec2(1e-4));
+  float reach = dot(uCulet - hit, across);
+  vec2 hit2 = hit + across * 2.0 * max(reach, 0.0);
+  vec3 d2 = reflect(d, backFacet(hit2));
+  float kept = smoothstep(-0.02, 0.05, reach) * smoothstep(0.0, 0.2, d2.z);
+  return room(d2) * kept;
+}
+
+void main() {
+  vec3 N = normalize(vNormal);
+  vec3 V = normalize(vView);
+  float facing = clamp(dot(N, V), 0.0, 1.0);
+
+  // Each colour bends a little differently: that is a stone's fire.
+  vec3 back = vec3(
+    inside(V, N, 1.76 - uFire).r,
+    inside(V, N, 1.76).g,
+    inside(V, N, 1.76 + uFire).b
+  );
+  float light = dot(back, vec3(0.3, 0.5, 0.2));
+  vec3 deep = uColor * uDeep;
+  vec3 lit = uColor * uBright;
+  vec3 colour = mix(deep, lit, clamp(back, 0.0, 1.0));
+  // The strongest flashes pale towards white, tinted by the fire.
+  colour += (uColor * 0.6 + 0.4) * max(back - 1.0, 0.0) * 0.2;
+  colour *= mix(1.0, vShade, 0.2);
+  // A colourless stone takes its colours from the room: some patches show
+  // warm lamplight, some cool daylight, the rest stay clear.
+  vec3 hue = facetId < 0.36 ? vec3(1.0, 0.76, 0.42) : facetId > 0.64 ? vec3(0.6, 0.78, 1.0) : vec3(1.0);
+  colour *= mix(vec3(1.0), hue, uTint);
+
+  // The polished surface mirrors the room too, most at a glancing angle.
+  float fresnel = 0.09 + 0.91 * pow(1.0 - facing, 5.0);
+  // Only the lamps show, not the walls, and they take a little of its colour.
+  vec3 mirrored = room(reflect(-V, N));
+  mirrored *= smoothstep(0.4, 1.6, mirrored);
+  colour += mirrored * fresnel * 0.45 * mix(vec3(1.0), uColor + 0.35, 0.55);
+
+  colour += uColor * uGlow * (0.4 + light);
+  gl_FragColor = vec4(colour, 1.0);
+}`;
+
+/**
+ * The room the cut stones show: dark, with many small hard-edged lamps all
+ * round, so that as a stone turns its patches flick on and off.
+ */
+function roomTexture() {
+  const c = document.createElement("canvas");
+  c.width = 512;
+  c.height = 256;
+  const g = c.getContext("2d")!;
+  const wall = g.createLinearGradient(0, 0, 0, 256);
+  wall.addColorStop(0, "#343a55");
+  wall.addColorStop(0.5, "#15161f");
+  wall.addColorStop(1, "#050507");
+  g.fillStyle = wall;
+  g.fillRect(0, 0, 512, 256);
+  // A fixed sequence, so the room is the same every time.
+  let seed = 11;
+  const next = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const tints = ["#ffffff", "#ffffff", "#ffffff", "#fff3dc", "#e4eeff", "#ffe9f4"];
+  for (let i = 0; i < 90; i++) {
+    const w = 10 + next() * 34;
+    const h = 8 + next() * 26;
+    g.globalAlpha = 0.55 + next() * 0.45;
+    g.fillStyle = tints[Math.floor(next() * tints.length)];
+    g.fillRect(next() * 512 - w / 2, next() * 230, w, h);
+  }
+  g.globalAlpha = 1;
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = THREE.RepeatWrapping;
+  t.generateMipmaps = false;
+  t.minFilter = THREE.LinearFilter;
+  return t;
 }
 
 /**
  * What the gems reflect: a dark jeweller's studio with bright lamps all the
- * way round, so each facet of a stone mirrors a different one.
+ * way round, so each facet of a cut stone mirrors a different one. The
+ * prism and the ice pick their highlights up from it; the cut stones show
+ * the room in roomTexture.
  */
 function studioTexture() {
   const c = document.createElement("canvas");
@@ -808,8 +1002,8 @@ export class GemScene {
   private fx = new THREE.Group();
   private geometries = makeGeometries();
   private prismGeometry = new THREE.IcosahedronGeometry(0.46, 0);
-  private materials: THREE.MeshPhysicalMaterial[];
-  private shellMaterials: THREE.MeshPhysicalMaterial[];
+  private materials: THREE.ShaderMaterial[];
+  private roomTex = roomTexture();
   private prismMaterial: THREE.MeshPhysicalMaterial;
   private glowTex = glowTexture();
   private starTex = starTexture();
@@ -916,48 +1110,9 @@ export class GemScene {
     // gem comes from the studio it reflects, which keeps them crisp and small.
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x6a5a8a, 2.8));
 
-    // The body of each stone: its colour, with the light and dark of each
-    // facet baked into the geometry. The diamond is clear, with a play of colour.
-    this.materials = STONE_COLORS.map((c, i) =>
-      shadeGlow(
-        new THREE.MeshPhysicalMaterial({
-          color: c,
-          emissive: c,
-          emissiveIntensity: i === 5 ? 0.5 : 0.35,
-          // The diamond is see-through: the scene shows faintly through its middle.
-          transparent: i === 5,
-          opacity: i === 5 ? 0.8 : 1,
-          roughness: 0.12,
-          metalness: 0,
-          flatShading: true,
-          clearcoat: i === 5 ? 1 : 0,
-          clearcoatRoughness: 0.05,
-          iridescence: i === 5 ? 1 : 0,
-          iridescenceIOR: 1.6,
-          envMapIntensity: i === 5 ? 1.2 : 0.45,
-          vertexColors: true,
-        }),
-      ),
-    );
-    // The polished surface of each stone: only its reflections, added over
-    // the body. Every facet mirrors a different lamp in the studio, so they
-    // flash in turn as the stone sways.
-    this.shellMaterials = STONE_COLORS.map(
-      (c) =>
-        new THREE.MeshPhysicalMaterial({
-          color: new THREE.Color(c).multiplyScalar(0.04),
-          roughness: 0.03,
-          metalness: 0,
-          ior: 2.2,
-          flatShading: true,
-          clearcoat: 1,
-          clearcoatRoughness: 0.02,
-          envMapIntensity: 1.6,
-          transparent: true,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
-        }),
-    );
+    // The body of each stone, drawn by the gem shader, which shows the light
+    // inside it and the room it mirrors.
+    this.materials = STONE_COLORS.map((_, i) => this.cutMaterial(i));
     this.prismMaterial = new THREE.MeshPhysicalMaterial({
       color: 0xffffff,
       emissive: 0xffffff,
@@ -1034,9 +1189,31 @@ export class GemScene {
         m.makeTranslation(p.x, p.y, -0.5);
         this.tiles.setMatrixAt(idx(x, y), m);
       }
-    // The cells are not drawn: the stones float straight over the scene.
+    // The cells are not drawn: the stones float straight over the scene,
+    // with only faint lines between them to show the board.
     this.tiles.visible = false;
     this.boardGroup.add(this.tiles);
+    const lines: number[] = [];
+    const edge = SIZE / 2;
+    for (let i = 0; i <= SIZE; i++) {
+      const at = i - edge;
+      lines.push(at, -edge, 0, at, edge, 0, -edge, at, 0, edge, at, 0);
+    }
+    const grid = new THREE.LineSegments(
+      new THREE.BufferGeometry().setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(lines, 3),
+      ),
+      new THREE.LineBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.14,
+        depthWrite: false,
+      }),
+    );
+    grid.position.z = -0.3;
+    grid.renderOrder = -1;
+    this.boardGroup.add(grid);
     this.paintTiles();
   }
 
@@ -1064,6 +1241,28 @@ export class GemScene {
     this.tiles.instanceColor!.needsUpdate = true;
   }
 
+  /** The gem shader for one cut stone; `glow` lights it up from inside. */
+  private cutMaterial(color: number, glow = 0) {
+    const cut = CUTS[color];
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        uColor: { value: new THREE.Color(STONE_COLORS[color]) },
+        uRoom: { value: this.roomTex },
+        uGlow: { value: glow },
+        uWedges: { value: cut.wedges },
+        uCulet: { value: new THREE.Vector2(...cut.culet) },
+        uFire: { value: cut.fire },
+        uDeep: { value: cut.deep },
+        uBright: { value: cut.bright },
+        uTint: { value: cut.tint ?? 0 },
+      },
+      vertexShader: GEM_VERTEX,
+      fragmentShader: GEM_FRAGMENT,
+      vertexColors: true,
+    });
+    return material;
+  }
+
   private makeView(gem: Gem, x: number, y: number): GemView {
     const group = new THREE.Group();
     const special = gem.special;
@@ -1075,28 +1274,18 @@ export class GemScene {
       ? this.prismMaterial
       : this.materials[gem.color];
     if (special && !prism) {
-      const m = shadeGlow(this.materials[gem.color].clone());
-      m.emissiveIntensity = 0.85;
-      material = m;
+      // A special stone glows from inside.
+      material = this.cutMaterial(gem.color, 0.55);
     }
     const body = new THREE.Mesh(
       prism ? this.prismGeometry : this.geometries[gem.color],
       material,
     );
     group.add(body);
-    if (!prism) {
-      const shell = new THREE.Mesh(
-        this.geometries[gem.color],
-        this.shellMaterials[gem.color],
-      );
-      shell.userData.shared = true;
-      shell.renderOrder = 2;
-      body.add(shell);
-    }
     const glow = new THREE.Sprite(
       new THREE.SpriteMaterial({
         map: this.glowTex,
-        color: color.clone().multiplyScalar(special ? 0.8 : 0.22),
+        color: color.clone().multiplyScalar(special ? 0.8 : 0.08),
         transparent: true,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
@@ -2213,8 +2402,9 @@ export class GemScene {
     this.composer.setSize(w, h);
     this.bloom.resolution.set(w / 2, h / 2);
     this.camera.aspect = w / h;
-    // Fit the board (8 units) in both directions, with a thin margin.
-    const fit = 9.0;
+    // Fit the board (8 units) in both directions, as big as it goes: the
+    // margin only leaves room for a line blaster's tips on an edge gem.
+    const fit = 8.4;
     const vFov = (this.camera.fov * Math.PI) / 180;
     const distH = fit / 2 / Math.tan(vFov / 2);
     const distW = fit / 2 / (Math.tan(vFov / 2) * this.camera.aspect);
@@ -2299,9 +2489,8 @@ export class GemScene {
     const u = this.bg.material.uniforms;
     u.time.value = this.time;
     u.fever.value = this.fever;
-    this.bloom.strength = 0.4 + this.fever * 0.35;
-    for (const m of this.materials)
-      m.emissiveIntensity = 0.22 + this.fever * 0.2;
+    this.bloom.strength = 0.28 + this.fever * 0.35;
+    for (const m of this.materials) m.uniforms.uGlow.value = this.fever * 0.3;
 
     // Camera: a slight tilt, a touch of parallax, and shake.
     this.tilt.lerp(this.pointer, Math.min(1, real * 2));

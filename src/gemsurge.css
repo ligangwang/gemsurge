@@ -453,30 +453,38 @@
 .maxed { font-weight: 700; color: #d5ff58; min-width: 96px; text-align: center; }
 .shop-note { margin: 14px 0 0; color: #ffd23f; }
 
-/* Narrow frames: the HUD becomes a strip above the board. */
+/* Narrow frames: the HUD becomes a short strip above the board, kept as low
+   as it can be so the board, and its gems, get the rest of a phone's screen. */
 @media (max-width: 760px) {
+  .gem-app { --strip: 124px; }
   .gem-menu { grid-template-columns: 1fr; padding: 24px 16px; }
   .screen-play .gem-host,
-  .screen-end .gem-host { left: 0; top: 168px; }
+  .screen-end .gem-host { left: 0; top: var(--strip); }
   .gem-hud {
     width: auto;
     right: 0;
     bottom: auto;
-    height: 168px;
-    padding: 10px 14px;
+    height: var(--strip);
+    padding: 6px 12px;
     display: grid;
     grid-template-columns: auto 1fr;
-    gap: 6px 14px;
+    align-content: start;
+    gap: 4px 14px;
     border-right: 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   }
-  .hud-top { grid-column: 1 / -1; }
-  .hud-moves { padding: 0; }
-  .moves-n { font-size: 40px; }
-  .hud-score .score-n { font-size: 20px; margin: 0 0 4px; }
+  .hud-top { grid-column: 1 / -1; height: 36px; }
+  .hud-top .icon-button { width: 34px; height: 34px; font-size: 15px; }
+  .hud-level h2 { font-size: 17px; line-height: 1.15; }
+  .hud-level .eyebrow { font-size: 10px; line-height: 1.2; }
+  .hud-moves { padding: 0; height: 42px; justify-content: center; }
+  .moves-n { font-size: 30px; }
+  .moves-label { font-size: 10px; }
+  .hud-score { align-self: center; }
+  .hud-score .score-n { font-size: 16px; line-height: 1.2; margin: 0 0 3px; }
   .hud-goals { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; }
   .hud-goals .eyebrow, .goal-label, .goal-note, .hud-help, .hud-boosts, .hud-fever { display: none; }
-  .goal { margin: 0; padding: 4px 8px; }
+  .goal { margin: 0; padding: 2px 8px; }
   .gem-end { left: 0; }
   .gem-banner { font-size: 36px !important; }
 }
