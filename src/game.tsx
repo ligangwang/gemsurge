@@ -84,6 +84,15 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     setGoalsShown(value);
   };
   const goalsDone = useRef<number[]>([]);
+  /**
+   * Whether the move has finished playing. Its last pieces can still be in
+   * the air, so the HUD keeps counting them in until they have all landed.
+   */
+  const turnOver = useRef(true);
+  const endTurnGoals = () => {
+    turnOver.current = true;
+    if (flying === 0) showGoals(null);
+  };
   /** A piece has landed on its goal: count it, with a sound. */
   const landed = (key: string) => {
     if (key === "ice") sfx.collectIce();
@@ -96,6 +105,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     next[i] = Math.min(next[i] + 1, goalsDone.current[i] ?? next[i]);
     if (now[i] < goals[i].target && next[i] >= goals[i].target) sfx.goalDone();
     showGoals(next);
+    if (turnOver.current && flying === 0) showGoals(null);
   };
   const [end, setEnd] = useState<EndInfo | null>(null);
   const [buying, setBuying] = useState<string | null>(null);
@@ -232,6 +242,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       }
       // The goals fill as their pieces land, not all at once.
       goalsDone.current = s.progress().map((g) => g.have);
+      turnOver.current = false;
       showGoals(goalsBefore);
       rerender();
       let running = before;
@@ -242,7 +253,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
         },
       });
       setShown(s.score);
-      showGoals(null);
+      endTurnGoals();
       if (turn.feverStarted) {
         sc.banner("Fever!", 6);
         sfx.fever();
@@ -261,7 +272,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       if (s.outcome) await reward(s, false);
     } finally {
       busy.current = false;
-      showGoals(null);
+      endTurnGoals();
       if (session.current === s && !s.outcome) {
         sc.setInput(true);
         armHint();
