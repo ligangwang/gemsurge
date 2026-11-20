@@ -31,7 +31,7 @@ export const GEM_COLORS = [
 ];
 /** The stones themselves are a little deeper, since the light inside brightens them. */
 const STONE_COLORS = [
-  0xc8102e, 0xffc400, 0x6cc21c, 0x0c6ee8, 0x7a30d8, 0xf2f6ff,
+  0xc8102e, 0xffd41c, 0x5cb616, 0x0c6ee8, 0x7a30d8, 0xf2f6ff,
 ];
 /** CSS versions for the HUD. */
 export const GEM_CSS = GEM_COLORS.map(
@@ -173,8 +173,8 @@ const MARQUISE = (() => {
 const TRILLION = (a: number) => {
   const third = (Math.PI * 2) / 3;
   const fromSide = ((((a - Math.PI / 2) % third) + third) % third) - third / 2;
-  const side = 0.33 / Math.cos(fromSide);
-  return (side ** -6 + 0.53 ** -6) ** (-1 / 6);
+  const side = 0.37 / Math.cos(fromSide);
+  return (side ** -6 + 0.58 ** -6) ** (-1 / 6);
 };
 
 /** Points along a polygon's edges, so its corners stay sharp. */
@@ -404,8 +404,8 @@ function makeGeometries(): THREE.BufferGeometry[] {
   return [
     // The ruby heart: a wide table ringed by big triangles.
     tableCut(HEART, 10, Math.PI / 2, 0.62),
-    // The yellow pear: a brilliant with many small facets, like crushed ice.
-    brilliant(PEAR, 12, Math.PI / 2, { fine: 6 }),
+    // The yellow pear: a brilliant with clear, open facets.
+    brilliant(PEAR, 8, Math.PI / 2, { fine: 3 }),
     // The green trillion: a table and six bold triangles.
     tableCut(TRILLION, 6, Math.PI / 2, 0.5),
     // The plump sapphire: a classic brilliant with a star round its table.
@@ -434,11 +434,14 @@ const CUTS: Record<
     bright: number;
     /** For a colourless stone: how strongly its patches take warm and cool light. */
     tint?: number;
+    /** The colour of its shadows, when not a darker shade of its own colour. */
+    shadow?: number;
   }
 > = {
-  0: { wedges: 10, culet: [0, -0.1], fire: 0.03, deep: 0.17, bright: 1.3 },
-  1: { wedges: 24, culet: [0, -0.1], fire: 0.08, deep: 0.26, bright: 1.05 },
-  2: { wedges: 6, culet: [0, -0.04], fire: 0.06, deep: 0.18, bright: 1.25 },
+  0: { wedges: 16, culet: [0, -0.1], fire: 0.03, deep: 0.14, bright: 1.75 },
+  // A yellow stone's shadows are warm amber, not a muddy dark yellow.
+  1: { wedges: 12, culet: [0, -0.1], fire: 0.06, deep: 0.4, bright: 1.3, shadow: 0xe06a00 },
+  2: { wedges: 12, culet: [0, -0.04], fire: 0.06, deep: 0.2, bright: 1.75 },
   3: { wedges: 16, culet: [0, 0], fire: 0.04, deep: 0.2, bright: 1.4 },
   4: { wedges: 8, culet: [0, 0], fire: 0.05, deep: 0.17, bright: 1.3 },
   5: { wedges: 16, culet: [0, 0], fire: 0.16, deep: 0.2, bright: 0.95, tint: 0.7 },
@@ -476,6 +479,7 @@ uniform float uFire;
 uniform float uDeep;
 uniform float uBright;
 uniform float uTint;
+uniform vec3 uShadow;
 varying vec3 vPos;
 varying vec3 vNormal;
 varying vec3 vView;
@@ -539,12 +543,16 @@ void main() {
     inside(V, N, 1.76 + uFire).b
   );
   float light = dot(back, vec3(0.3, 0.5, 0.2));
-  vec3 deep = uColor * uDeep;
+  vec3 deep = uShadow * uDeep;
   vec3 lit = uColor * uBright;
   vec3 colour = mix(deep, lit, clamp(back, 0.0, 1.0));
   // The strongest flashes pale towards white, tinted by the fire.
   colour += (uColor * 0.6 + 0.4) * max(back - 1.0, 0.0) * 0.2;
   colour *= mix(1.0, vShade, 0.2);
+  // A stone has depth: it is thickest in the middle, where light travels
+  // furthest inside it, and thin at the girdle, where the colour runs dark.
+  float r = clamp(length(vPos.xy) / 0.48, 0.0, 1.0);
+  colour *= mix(1.12, 0.62, r * r);
   // A colourless stone takes its colours from the room: some patches show
   // warm lamplight, some cool daylight, the rest stay clear.
   vec3 hue = facetId < 0.36 ? vec3(1.0, 0.76, 0.42) : facetId > 0.64 ? vec3(0.6, 0.78, 1.0) : vec3(1.0);
@@ -555,7 +563,9 @@ void main() {
   // Only the lamps show, not the walls, and they take a little of its colour.
   vec3 mirrored = room(reflect(-V, N));
   mirrored *= smoothstep(0.4, 1.6, mirrored);
-  colour += mirrored * fresnel * 0.45 * mix(vec3(1.0), uColor + 0.35, 0.55);
+  // A stone mirrors light in its true colour, clear white; a coloured
+  // reflection is what makes metal or foil look like metal or foil.
+  colour += mirrored * fresnel * 0.45;
 
   colour += uColor * uGlow * (0.4 + light);
   gl_FragColor = vec4(colour, 1.0);
@@ -1255,6 +1265,7 @@ export class GemScene {
         uDeep: { value: cut.deep },
         uBright: { value: cut.bright },
         uTint: { value: cut.tint ?? 0 },
+        uShadow: { value: new THREE.Color(cut.shadow ?? STONE_COLORS[color]) },
       },
       vertexShader: GEM_VERTEX,
       fragmentShader: GEM_FRAGMENT,
