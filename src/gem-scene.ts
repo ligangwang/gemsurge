@@ -151,7 +151,7 @@ const HEART = polar(
 /** A marquise: two arcs meeting in a point at each end. */
 const MARQUISE = (() => {
   const h = 0.49;
-  const w = 0.37;
+  const w = 0.44;
   const c = (h * h - w * w) / (2 * w);
   const r = c + w;
   const reach = Math.asin(h / r);
