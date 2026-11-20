@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findHint, type Pos } from "./engine/board";
 import { FEVER_MOVES, FREE_UNDO_LEVELS, Session, type Goal, type Turn } from "./engine/session";
+import { version } from "../game.json";
 import { AnimationCancelled, CHEERS, GEM_OUTLINES, GemScene, STONE_CSS, type Collected } from "./gem-scene";
 import { useDingn, useLocale } from "./dingn";
 import {
@@ -653,6 +654,8 @@ function Menu(props: {
           );
         })}
       </section>
+      {/* The version, small in a corner, for telling which build a player has. */}
+      <p className="gem-version">v{version}</p>
     </div>
   );
 }
