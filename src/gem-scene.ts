@@ -27,11 +27,11 @@ import type { Cleared } from "./engine/board";
 import { sfx } from "./sound";
 
 export const GEM_COLORS = [
-  0xff2450, 0xffc81e, 0x7ed62a, 0x2a96ff, 0xb450ff, 0xe8f6ff,
+  0xff2450, 0xe8f6ff, 0x7ed62a, 0x2a96ff, 0xb450ff, 0xffc81e,
 ];
 /** The stones themselves are a little deeper, since the light inside brightens them. */
 const STONE_COLORS = [
-  0xc01030, 0xffd41c, 0x5cb616, 0x0c6ee8, 0x7a30d8, 0xf2f6ff,
+  0xc01030, 0xf2f6ff, 0x5cb616, 0x0c6ee8, 0x7a30d8, 0xffd41c,
 ];
 /** CSS versions for the HUD. */
 export const GEM_CSS = GEM_COLORS.map(
@@ -229,7 +229,7 @@ const RADIANT = (() => {
  * Each stone's outline as an SVG path in a box from -0.6 to 0.6, so the goals
  * can show the same shapes as the board.
  */
-export const GEM_OUTLINES = [HEART, PEAR, TRILLION, MARQUISE, WIDE, RADIANT].map(
+export const GEM_OUTLINES = [HEART, RADIANT, TRILLION, MARQUISE, WIDE, PEAR].map(
   (radius) => {
     const points = Array.from({ length: 96 }, (_, i) => {
       const a = (i / 96) * Math.PI * 2;
@@ -417,17 +417,17 @@ function makeGeometries(): THREE.BufferGeometry[] {
   return [
     // The ruby heart: a wide table ringed by big triangles.
     tableCut(HEART, 10, Math.PI / 2, 0.6, 0.55),
-    // The yellow pear: a brilliant with clear, open facets.
-    brilliant(PEAR, 8, Math.PI / 2, { fine: 3 }),
+    // The diamond: a brilliant with many fine facets, standing on its point.
+    brilliant(RADIANT, 8, Math.PI / 2, { fine: 5 }),
     // The green trillion: a table and six bold triangles.
     tableCut(TRILLION, 6, Math.PI / 2, 0.5),
     // The plump sapphire: a classic brilliant with a star round its table.
     brilliant(MARQUISE, 8),
     // The amethyst cushion: a big open table and eight broad triangles.
     tableCut(WIDE, 8, Math.PI / 8, 0.64),
-    // The diamond, which joins from level 11: a brilliant with many fine
-    // facets, standing on its point.
-    brilliant(RADIANT, 8, Math.PI / 2, { fine: 5 }),
+    // The yellow pear, which joins from level 11: a brilliant with clear,
+    // open facets.
+    brilliant(PEAR, 8, Math.PI / 2, { fine: 3 }),
   ];
 }
 
@@ -467,12 +467,12 @@ const CUTS: Record<
     rim: 0xa0283c,
     shadow: 0xa00c26,
   },
-  // A yellow stone's shadows are warm amber, not a muddy dark yellow.
-  1: { wedges: 12, culet: [0, -0.1], fire: 0.06, deep: 0.4, bright: 1.3, shadow: 0xe06a00 },
+  1: { wedges: 16, culet: [0, 0], fire: 0.16, deep: 0.24, bright: 1.15, tint: 0.85 },
   2: { wedges: 12, culet: [0, -0.04], fire: 0.06, deep: 0.2, bright: 1.75 },
   3: { wedges: 16, culet: [0, 0], fire: 0.04, deep: 0.2, bright: 1.4 },
   4: { wedges: 8, culet: [0, 0], fire: 0.05, deep: 0.17, bright: 1.3 },
-  5: { wedges: 16, culet: [0, 0], fire: 0.16, deep: 0.2, bright: 0.95, tint: 0.7 },
+  // A yellow stone's shadows are warm amber, not a muddy dark yellow.
+  5: { wedges: 12, culet: [0, -0.1], fire: 0.06, deep: 0.4, bright: 1.3, shadow: 0xe06a00 },
 };
 
 const GEM_VERTEX = /* glsl */ `
