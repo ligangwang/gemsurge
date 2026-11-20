@@ -50,6 +50,8 @@ test("a challenge made from a round reads back as that round", () => {
     const back = readChallenge(challengeFor(round));
     assert.deepEqual(back, round);
     assert.ok(sameRound(back!, { ...round, score: 0 }));
+    // The player's own challenge, opened by them, says so.
+    assert.equal(readChallenge({ ...challengeFor(round), mine: true })?.mine, true);
   }
   const r = DAILY_RULES;
   assert.equal(sameRound({ kind: "level", level: 3, score: 1, rules: r }, { kind: "level", level: 4, score: 1, rules: r }), false);

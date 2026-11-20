@@ -184,5 +184,8 @@
   "Challenge link": "挑战链接",
   "You beat your friend's {0}!": "你超过了好友的 {0} 分！",
   "Your friend scored {0}. {1} more to beat it.": "好友得了 {0} 分，还差 {1} 分就能超过。",
-  "Your friend's upgrades and Supernovas, so it's a fair match.": "和朋友用一样的升级和超新星，公平比拼。"
+  "Your friend's upgrades and Supernovas, so it's a fair match.": "和朋友用一样的升级和超新星，公平比拼。",
+  "Your upgrades and Supernovas from that round.": "用你那一局的升级和超新星。",
+  "You beat your own {0}!": "你超过了自己的 {0} 分！",
+  "Your score to beat: {0}. {1} more to beat it.": "你要超越的成绩：{0} 分，再多 {1} 分就能超过。"
 }

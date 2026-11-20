@@ -20,9 +20,10 @@ export const DAILY_RULES: Rules = { owned: NONE, novas: 0 };
 export const MAX_NOVAS = 9;
 
 /** The round a challenge is for, the score to beat, and the rules it was played with. */
+/** `mine` marks the player's own challenge, opened by them: their own score to beat. */
 export type Round =
-  | { kind: "daily"; day: string; score: number; rules: Rules }
-  | { kind: "level"; level: number; score: number; rules: Rules };
+  | { kind: "daily"; day: string; score: number; rules: Rules; mine?: boolean }
+  | { kind: "level"; level: number; score: number; rules: Rules; mine?: boolean };
 
 /** Rules as dingn keeps them: "u" and each upgrade's tier, then "n" and the Supernovas, e.g. "u3-1-0-0-2-0.n1". */
 export const writeRules = (r: Rules) => `u${UPGRADE_KINDS.map((k) => r.owned[k]).join("-")}.n${r.novas}`;
@@ -47,6 +48,9 @@ export const beyond = (rules: Rules, owned: Owned) =>
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
+/** Whether dingn says the player opening the challenge made it. */
+const own = (c: Challenge) => (c.mine === true ? { mine: true } : {});
+
 /**
  * The round a friend's challenge asks for, or null for one Gem Surge does
  * not know (another game's, a malformed one, or one without its rules).
@@ -57,10 +61,10 @@ export function readChallenge(c: Challenge | null | undefined): Round | null {
   if (!rules) return null;
   if (c.mode === "daily" && c.seed && DAY.test(c.seed) && !Number.isNaN(Date.parse(c.seed)))
     // The daily board is played without upgrades or Supernovas.
-    return { kind: "daily", day: c.seed, score: c.score, rules: DAILY_RULES };
+    return { kind: "daily", day: c.seed, score: c.score, rules: DAILY_RULES, ...own(c) };
   if (c.mode === "level" && c.seed && /^\d{1,5}$/.test(c.seed)) {
     const level = Number(c.seed);
-    if (level >= 1 && level <= LAST_LEVEL) return { kind: "level", level, score: c.score, rules };
+    if (level >= 1 && level <= LAST_LEVEL) return { kind: "level", level, score: c.score, rules, ...own(c) };
   }
   return null;
 }
