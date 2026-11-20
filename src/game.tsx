@@ -34,6 +34,7 @@ import {
   type UpgradeKind,
 } from "./upgrades";
 import { say, setMuted, sfx } from "./sound";
+import { challengeFor, readChallenge, sameRound, shareLink, type Round } from "./challenge";
 import { DRAW, ROUND, WHEEL, draw, isMilestone, lastLevelOf, rewardOf, roundOf, sliceFor, storyOf, titleOf, worldOf } from "./rounds";
 
 type Screen = "menu" | "play" | "end" | "shop";
@@ -51,6 +52,10 @@ type EndInfo = {
   novas: number;
   /** Set when this win finished a round for the first time. */
   round: RoundEnd | null;
+  /** The round just played and its score, for a challenge link. */
+  played: Round;
+  /** A friend's challenge on this round, if one is being answered. */
+  rival: Round | null;
 };
 type RoundEnd = {
   round: number;
@@ -123,6 +128,22 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   const top = highest(saved);
   const today = utcDay();
   const dailyDone = saved.daily?.day === today;
+  /** A friend's challenge the page opened with, until a different round is played. */
+  const challenge = useRef<Round | null>(readChallenge(sdk.challenge));
+  /** Each session's daily-board day, kept with the session so a late reward reads its own. */
+  const [sessionDay] = useState(() => new WeakMap<Session, string>());
+  /**
+   * Whether a session is played for the score alone, paying and saving
+   * nothing: a friend's challenge on an older daily board, or on a level the
+   * player has not reached.
+   */
+  const scoreOnly = (s: Session) =>
+    s.spec.level === 0
+      ? (sessionDay.get(s) ?? today) !== utcDay()
+      : s.spec.level > highest(savedRef.current) + 1;
+  /** Set once the player's upgrades are known, so a challenge level starts with them. */
+  const [ownedLoaded, setOwnedLoaded] = useState(false);
+  const challengeStarted = useRef(false);
 
   useEffect(() => setMuted(muted), [muted]);
 
@@ -131,7 +152,11 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   useEffect(() => {
     let live = true;
     badges.reset();
-    loadOwned(sdk).then((o) => live && setOwned(o));
+    loadOwned(sdk).then((o) => {
+      if (!live) return;
+      setOwned(o);
+      setOwnedLoaded(true);
+    });
     if (signedIn)
       loadSaved(sdk).then((account) => {
         if (!live) return;
@@ -186,13 +211,30 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Opened by a friend's challenge link: go straight to that round. A level
+  // waits for the player's upgrades (the daily board is played without them).
+  useEffect(() => {
+    const c = challenge.current;
+    if (challengeStarted.current || !c || !scene.current) return;
+    if (c.kind === "level" && !ownedLoaded) return;
+    challengeStarted.current = true;
+    if (c.kind === "daily") start(0, c.day);
+    else start(c.level);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownedLoaded]);
+
   const unlock = (ids: string[]) => {
     badges.unlock(sdk, ids).catch(() => {});
   };
 
-  function start(level: number) {
-    const spec = level === 0 ? dailySpec(today) : levelSpec(level);
+  function start(level: number, day = today) {
+    // Playing a different round leaves the friend's challenge behind.
+    const c = challenge.current;
+    if (c && !sameRound(c, level === 0 ? { kind: "daily", day, score: 0 } : { kind: "level", level, score: 0 }))
+      challenge.current = null;
+    const spec = level === 0 ? dailySpec(day) : levelSpec(level);
     const s = new Session(spec, level === 0 ? boostsFor(NONE) : boostsFor(owned));
+    sessionDay.set(s, level === 0 ? day : today);
     session.current = s;
     setShown(0);
     setEnd(null);
@@ -259,7 +301,8 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
         sfx.fever();
       }
       sc.setFever(s.fever);
-      unlock(playBadges(s));
+      // A round played for the score alone earns no badges either.
+      if (!scoreOnly(s)) unlock(playBadges(s));
       // A chain reaction earns coins, paid with the level's own when it ends.
       if (s.spec.level > 0 && s.chainCoins > chainBefore) sc.banner(`+${s.chainCoins - chainBefore} 🪙`, 3);
       // A nudge when the moves are running low.
@@ -323,9 +366,21 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   async function reward(s: Session, show = true) {
     if (rewarded.has(s)) return;
     rewarded.add(s);
+    sdk.roundEnded?.();
     const won = s.outcome === "won";
     const level = s.spec.level;
     const stars = s.stars;
+    const day = sessionDay.get(s) ?? today;
+    const played: Round = level === 0 ? { kind: "daily", day, score: s.score } : { kind: "level", level, score: s.score };
+    const rival = challenge.current && sameRound(challenge.current, played) ? challenge.current : null;
+    // A friend's challenge on an older daily board, or on a level not reached
+    // yet, is played for the score alone: nothing is saved or paid.
+    if (scoreOnly(s)) {
+      if (!show) return;
+      setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: null, chain: 0, note: "", best: false, novas: 0, round: null, played, rival });
+      setScreen("end");
+      return;
+    }
     const next: Saved = {
       ...savedRef.current,
       stars: [...savedRef.current.stars],
@@ -404,7 +459,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       round.coins = paidForRound;
     }
     if (!show) return;
-    setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: paid, chain: chainPaid, note, best, novas: charged, round });
+    setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: paid, chain: chainPaid, note, best, novas: charged, round, played, rival });
     if (round) {
       scene.current?.banner("Round complete!", 6);
       sfx.fanfare();
@@ -489,6 +544,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       {webgl && (screen === "play" || screen === "end") && s && (
         <Hud
           session={s}
+          day={sessionDay.get(s) ?? today}
           shown={shown}
           goalsShown={goalsShown}
           muted={muted}
@@ -519,7 +575,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
           session={s}
           signedIn={signedIn}
           onNext={() => start(Math.min(s.spec.level + 1, LAST_LEVEL))}
-          onRetry={() => start(s.spec.level)}
+          onRetry={() => start(s.spec.level, sessionDay.get(s) ?? today)}
           onMenu={toMenu}
           onShop={() => {
             toMenu();
@@ -764,6 +820,8 @@ function goalLabel(goal: Goal, t: (s: string, ...a: string[]) => string) {
 
 function Hud(props: {
   session: Session;
+  /** The daily board's day (an older one when answering a friend's challenge). */
+  day: string;
   shown: number;
   /** How much of each goal to show during a move, or null for the real progress. */
   goalsShown: number[] | null;
@@ -803,7 +861,7 @@ function Hud(props: {
         </button>
         <div className="hud-level">
           <p className="eyebrow">{spec.level ? t(WORLDS[spec.world].name) : t("Daily board")}</p>
-          <h2>{spec.level ? t("Level {0}", String(spec.level)) : utcDay()}</h2>
+          <h2>{spec.level ? t("Level {0}", String(spec.level)) : props.day}</h2>
         </div>
         <button className="icon-button" onClick={props.onMute} aria-label={props.muted ? t("Sound on") : t("Sound off")}>
           {props.muted ? "🔇" : "🔊"}
@@ -959,7 +1017,16 @@ function EndPanel(props: {
           {end.score.toLocaleString()}
           {end.best && end.score > 0 && <span className="best">{t("New best!")}</span>}
         </p>
-        {daily && props.dailyBest > 0 && <p className="end-sub">{t("Your best today: {0}", props.dailyBest.toLocaleString())}</p>}
+        {daily && props.dailyBest > 0 && end.played.kind === "daily" && end.played.day === utcDay() && (
+          <p className="end-sub">{t("Your best today: {0}", props.dailyBest.toLocaleString())}</p>
+        )}
+        {end.rival && (
+          <p className={`end-rival${end.score > end.rival.score ? " beaten" : ""}`}>
+            {end.score > end.rival.score
+              ? t("You beat your friend's {0}!", end.rival.score.toLocaleString())
+              : t("Your friend scored {0}. {1} more to beat it.", end.rival.score.toLocaleString(), (end.rival.score - end.score + 1).toLocaleString())}
+          </p>
+        )}
         {!won && (
           <ul className="end-goals">
             {s.progress().map((g, i) => (
@@ -989,6 +1056,7 @@ function EndPanel(props: {
           ) : (
             <p className="end-note">{t(end.note)}</p>
           ))}
+        {end.score > 0 && <ChallengeButton played={end.played} />}
         <div className="gem-actions">
           {won && !daily && s.spec.level < LAST_LEVEL && (
             <button className="button" onClick={props.onNext}>
@@ -1008,6 +1076,43 @@ function EndPanel(props: {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * "Challenge a friend": a link to this round with the score to beat, through
+ * the phone's share sheet or copied, or shown to copy by hand.
+ */
+function ChallengeButton({ played }: { played: Round }) {
+  const { t } = useLocale();
+  const sdk = useDingn();
+  const [state, setState] = useState<"idle" | "busy" | "copied" | "shared" | "unavailable">("idle");
+  const [link, setLink] = useState("");
+  async function send() {
+    setState("busy");
+    let url: string;
+    try {
+      url = await sdk.challengeLink(challengeFor(played));
+    } catch {
+      setState("unavailable");
+      return;
+    }
+    const text = t("Can you beat my {0} points in Gem Surge?", played.score.toLocaleString());
+    const how = await shareLink(url, text);
+    if (how === "failed") setLink(url);
+    setState(how === "copied" ? "copied" : how === "shared" ? "shared" : "idle");
+  }
+  if (state === "unavailable") return null;
+  return (
+    <div className="end-challenge">
+      <button className="button challenge-button" onClick={send} disabled={state === "busy"}>
+        ⚔ {t("Challenge a friend")}
+      </button>
+      {state === "copied" && <p className="end-sub">{t("Link copied. Send it to a friend!")}</p>}
+      {link && (
+        <input className="challenge-link" readOnly value={link} aria-label={t("Challenge link")} onFocus={(e) => e.target.select()} />
+      )}
     </div>
   );
 }

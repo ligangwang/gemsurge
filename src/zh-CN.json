@@ -177,5 +177,11 @@
   "Topaz": "黄玉",
   "{0} for chain reactions": "其中连爆 {0}",
   "Chain reactions: +{0} coins": "连爆奖励：+{0} 金币",
-  "Chain reactions earn coins: the longer the chain, the more, up to 10 a level.": "连爆有金币奖励：连得越多奖励越多，每关最多 10 个。"
+  "Chain reactions earn coins: the longer the chain, the more, up to 10 a level.": "连爆有金币奖励：连得越多奖励越多，每关最多 10 个。",
+  "Challenge a friend": "挑战好友",
+  "Can you beat my {0} points in Gem Surge?": "我在宝石狂潮拿了 {0} 分，你能超过我吗？",
+  "Link copied. Send it to a friend!": "链接已复制，发给好友吧！",
+  "Challenge link": "挑战链接",
+  "You beat your friend's {0}!": "你超过了好友的 {0} 分！",
+  "Your friend scored {0}. {1} more to beat it.": "好友得了 {0} 分，还差 {1} 分就能超过。"
 }
