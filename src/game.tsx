@@ -855,8 +855,13 @@ function Hud(props: {
         </div>
       </div>
       {spec.level > 0 && (
-        <button className="secondary-button hud-undo" disabled={!props.canNova || !s.canUndo} onClick={props.onUndo}>
-          ↶ {t("Undo")} ×{s.undosLeft}
+        <button
+          className="secondary-button hud-undo"
+          disabled={!props.canNova || !s.canUndo}
+          onClick={props.onUndo}
+          aria-label={`${t("Undo")} ×${s.undosLeft}`}
+        >
+          ↶ <span className="hud-word">{t("Undo")}</span> ×{s.undosLeft}
         </button>
       )}
       {spec.level > FREE_UNDO_LEVELS && !props.owned.undo && (
@@ -869,11 +874,16 @@ function Hud(props: {
       )}
       {spec.level > 0 && (
         <div className="hud-nova">
-          <button className="button nova" disabled={!props.canNova || props.novas < 1} onClick={props.onNova}>
+          <button
+            className="button nova"
+            disabled={!props.canNova || props.novas < 1}
+            onClick={props.onNova}
+            aria-label={`${t("Supernova")} ×${props.novas}`}
+          >
             <span className="nova-star" aria-hidden>
               ✹
             </span>
-            {t("Supernova")} ×{props.novas}
+            <span className="hud-word">{t("Supernova")}</span> ×{props.novas}
           </button>
           <div className="nova-bar" aria-hidden>
             <div className="fill" style={{ width: `${(props.charge / NOVA_COST) * 100}%` }} />
