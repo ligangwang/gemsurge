@@ -1,6 +1,6 @@
 import React from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { DingnGame, Locale, ShopItem } from "../sdk/dingn-sdk.js";
 import { GemGame } from "../src/game";
 import { DingnProvider } from "../src/dingn";
@@ -53,9 +53,7 @@ function fakeSdk(signedIn: boolean, locale: Locale = "en") {
   calls.save.mockReset().mockResolvedValue(undefined);
   calls.earn.mockReset().mockImplementation(async (coins: number) => ({ coins, left: 100 }));
   calls.unlock.mockReset().mockResolvedValue({ new: true, coins: 10 });
-  calls.link.mockReset().mockImplementation(async (c: { mode: string; seed: string; score: number }) =>
-    `https://dingn.com/play/gemsurge/?challenge=${c.mode}&seed=${c.seed}&score=${c.score}&unit=points`,
-  );
+  calls.link.mockReset().mockResolvedValue("https://dingn.com/play/gemsurge/?c=Xq3v9TzK1bWm");
   calls.roundEnded.mockReset();
   calls.spend.mockReset().mockImplementation(async (id: string) => {
     owned.push(id);
@@ -290,15 +288,16 @@ test("after a round, a player challenges a friend to beat the score", async () =
   const button = await screen.findByRole("button", { name: /Challenge a friend/ });
   await act(async () => fireEvent.click(button));
   const today = new Date().toISOString().slice(0, 10);
-  expect(calls.link).toHaveBeenCalledWith({ mode: "daily", seed: today, score, unit: "points" });
+  // The daily board is played without upgrades or Supernovas, for everyone.
+  expect(calls.link).toHaveBeenCalledWith({ mode: "daily", seed: today, score, unit: "points", rules: "u0-0-0-0-0-0.n0" });
   // No share sheet here, so the link is copied with a line to send.
-  expect(writeText).toHaveBeenCalledWith(expect.stringContaining(`score=${score}`));
+  expect(writeText).toHaveBeenCalledWith(expect.stringContaining("https://dingn.com/play/gemsurge/?c=Xq3v9TzK1bWm"));
   expect(writeText).toHaveBeenCalledWith(expect.stringContaining("Can you beat my"));
   expect(await screen.findByText("Link copied. Send it to a friend!")).toBeTruthy();
 });
 
 test("a friend's challenge opens that daily board and says whether it was beaten", async () => {
-  sdk.challenge = { mode: "daily", seed: "2026-11-01", score: 999999, unit: "points" };
+  sdk.challenge = { mode: "daily", seed: "2026-11-01", score: 999999, unit: "points", rules: "u0-0-0-0-0-0.n0" };
   play();
   // Straight into the friend's board: the daily board of that day, not today's.
   expect(screen.getByRole("heading", { name: "2026-11-01" })).toBeTruthy();
@@ -312,7 +311,7 @@ test("a friend's challenge opens that daily board and says whether it was beaten
 });
 
 test("a friend's challenge on a level not reached yet plays it without unlocking anything", async () => {
-  sdk.challenge = { mode: "level", seed: "40", score: 1, unit: "points" };
+  sdk.challenge = { mode: "level", seed: "40", score: 1, unit: "points", rules: "u0-0-0-0-0-0.n0" };
   play();
   expect(await screen.findByRole("heading", { name: "Level 40" })).toBeTruthy();
   await playOut();
@@ -325,17 +324,71 @@ test("a friend's challenge on a level not reached yet plays it without unlocking
 });
 
 test("a challenge for another game, or a malformed one, opens the menu", () => {
-  sdk.challenge = { mode: "ladder", seed: "2026-11-16", score: 10, unit: "digits" };
-  play();
-  expect(screen.getByRole("heading", { name: /Gem Surge/ })).toBeTruthy();
+  for (const challenge of [
+    { mode: "ladder", seed: "2026-11-16", score: 10, unit: "digits" as const },
+    // Without the rules it was played with, it can't be a fair match.
+    { mode: "level", seed: "1", score: 10, unit: "points" as const },
+  ]) {
+    sdk.challenge = challenge;
+    play();
+    expect(screen.getByRole("heading", { name: /Gem Surge/ })).toBeTruthy();
+    cleanup();
+  }
 });
 
 
-test("a friend's level challenge starts with the upgrades the player owns", async () => {
+test("a friend's level challenge is played with the friend's upgrades, not the player's", async () => {
+  // The player owns +1 move; the friend had none.
   owned.push("moves-1");
-  sdk.challenge = { mode: "level", seed: "1", score: 100, unit: "points" };
+  sdk.challenge = { mode: "level", seed: "1", score: 100, unit: "points", rules: "u0-0-0-0-0-0.n0" };
   play();
   await screen.findByRole("heading", { name: "Level 1" });
-  // Level 1 has 26 moves; the extra-moves upgrade adds to them.
-  expect(session().movesLeft).toBeGreaterThan(26);
+  await waitFor(() => expect(screen.getByText(/so it's a fair match/)).toBeTruthy());
+  // Level 1 has 26 moves, and no Supernova to set off.
+  expect(session().movesLeft).toBe(26);
+  expect((screen.getByRole("button", { name: /Supernova/ }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+test("a friend's upgrades last for retries of the challenge, and end at the menu", async () => {
+  owned.push("moves-1");
+  sdk.challenge = { mode: "level", seed: "1", score: 100, unit: "points", rules: "u2-0-0-0-0-0.n0" };
+  play();
+  await screen.findByRole("heading", { name: "Level 1" });
+  // The player's own upgrades are known before they are compared.
+  await waitFor(() => expect(screen.getByText(/so it's a fair match/)).toBeTruthy());
+  expect(session().movesLeft).toBe(28);
+  await playOut();
+  // Trying the challenge again keeps the friend's upgrades.
+  fireEvent.click(await screen.findByRole("button", { name: /Try again|Play again/ }));
+  expect(session().movesLeft).toBe(28);
+  // Back at the menu, the same level is played with the player's own.
+  fireEvent.click(screen.getByRole("button", { name: "Menu" }));
+  fireEvent.click(screen.getByRole("button", { name: "Level 1" }));
+  expect(session().movesLeft).toBe(27);
+  expect(screen.queryByText(/so it's a fair match/)).toBeNull();
+});
+
+test("a friend's better upgrades and Supernovas are lent for the round, which pays nothing", async () => {
+  const saved = empty();
+  saved.novasWon = 0;
+  sdk.challenge = { mode: "level", seed: "1", score: 100, unit: "points", rules: "u2-0-0-0-0-0.n1" };
+  play(saved);
+  await screen.findByRole("heading", { name: "Level 1" });
+  expect(session().movesLeft).toBe(28);
+  // The friend set off one Supernova, so the player may too, without one of their own.
+  const nova = () => screen.getByRole("button", { name: /Supernova/ }) as HTMLButtonElement;
+  await waitFor(() => expect(nova().disabled).toBe(false));
+  expect(nova().getAttribute("aria-label")).toBe("Supernova ×1");
+  await act(async () => fireEvent.click(nova()));
+  expect(session().novas).toBe(1);
+  expect(nova().getAttribute("aria-label")).toBe("Supernova ×0");
+  await playOut();
+  // More than the player owns, so the round is for the score alone.
+  expect(calls.earn).not.toHaveBeenCalled();
+  expect(calls.unlock).not.toHaveBeenCalled();
+  // A challenge back carries the same rules.
+  Object.defineProperty(navigator, "clipboard", { value: { writeText: vi.fn(async () => {}) }, configurable: true });
+  const button = await screen.findByRole("button", { name: /Challenge a friend/ });
+  await act(async () => fireEvent.click(button));
+  expect(calls.link).toHaveBeenCalledWith(expect.objectContaining({ mode: "level", seed: "1", rules: "u2-0-0-0-0-0.n1" }));
 });
