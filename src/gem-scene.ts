@@ -294,7 +294,8 @@ function brilliant(radius: (a: number) => number, mains = 8, turn = Math.PI / 2)
   for (let j = 0; j < mains; j++) {
     const odd = j % 2;
     // The table, split into a pinwheel: through it you see the back facets.
-    const tableEdge = at(radius, mid(j), 0.52 * Math.cos(step / 2), CROWN);
+    // The middle of the table's edge, so the table meets the star facet on it.
+    const tableEdge = table(j).map((v, i) => (v + table(j + 1)[i]) / 2);
     f.tri(centre, table(j), tableEdge, odd ? 0.4 : 1.1);
     f.tri(centre, tableEdge, table(j + 1), odd ? 1.1 : 0.4);
     // A star facet on each edge of the table.
