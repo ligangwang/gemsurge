@@ -349,6 +349,25 @@ test("a friend's level challenge is played with the friend's upgrades, not the p
   expect((screen.getByRole("button", { name: /Supernova/ }) as HTMLButtonElement).disabled).toBe(true);
 });
 
+test("a friend's upgrades last for retries of the challenge, and end at the menu", async () => {
+  owned.push("moves-1");
+  sdk.challenge = { mode: "level", seed: "1", score: 100, unit: "points", rules: "u2-0-0-0-0-0.n0" };
+  play();
+  await screen.findByRole("heading", { name: "Level 1" });
+  // The player's own upgrades are known before they are compared.
+  await waitFor(() => expect(screen.getByText(/so it's a fair match/)).toBeTruthy());
+  expect(session().movesLeft).toBe(28);
+  await playOut();
+  // Trying the challenge again keeps the friend's upgrades.
+  fireEvent.click(await screen.findByRole("button", { name: /Try again|Play again/ }));
+  expect(session().movesLeft).toBe(28);
+  // Back at the menu, the same level is played with the player's own.
+  fireEvent.click(screen.getByRole("button", { name: "Menu" }));
+  fireEvent.click(screen.getByRole("button", { name: "Level 1" }));
+  expect(session().movesLeft).toBe(27);
+  expect(screen.queryByText(/so it's a fair match/)).toBeNull();
+});
+
 test("a friend's better upgrades and Supernovas are lent for the round, which pays nothing", async () => {
   const saved = empty();
   saved.novasWon = 0;

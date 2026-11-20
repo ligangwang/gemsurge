@@ -500,6 +500,9 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   }
 
   function toMenu() {
+    // Back to normal play: the friend's challenge, and the upgrades and
+    // Supernovas it lent, end here. "Try again" on the end screen keeps them.
+    challenge.current = null;
     session.current = null;
     clearTimeout(hintTimer.current);
     scene.current?.setInput(false);
