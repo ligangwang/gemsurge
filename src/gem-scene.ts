@@ -157,15 +157,17 @@ function domeGem(radius: (angle: number) => number, height: number, turn = 0) {
 
 /** The diamond: a lozenge standing on its point, with rounded corners. */
 const LOZENGE = cushion(0.46, 0.49, 1.45);
+/** The emerald: a cushion, a square with soft sides and corners. */
+const CUSHION = cushion(0.4, 0.485, 3.2);
 /** How far a smooth stone domes up from the board. */
 const DOME = 0.2;
 
 /**
  * The stones that stay smooth polished domes, as Gem Surge first had them,
- * rather than cut: the white diamond. They reflect a single window
+ * rather than cut: the emerald and the white diamond. They reflect a single window
  * (windowTexture) where the cut stones reflect the whole studio.
  */
-const SMOOTH = new Set([5]);
+const SMOOTH = new Set([2, 5]);
 
 
 /**
@@ -207,19 +209,6 @@ function traced(f: (t: number) => [number, number], steps = 720) {
   const cx = (Math.max(...xs) + Math.min(...xs)) / 2;
   const cy = (Math.max(...ys) + Math.min(...ys)) / 2;
   return pts.map(([x, y]) => [x - cx, y - cy] as [number, number]);
-}
-
-/** Points along a polygon's edges, so its corners stay sharp. */
-function polygon(corners: [number, number][], perSide = 40) {
-  const pts: [number, number][] = [];
-  corners.forEach(([x0, y0], i) => {
-    const [x1, y1] = corners[(i + 1) % corners.length];
-    for (let k = 0; k < perSide; k++) {
-      const t = k / perSide;
-      pts.push([x0 + (x1 - x0) * t, y0 + (y1 - y0) * t]);
-    }
-  });
-  return pts;
 }
 
 /** A heart, its notch at the top and its point at the bottom. */
@@ -276,24 +265,11 @@ const TRILLION = (a: number) => {
   return (side ** -6 + 0.53 ** -6) ** (-1 / 6);
 };
 
-/** The square emerald cut: a square with its corners cut off. */
-const OCTAGON_CORNERS = (s: number, cut: number): [number, number][] => [
-  [s - cut, s],
-  [-s + cut, s],
-  [-s, s - cut],
-  [-s, -s + cut],
-  [-s + cut, -s],
-  [s - cut, -s],
-  [s, -s + cut],
-  [s, s - cut],
-];
-const OCTAGON = polar(polygon(OCTAGON_CORNERS(0.42, 0.13)));
-
 /**
  * Each stone's outline as an SVG path in a box from -0.6 to 0.6, so the goals
  * can show the same shapes as the board.
  */
-export const GEM_OUTLINES = [HEART, PEAR, OCTAGON, MARQUISE, TRILLION, LOZENGE].map(
+export const GEM_OUTLINES = [HEART, PEAR, CUSHION, MARQUISE, TRILLION, LOZENGE].map(
   (radius) => {
     const points = Array.from({ length: 96 }, (_, i) => {
       const a = (i / 96) * Math.PI * 2;
@@ -447,57 +423,6 @@ function broadCut(
 }
 
 /**
- * A step cut, for the square emerald: rows of long facets stepping up from
- * the girdle to a wide table. Through the table you see the steps on the
- * back, as rings split by the diagonals to the corners, every piece its own
- * light or dark: the "hall of mirrors" that makes an emerald cut sparkle.
- */
-function stepCut(corners: (scale: number) => [number, number][]) {
-  const f = new Facets();
-  // How bright each of the eight sides is, going round from the top. The
-  // pattern turns a step with each ring, so neighbouring pieces differ.
-  const tones = [1.8, 1.0, 0.3, 0.7, 1.6, 0.45, 0.22, 1.2];
-  const tone = (side: number, ring: number) => tones[(side + 3 * ring) % 8];
-  const crown: [number, number][] = [
-    // [scale, height]: the girdle, two steps, and the table's edge.
-    [1, 0],
-    [0.86, CROWN * 0.55],
-    [0.72, CROWN * 0.88],
-    [0.6, CROWN],
-  ];
-  // Rings seen through the table, from its edge in to the middle.
-  const table = [0.6, 0.47, 0.35, 0.23, 0.11];
-  const band = (
-    outer: number[][],
-    inner: number[][],
-    shade: (side: number) => number,
-  ) =>
-    outer.forEach((p, j) => {
-      const q = outer[(j + 1) % outer.length];
-      const u = inner[j];
-      const v = inner[(j + 1) % inner.length];
-      f.tri(p, q, v, shade(j));
-      f.tri(p, v, u, shade(j));
-    });
-  const ring = (scale: number, z: number) =>
-    corners(scale).map(([x, y]) => [x, y, z]);
-  for (let i = 0; i < crown.length - 1; i++)
-    band(ring(...crown[i]), ring(...crown[i + 1]), (j) => tone(j, i) * 1.1);
-  for (let i = 0; i < table.length - 1; i++)
-    band(ring(table[i], CROWN), ring(table[i + 1], CROWN), (j) =>
-      tone(j, i + 5) * (i % 2 ? 0.75 : 1.15),
-    );
-  const middle = ring(table[table.length - 1], CROWN);
-  for (let j = 1; j < middle.length - 1; j++)
-    f.tri(middle[0], middle[j], middle[j + 1], 1.8);
-  // The pavilion.
-  const base = ring(1, 0);
-  const culet = [0, 0, -PAVILION];
-  base.forEach((p, j) => f.tri(culet, base[(j + 1) % base.length], p, 0.3));
-  return f.geometry();
-}
-
-/**
  * Six cut stones with six different outlines, so a gem reads by shape as well
  * as colour: a simply cut heart, a pear, a square emerald cut, a marquise, a trillion,
  * and the diamond, a smooth white lozenge as it always was.
@@ -511,7 +436,7 @@ function makeGeometries(): THREE.BufferGeometry[] {
       [1.45, 0.5, 0.85],
     ),
     brilliant(PEAR, 8),
-    stepCut((s) => OCTAGON_CORNERS(0.42 * s, 0.13 * s)),
+    domeGem(CUSHION, DOME),
     brilliant(MARQUISE, 8),
     brilliant(TRILLION, 6),
     domeGem(LOZENGE, DOME),
@@ -1083,25 +1008,26 @@ export class GemScene {
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x6a5a8a, 2.8));
 
     // The body of each stone: its colour, with the light and dark of each
-    // facet baked into the geometry. The smooth diamond is clear, with a
-    // play of colour, shaded by the glow and rim baked into its dome.
+    // facet baked into the geometry. The smooth stones are shaded by the
+    // glow and rim baked into their domes; the diamond is clear, with a play
+    // of colour.
     this.materials = STONE_COLORS.map((c, i) =>
       SMOOTH.has(i)
         ? new THREE.MeshPhysicalMaterial({
             color: c,
             emissive: c,
-            emissiveIntensity: 0.6,
-            // The scene shows faintly through its middle.
-            transparent: true,
-            opacity: 0.72,
+            emissiveIntensity: i === 5 ? 0.6 : 0.22,
+            // The diamond is see-through: the scene shows faintly through its middle.
+            transparent: i === 5,
+            opacity: i === 5 ? 0.72 : 1,
             envMap: windowLight,
-            roughness: 0.08,
+            roughness: i === 5 ? 0.08 : 0.25,
             metalness: 0,
-            clearcoat: 1,
+            clearcoat: i === 5 ? 1 : 0,
             clearcoatRoughness: 0.05,
-            iridescence: 1,
+            iridescence: i === 5 ? 1 : 0,
             iridescenceIOR: 1.6,
-            envMapIntensity: 1.2,
+            envMapIntensity: i === 5 ? 1.2 : 0.3,
             vertexColors: true,
           })
         : shadeGlow(
