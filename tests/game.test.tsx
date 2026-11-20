@@ -392,3 +392,13 @@ test("a friend's better upgrades and Supernovas are lent for the round, which pa
   await act(async () => fireEvent.click(button));
   expect(calls.link).toHaveBeenCalledWith(expect.objectContaining({ mode: "level", seed: "1", rules: "u2-0-0-0-0-0.n1" }));
 });
+
+test("the player's own challenge is their score to beat", async () => {
+  sdk.challenge = { mode: "level", seed: "1", score: 999999, unit: "points", rules: "u0-0-0-0-0-0.n0", mine: true };
+  play();
+  await screen.findByRole("heading", { name: "Level 1" });
+  await waitFor(() => expect(screen.getByText("Your upgrades and Supernovas from that round.")).toBeTruthy());
+  expect(screen.queryByText(/so it's a fair match/)).toBeNull();
+  await playOut();
+  expect(await screen.findByText(/^Your score to beat: 999,999\. [\d,]+ more to beat it\.$/)).toBeTruthy();
+});

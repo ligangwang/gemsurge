@@ -584,7 +584,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
           onMute={toggleMute}
           onMenu={toMenu}
           owned={sessionOwned.get(s) ?? owned}
-          friendRules={sessionRules.has(s)}
+          lent={sessionRules.has(s) ? (challenge.current?.mine ? "own" : "friend") : null}
           novas={novasLeft(s)}
           charge={novaCharge(saved)}
           onNova={() => play(null)}
@@ -862,7 +862,7 @@ function Hud(props: {
   muted: boolean;
   owned: Owned;
   /** Played under a friend's challenge's rules. */
-  friendRules: boolean;
+  lent: "friend" | "own" | null;
   onMute: () => void;
   onMenu: () => void;
   /** Supernovas ready, and coins towards the next one. */
@@ -969,10 +969,14 @@ function Hud(props: {
           ↶ <span className="hud-word">{t("Undo")}</span> ×{s.undosLeft}
         </button>
       )}
-      {props.friendRules && spec.level > 0 && (
-        <p className="hud-note">{t("Your friend's upgrades and Supernovas, so it's a fair match.")}</p>
+      {props.lent && spec.level > 0 && (
+        <p className="hud-note">
+          {props.lent === "own"
+            ? t("Your upgrades and Supernovas from that round.")
+            : t("Your friend's upgrades and Supernovas, so it's a fair match.")}
+        </p>
       )}
-      {spec.level > FREE_UNDO_LEVELS && !props.owned.undo && !props.friendRules && (
+      {spec.level > FREE_UNDO_LEVELS && !props.owned.undo && !props.lent && (
         <p className="hud-note">{t("Buy Undo in Upgrades to use it after level 100.")}</p>
       )}
       {spec.level > 0 && s.chainCoins > 0 && (
@@ -1062,8 +1066,14 @@ function EndPanel(props: {
         {end.rival && (
           <p className={`end-rival${end.score > end.rival.score ? " beaten" : ""}`}>
             {end.score > end.rival.score
-              ? t("You beat your friend's {0}!", end.rival.score.toLocaleString())
-              : t("Your friend scored {0}. {1} more to beat it.", end.rival.score.toLocaleString(), (end.rival.score - end.score + 1).toLocaleString())}
+              ? end.rival.mine
+                ? t("You beat your own {0}!", end.rival.score.toLocaleString())
+                : t("You beat your friend's {0}!", end.rival.score.toLocaleString())
+              : t(
+                  end.rival.mine ? "Your score to beat: {0}. {1} more to beat it." : "Your friend scored {0}. {1} more to beat it.",
+                  end.rival.score.toLocaleString(),
+                  (end.rival.score - end.score + 1).toLocaleString(),
+                )}
           </p>
         )}
         {!won && (
