@@ -85,6 +85,89 @@ export class AnimationCancelled extends Error {
 
 // --------------------------------------------------------------- geometry
 
+/** A rounded box shape (a superellipse) `w` by `h` across; a higher `power` is squarer. */
+const cushion = (w: number, h: number, power: number) => (a: number) =>
+  (Math.abs(Math.cos(a) / w) ** power + Math.abs(Math.sin(a) / h) ** power) **
+  (-1 / power);
+
+/**
+ * A smooth polished stone (a cabochon): a dome over the outline with no
+ * facets, so the light slides over it in one curve. Its colour is deepest at
+ * the rim and under the highlight, and glows low on the right, where light
+ * that came in through the top gathers on its way out.
+ */
+function domeGem(radius: (angle: number) => number, height: number, turn = 0) {
+  const around = 72;
+  const rings = 14;
+  const positions: number[] = [0, 0, height];
+  const shades: number[] = [];
+  // `edge` is 0 at the middle of the stone and 1 at its rim; the glow is a
+  // crescent low on the right, opposite the window the top reflects.
+  const shadeAt = (angle: number, edge: number) => {
+    const facing = Math.max(0, Math.cos(angle + Math.PI * 0.28));
+    // Light that came in at the top gathers into a bright crescent on its way
+    // out, and a thin line of it runs round the rim: that depth is what makes
+    // a stone read as a see-through gem and not as something opaque.
+    const glow = Math.exp(-((edge - 0.6) ** 2) / 0.07) * facing ** 1.8;
+    const rim =
+      Math.exp(-((edge - 0.93) ** 2) / 0.004) * (0.25 + 0.75 * facing);
+    const shade = (0.26 + 3.6 * glow + 1.1 * rim) * (1 - 0.55 * edge ** 10);
+    // Where the light gathers it also pales, as it does in a real stone.
+    const pale = 0.5 * glow ** 2;
+    shades.push(shade + pale, shade + pale, shade + pale);
+  };
+  shadeAt(0, 0);
+  for (let k = 1; k <= rings; k++) {
+    const lean = (k / rings) * (Math.PI / 2);
+    for (let i = 0; i < around; i++) {
+      const a = (i / around) * Math.PI * 2 + turn;
+      const reach = radius(a) * Math.sin(lean) ** 0.75;
+      positions.push(
+        Math.cos(a) * reach,
+        Math.sin(a) * reach,
+        height * Math.cos(lean),
+      );
+      shadeAt(a, Math.sin(lean));
+    }
+  }
+  const index: number[] = [];
+  for (let i = 0; i < around; i++) index.push(0, 1 + i, 1 + ((i + 1) % around));
+  for (let k = 1; k < rings; k++) {
+    const inner = 1 + (k - 1) * around;
+    const outer = inner + around;
+    for (let i = 0; i < around; i++) {
+      const j = (i + 1) % around;
+      index.push(
+        inner + i,
+        outer + i,
+        outer + j,
+        inner + i,
+        outer + j,
+        inner + j,
+      );
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  g.setAttribute("color", new THREE.Float32BufferAttribute(shades, 3));
+  g.setIndex(index);
+  g.computeVertexNormals();
+  return g;
+}
+
+/** The diamond: a lozenge standing on its point, with rounded corners. */
+const LOZENGE = cushion(0.46, 0.49, 1.45);
+/** How far a smooth stone domes up from the board. */
+const DOME = 0.2;
+
+/**
+ * The stones that stay smooth polished domes, as Gem Surge first had them,
+ * rather than cut: the white diamond. They reflect a single window
+ * (windowTexture) where the cut stones reflect the whole studio.
+ */
+const SMOOTH = new Set([5]);
+
+
 /**
  * A closed outline as a polar function: the stone's radius at each angle.
  * Built from points along the edge, so pointed and indented shapes (the
@@ -138,8 +221,6 @@ function polygon(corners: [number, number][], perSide = 40) {
   });
   return pts;
 }
-
-const ROUND = () => 0.46;
 
 /** A heart, its notch at the top and its point at the bottom. */
 const HEART = polar(
@@ -212,7 +293,7 @@ const OCTAGON = polar(polygon(OCTAGON_CORNERS(0.42, 0.13)));
  * Each stone's outline as an SVG path in a box from -0.6 to 0.6, so the goals
  * can show the same shapes as the board.
  */
-export const GEM_OUTLINES = [HEART, PEAR, OCTAGON, MARQUISE, TRILLION, ROUND].map(
+export const GEM_OUTLINES = [HEART, PEAR, OCTAGON, MARQUISE, TRILLION, LOZENGE].map(
   (radius) => {
     const points = Array.from({ length: 96 }, (_, i) => {
       const a = (i / 96) * Math.PI * 2;
@@ -241,7 +322,11 @@ class Facets {
   /** The direction the inside "lamp" shines from, up and to the left. */
   private static light = new THREE.Vector3(-0.45, 0.55, 0.7).normalize();
 
-  tri(p: number[], q: number[], r: number[], shade: number) {
+  /**
+   * `even` keeps the shade as given, without the light it would catch from
+   * its tilt, so a curved face made of many triangles reads as one flat face.
+   */
+  tri(p: number[], q: number[], r: number[], shade: number, even = false) {
     this.a.fromArray(q).sub(this.b.fromArray(p));
     this.n.fromArray(r).sub(this.b);
     this.n.crossVectors(this.a, this.n);
@@ -252,7 +337,7 @@ class Facets {
     if (this.n.dot(mid) < 0) this.n.negate();
     // Facets turned towards the light catch it; the rest stay deep.
     const catchLight = Math.max(0, this.n.dot(Facets.light)) ** 3;
-    const s = shade * (0.6 + 1.1 * catchLight);
+    const s = even ? shade : shade * (0.6 + 1.1 * catchLight);
     // Where a facet is brightest it also pales, as it does in a real stone.
     const pale = Math.max(0, s - 1) * 0.6;
     this.positions.push(...p, ...q, ...r);
@@ -323,6 +408,45 @@ function brilliant(radius: (a: number) => number, mains = 8, turn = Math.PI / 2)
 }
 
 /**
+ * A simple cut: one flat table and a few broad faces sloping from it to the
+ * girdle, one for each span between the angles in `splits` (radians, in
+ * order). Each face keeps its own light or dark, so a stone with only three
+ * faces still reads as cut.
+ */
+function broadCut(
+  radius: (a: number) => number,
+  splits: number[],
+  tones: number[],
+) {
+  const f = new Facets();
+  const steps = 96;
+  const angle = (i: number) => splits[0] + (i / steps) * Math.PI * 2;
+  const faceOf = (a: number) => {
+    const turn = (((a - splits[0]) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    let face = 0;
+    for (let k = 1; k < splits.length; k++)
+      if (turn >= splits[k] - splits[0]) face = k;
+    return face;
+  };
+  const centre = [0, 0, CROWN];
+  const culet = [0, 0, -PAVILION];
+  for (let i = 0; i < steps; i++) {
+    const a0 = angle(i);
+    const a1 = angle(i + 1);
+    const tone = tones[faceOf((a0 + a1) / 2)];
+    const t0 = at(radius, a0, 0.56, CROWN);
+    const t1 = at(radius, a1, 0.56, CROWN);
+    const g0 = at(radius, a0, 1, 0);
+    const g1 = at(radius, a1, 1, 0);
+    f.tri(centre, t0, t1, 1.0, true);
+    f.tri(t0, g0, g1, tone, true);
+    f.tri(t0, g1, t1, tone, true);
+    f.tri(culet, g1, g0, 0.3);
+  }
+  return f.geometry();
+}
+
+/**
  * A step cut, for the square emerald: rows of long facets stepping up from
  * the girdle to a wide table. Through the table you see the steps on the
  * back, as rings split by the diagonals to the corners, every piece its own
@@ -375,17 +499,22 @@ function stepCut(corners: (scale: number) => [number, number][]) {
 
 /**
  * Six cut stones with six different outlines, so a gem reads by shape as well
- * as colour: a heart, a pear, a square emerald cut, a marquise, a trillion,
- * and a round brilliant for the diamond.
+ * as colour: a simply cut heart, a pear, a square emerald cut, a marquise, a trillion,
+ * and the diamond, a smooth white lozenge as it always was.
  */
 function makeGeometries(): THREE.BufferGeometry[] {
   return [
-    brilliant(HEART, 8),
+    // The heart: a table and three broad faces, the two lobes and the point.
+    broadCut(
+      HEART,
+      [Math.PI / 2, (Math.PI * 7) / 6, (Math.PI * 11) / 6],
+      [1.45, 0.5, 0.85],
+    ),
     brilliant(PEAR, 8),
     stepCut((s) => OCTAGON_CORNERS(0.42 * s, 0.13 * s)),
     brilliant(MARQUISE, 8),
     brilliant(TRILLION, 6),
-    brilliant(ROUND, 8),
+    domeGem(LOZENGE, DOME),
   ];
 }
 
@@ -406,7 +535,8 @@ function shadeGlow(material: THREE.MeshPhysicalMaterial) {
 
 /**
  * What the gems reflect: a dark jeweller's studio with bright lamps all the
- * way round, so each facet of a stone mirrors a different one.
+ * way round, so each facet of a cut stone mirrors a different one. The
+ * smooth stones reflect the window in windowTexture instead.
  */
 function studioTexture() {
   const c = document.createElement("canvas");
@@ -477,6 +607,39 @@ function starTexture() {
   g.fillRect(-9, -9, 18, 18);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/**
+ * What the domed tops reflect: a dim room with one soft window up and to the
+ * left and a faint fill light low on the right. On a smooth dome that makes a
+ * single curved highlight, the way a polished stone shows a window.
+ */
+function windowTexture() {
+  const c = document.createElement("canvas");
+  c.width = 512;
+  c.height = 256;
+  const g = c.getContext("2d")!;
+  const room = g.createLinearGradient(0, 0, 0, 256);
+  room.addColorStop(0, "#8088b8");
+  room.addColorStop(0.6, "#14151f");
+  room.addColorStop(1, "#08080c");
+  g.fillStyle = room;
+  g.fillRect(0, 0, 512, 256);
+  // A crisp window with a glazing bar: a hard-edged highlight is what glass
+  // and polished stone show, where a soft blob looks like sugar.
+  g.filter = "blur(1px)";
+  g.fillStyle = "#ffffff";
+  g.fillRect(408, 56, 24, 40);
+  g.fillRect(436, 56, 24, 40);
+  g.filter = "blur(4px)";
+  g.fillStyle = "#56608c";
+  g.beginPath();
+  g.roundRect(310, 160, 50, 22, 10);
+  g.fill();
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.mapping = THREE.EquirectangularReflectionMapping;
   return t;
 }
 
@@ -875,6 +1038,9 @@ export class GemScene {
     const studio = studioTexture();
     this.scene.environment = pmrem.fromEquirectangular(studio).texture;
     studio.dispose();
+    const room = windowTexture();
+    const windowLight = pmrem.fromEquirectangular(room).texture;
+    room.dispose();
     pmrem.dispose();
 
     const target = new THREE.WebGLRenderTarget(1, 1, {
@@ -917,42 +1083,56 @@ export class GemScene {
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x6a5a8a, 2.8));
 
     // The body of each stone: its colour, with the light and dark of each
-    // facet baked into the geometry. The diamond is clear, with a play of colour.
+    // facet baked into the geometry. The smooth diamond is clear, with a
+    // play of colour, shaded by the glow and rim baked into its dome.
     this.materials = STONE_COLORS.map((c, i) =>
-      shadeGlow(
-        new THREE.MeshPhysicalMaterial({
-          color: c,
-          emissive: c,
-          emissiveIntensity: i === 5 ? 0.5 : 0.35,
-          // The diamond is see-through: the scene shows faintly through its middle.
-          transparent: i === 5,
-          opacity: i === 5 ? 0.8 : 1,
-          roughness: 0.12,
-          metalness: 0,
-          flatShading: true,
-          clearcoat: i === 5 ? 1 : 0,
-          clearcoatRoughness: 0.05,
-          iridescence: i === 5 ? 1 : 0,
-          iridescenceIOR: 1.6,
-          envMapIntensity: i === 5 ? 1.2 : 0.45,
-          vertexColors: true,
-        }),
-      ),
+      SMOOTH.has(i)
+        ? new THREE.MeshPhysicalMaterial({
+            color: c,
+            emissive: c,
+            emissiveIntensity: 0.6,
+            // The scene shows faintly through its middle.
+            transparent: true,
+            opacity: 0.72,
+            envMap: windowLight,
+            roughness: 0.08,
+            metalness: 0,
+            clearcoat: 1,
+            clearcoatRoughness: 0.05,
+            iridescence: 1,
+            iridescenceIOR: 1.6,
+            envMapIntensity: 1.2,
+            vertexColors: true,
+          })
+        : shadeGlow(
+            new THREE.MeshPhysicalMaterial({
+              color: c,
+              emissive: c,
+              emissiveIntensity: 0.35,
+              roughness: 0.12,
+              metalness: 0,
+              flatShading: true,
+              envMapIntensity: 0.45,
+              vertexColors: true,
+            }),
+          ),
     );
     // The polished surface of each stone: only its reflections, added over
-    // the body. Every facet mirrors a different lamp in the studio, so they
-    // flash in turn as the stone sways.
+    // the body. Every facet of a cut stone mirrors a different lamp in the
+    // studio, so they flash in turn as the stone sways; a smooth stone shows
+    // the one window as a single curved highlight.
     this.shellMaterials = STONE_COLORS.map(
-      (c) =>
+      (c, i) =>
         new THREE.MeshPhysicalMaterial({
           color: new THREE.Color(c).multiplyScalar(0.04),
-          roughness: 0.03,
+          roughness: SMOOTH.has(i) ? 0.04 : 0.03,
           metalness: 0,
           ior: 2.2,
-          flatShading: true,
+          flatShading: !SMOOTH.has(i),
           clearcoat: 1,
-          clearcoatRoughness: 0.02,
-          envMapIntensity: 1.6,
+          clearcoatRoughness: SMOOTH.has(i) ? 0.03 : 0.02,
+          envMap: SMOOTH.has(i) ? windowLight : null,
+          envMapIntensity: SMOOTH.has(i) ? 2.4 : 1.6,
           transparent: true,
           blending: THREE.AdditiveBlending,
           depthWrite: false,
@@ -1075,7 +1255,8 @@ export class GemScene {
       ? this.prismMaterial
       : this.materials[gem.color];
     if (special && !prism) {
-      const m = shadeGlow(this.materials[gem.color].clone());
+      const base = this.materials[gem.color];
+      const m = SMOOTH.has(gem.color) ? base.clone() : shadeGlow(base.clone());
       m.emissiveIntensity = 0.85;
       material = m;
     }
