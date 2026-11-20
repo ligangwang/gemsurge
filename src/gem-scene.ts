@@ -27,11 +27,11 @@ import type { Cleared } from "./engine/board";
 import { sfx } from "./sound";
 
 export const GEM_COLORS = [
-  0xff2450, 0xffc81e, 0x7ed62a, 0x2a96ff, 0xb450ff, 0xe8f6ff,
+  0xe8f6ff, 0xffc81e, 0x7ed62a, 0x2a96ff, 0xb450ff, 0xff2450,
 ];
 /** The stones themselves are a little deeper, since the light inside brightens them. */
 const STONE_COLORS = [
-  0xc8102e, 0xffc400, 0x6cc21c, 0x0c6ee8, 0x7a30d8, 0xf2f6ff,
+  0xf2f6ff, 0xffc400, 0x6cc21c, 0x0c6ee8, 0x7a30d8, 0xc8102e,
 ];
 /** CSS versions for the HUD. */
 export const GEM_CSS = GEM_COLORS.map(
@@ -216,7 +216,7 @@ const RADIANT = (() => {
  * Each stone's outline as an SVG path in a box from -0.6 to 0.6, so the goals
  * can show the same shapes as the board.
  */
-export const GEM_OUTLINES = [HEART, SQUARE, TRILLION, MARQUISE, WIDE, RADIANT].map(
+export const GEM_OUTLINES = [RADIANT, SQUARE, TRILLION, MARQUISE, WIDE, HEART].map(
   (radius) => {
     const points = Array.from({ length: 96 }, (_, i) => {
       const a = (i / 96) * Math.PI * 2;
@@ -397,8 +397,8 @@ function tableCut(
  */
 function makeGeometries(): THREE.BufferGeometry[] {
   return [
-    // The ruby heart: a wide table ringed by big triangles.
-    tableCut(HEART, 10, Math.PI / 2, 0.62),
+    // The diamond: a brilliant with many fine facets, standing on its point.
+    brilliant(RADIANT, 8, Math.PI / 2, { fine: 5 }),
     // The yellow square cushion: a brilliant, its star facing the corners.
     brilliant(SQUARE, 8, Math.PI / 4),
     // The green trillion: a table and six bold triangles.
@@ -407,8 +407,9 @@ function makeGeometries(): THREE.BufferGeometry[] {
     brilliant(MARQUISE, 8),
     // The amethyst cushion: a big open table and eight broad triangles.
     tableCut(WIDE, 8, Math.PI / 8, 0.64),
-    // The diamond: a brilliant with many fine facets, standing on its point.
-    brilliant(RADIANT, 8, Math.PI / 2, { fine: 5 }),
+    // The ruby heart, which joins from level 11: a wide table ringed by big
+    // triangles.
+    tableCut(HEART, 10, Math.PI / 2, 0.62),
   ];
 }
 
@@ -420,14 +421,22 @@ function makeGeometries(): THREE.BufferGeometry[] {
  */
 const CUTS: Record<
   number,
-  { wedges: number; culet: [number, number]; fire: number; deep: number; bright: number }
+  {
+    wedges: number;
+    culet: [number, number];
+    fire: number;
+    deep: number;
+    bright: number;
+    /** For a colourless stone: how strongly its patches take warm and cool light. */
+    tint?: number;
+  }
 > = {
-  0: { wedges: 10, culet: [0, -0.1], fire: 0.03, deep: 0.2, bright: 1.7 },
+  0: { wedges: 16, culet: [0, 0], fire: 0.16, deep: 0.3, bright: 1.3, tint: 0.7 },
   1: { wedges: 8, culet: [0, 0], fire: 0.08, deep: 0.36, bright: 1.45 },
   2: { wedges: 6, culet: [0, -0.04], fire: 0.06, deep: 0.22, bright: 1.7 },
   3: { wedges: 16, culet: [0, 0], fire: 0.04, deep: 0.26, bright: 1.9 },
   4: { wedges: 8, culet: [0, 0], fire: 0.05, deep: 0.2, bright: 1.7 },
-  5: { wedges: 16, culet: [0, 0], fire: 0.16, deep: 0.3, bright: 1.25 },
+  5: { wedges: 10, culet: [0, -0.1], fire: 0.03, deep: 0.2, bright: 1.7 },
 };
 
 const GEM_VERTEX = /* glsl */ `
@@ -461,6 +470,7 @@ uniform vec2 uCulet;
 uniform float uFire;
 uniform float uDeep;
 uniform float uBright;
+uniform float uTint;
 varying vec3 vPos;
 varying vec3 vNormal;
 varying vec3 vView;
@@ -476,6 +486,9 @@ vec3 room(vec3 d) {
   return e * e * (1.0 + 3.0 * e);
 }
 
+/** A number for the back facet last looked at, different for each. */
+float facetId = 0.0;
+
 /** The facet on the back of the stone under a point: its outward normal. */
 vec3 backFacet(vec2 p) {
   p -= uCulet;
@@ -488,6 +501,7 @@ vec3 backFacet(vec2 p) {
   // No two facets are cut quite alike: each leans and slopes its own way,
   // so each sends back a different part of the room.
   float odd = fract(sin(n * 12.9898 + outer * 78.233) * 43758.5453);
+  facetId = odd;
   float lean = (mod(n, 2.0) - 0.5) * 0.3 + (odd - 0.5) * 0.25;
   float a = (n + 0.5) * ww + turn + lean;
   float slope = mix(0.87, 1.15, outer) + (odd - 0.5) * 0.3;
@@ -526,6 +540,10 @@ void main() {
   // The strongest flashes pale towards white, tinted by the fire.
   colour += (uColor * 0.6 + 0.4) * max(back - 1.0, 0.0) * 0.5;
   colour *= mix(1.0, vShade, 0.2);
+  // A colourless stone takes its colours from the room: some patches show
+  // warm lamplight, some cool daylight, the rest stay clear.
+  vec3 hue = facetId < 0.36 ? vec3(1.0, 0.76, 0.42) : facetId > 0.64 ? vec3(0.6, 0.78, 1.0) : vec3(1.0);
+  colour *= mix(vec3(1.0), hue, uTint);
 
   // The polished surface mirrors the room too, most at a glancing angle.
   float fresnel = 0.09 + 0.91 * pow(1.0 - facing, 5.0);
@@ -1209,6 +1227,7 @@ export class GemScene {
         uFire: { value: cut.fire },
         uDeep: { value: cut.deep },
         uBright: { value: cut.bright },
+        uTint: { value: cut.tint ?? 0 },
       },
       vertexShader: GEM_VERTEX,
       fragmentShader: GEM_FRAGMENT,
