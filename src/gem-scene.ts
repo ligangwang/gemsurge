@@ -27,11 +27,11 @@ import type { Cleared } from "./engine/board";
 import { sfx } from "./sound";
 
 export const GEM_COLORS = [
-  0xff2450, 0xffc81e, 0x7ed62a, 0x2a96ff, 0xb450ff, 0xe8f6ff,
+  0xff2450, 0xe8f6ff, 0x7ed62a, 0x2a96ff, 0xb450ff, 0xffc81e,
 ];
 /** The stones themselves are a little deeper, since the light inside brightens them. */
 const STONE_COLORS = [
-  0xc8102e, 0xffc400, 0x6cc21c, 0x0c6ee8, 0x7a30d8, 0xf2f6ff,
+  0xc01030, 0xf2f6ff, 0x5cb616, 0x0c6ee8, 0x7a30d8, 0xffd41c,
 ];
 /** CSS versions for the HUD. */
 export const GEM_CSS = GEM_COLORS.map(
@@ -46,10 +46,18 @@ const HALF = (SIZE - 1) / 2;
 const world = (x: number, y: number) =>
   new THREE.Vector3(x - HALF, HALF - y, 0);
 
+/** Something cleared off the board that a goal may count. */
+export type Collected = { color: number } | { ice: true };
+
 type SceneOptions = {
   onSwap: (a: Pos, b: Pos) => void;
   /** Called on any pointer action on the board, to reset the hint timer. */
   onPoke?: () => void;
+  /**
+   * Called as each gem is cleared and each layer of ice cracks, with where
+   * it was on screen (page coordinates), so the game can fly it to a goal.
+   */
+  onCollect?: (what: Collected, at: { x: number; y: number }) => void;
 };
 
 type GemView = {
@@ -173,8 +181,8 @@ const MARQUISE = (() => {
 const TRILLION = (a: number) => {
   const third = (Math.PI * 2) / 3;
   const fromSide = ((((a - Math.PI / 2) % third) + third) % third) - third / 2;
-  const side = 0.33 / Math.cos(fromSide);
-  return (side ** -6 + 0.53 ** -6) ** (-1 / 6);
+  const side = 0.37 / Math.cos(fromSide);
+  return (side ** -6 + 0.58 ** -6) ** (-1 / 6);
 };
 
 /** Points along a polygon's edges, so its corners stay sharp. */
@@ -221,7 +229,7 @@ const RADIANT = (() => {
  * Each stone's outline as an SVG path in a box from -0.6 to 0.6, so the goals
  * can show the same shapes as the board.
  */
-export const GEM_OUTLINES = [HEART, PEAR, TRILLION, MARQUISE, WIDE, RADIANT].map(
+export const GEM_OUTLINES = [HEART, RADIANT, TRILLION, MARQUISE, WIDE, PEAR].map(
   (radius) => {
     const points = Array.from({ length: 96 }, (_, i) => {
       const a = (i / 96) * Math.PI * 2;
@@ -371,8 +379,13 @@ function tableCut(
   mains: number,
   turn = Math.PI / 2,
   tableScale = 0.6,
+  /** Extra light on the crown triangles facing up (0 for none). */
+  litFromAbove = 0,
 ) {
   const f = new Facets();
+  // Up is where the room's light comes from, so the triangles facing it
+  // shine pale and the ones facing down stay deep.
+  const up = (a: number) => 1 + litFromAbove * Math.sin(a);
   const step = (Math.PI * 2) / mains;
   const main = (j: number) => turn + j * step;
   const mid = (j: number) => main(j) + step / 2;
@@ -384,12 +397,12 @@ function tableCut(
   for (let j = 0; j < mains; j++) {
     f.tri(centre, table(j), table(j + 1), 1);
     // A triangle hanging from the table's edge to a point on the girdle.
-    f.tri(table(j), table(j + 1), girdle(mid(j)), j % 2 ? 1.3 : 0.9);
+    f.tri(table(j), table(j + 1), girdle(mid(j)), (j % 2 ? 1.3 : 0.9) * up(mid(j)));
     // A triangle standing on the girdle, its tip at the table's corner.
     for (let k = 0; k < fine; k++) {
       const a0 = mid(j - 1) + (k / fine) * step;
       const a1 = mid(j - 1) + ((k + 1) / fine) * step;
-      f.tri(table(j), girdle(a0), girdle(a1), j % 2 ? 0.5 : 0.75);
+      f.tri(table(j), girdle(a0), girdle(a1), (j % 2 ? 0.5 : 0.75) * up(main(j)));
       f.tri(culet, girdle(a1), girdle(a0), 0.3);
     }
   }
@@ -403,18 +416,18 @@ function tableCut(
 function makeGeometries(): THREE.BufferGeometry[] {
   return [
     // The ruby heart: a wide table ringed by big triangles.
-    tableCut(HEART, 10, Math.PI / 2, 0.62),
-    // The yellow pear: a brilliant with many small facets, like crushed ice.
-    brilliant(PEAR, 12, Math.PI / 2, { fine: 6 }),
+    tableCut(HEART, 10, Math.PI / 2, 0.6, 0.55),
+    // The diamond: a brilliant with many fine facets, standing on its point.
+    brilliant(RADIANT, 8, Math.PI / 2, { fine: 5 }),
     // The green trillion: a table and six bold triangles.
     tableCut(TRILLION, 6, Math.PI / 2, 0.5),
     // The plump sapphire: a classic brilliant with a star round its table.
     brilliant(MARQUISE, 8),
     // The amethyst cushion: a big open table and eight broad triangles.
     tableCut(WIDE, 8, Math.PI / 8, 0.64),
-    // The diamond, which joins from level 11: a brilliant with many fine
-    // facets, standing on its point.
-    brilliant(RADIANT, 8, Math.PI / 2, { fine: 5 }),
+    // The yellow pear, which joins from level 11: a brilliant with clear,
+    // open facets.
+    brilliant(PEAR, 8, Math.PI / 2, { fine: 3 }),
   ];
 }
 
@@ -434,14 +447,32 @@ const CUTS: Record<
     bright: number;
     /** For a colourless stone: how strongly its patches take warm and cool light. */
     tint?: number;
+    /** The colour of its shadows, when not a darker shade of its own colour. */
+    shadow?: number;
+    /** How strongly the crown's own facets show, 0.2 if not given. */
+    facet?: number;
+    /** The colour of light glowing along its girdle, if any. */
+    rim?: number;
   }
 > = {
-  0: { wedges: 10, culet: [0, -0.1], fire: 0.03, deep: 0.17, bright: 1.3 },
-  1: { wedges: 24, culet: [0, -0.1], fire: 0.08, deep: 0.26, bright: 1.05 },
-  2: { wedges: 6, culet: [0, -0.04], fire: 0.06, deep: 0.18, bright: 1.25 },
+  // The ruby heart: wine-red depths, pale triangles on its upper lobes and a
+  // pink line of light round its edge.
+  0: {
+    wedges: 16,
+    culet: [0, -0.12],
+    fire: 0.03,
+    deep: 0.3,
+    bright: 1.9,
+    facet: 0.5,
+    rim: 0xa0283c,
+    shadow: 0xa00c26,
+  },
+  1: { wedges: 16, culet: [0, 0], fire: 0.16, deep: 0.24, bright: 1.15, tint: 0.85 },
+  2: { wedges: 12, culet: [0, -0.04], fire: 0.06, deep: 0.2, bright: 1.75 },
   3: { wedges: 16, culet: [0, 0], fire: 0.04, deep: 0.2, bright: 1.4 },
   4: { wedges: 8, culet: [0, 0], fire: 0.05, deep: 0.17, bright: 1.3 },
-  5: { wedges: 16, culet: [0, 0], fire: 0.16, deep: 0.2, bright: 0.95, tint: 0.7 },
+  // A yellow stone's shadows are warm amber, not a muddy dark yellow.
+  5: { wedges: 12, culet: [0, -0.1], fire: 0.06, deep: 0.4, bright: 1.3, shadow: 0xe06a00 },
 };
 
 const GEM_VERTEX = /* glsl */ `
@@ -476,6 +507,9 @@ uniform float uFire;
 uniform float uDeep;
 uniform float uBright;
 uniform float uTint;
+uniform vec3 uShadow;
+uniform float uFacet;
+uniform vec3 uRim;
 varying vec3 vPos;
 varying vec3 vNormal;
 varying vec3 vView;
@@ -539,12 +573,19 @@ void main() {
     inside(V, N, 1.76 + uFire).b
   );
   float light = dot(back, vec3(0.3, 0.5, 0.2));
-  vec3 deep = uColor * uDeep;
+  vec3 deep = uShadow * uDeep;
   vec3 lit = uColor * uBright;
   vec3 colour = mix(deep, lit, clamp(back, 0.0, 1.0));
   // The strongest flashes pale towards white, tinted by the fire.
   colour += (uColor * 0.6 + 0.4) * max(back - 1.0, 0.0) * 0.2;
-  colour *= mix(1.0, vShade, 0.2);
+  // The crown's own facets show as lighter and darker triangles.
+  colour *= mix(1.0, vShade, uFacet);
+  // A pale crescent where a crown facet catches the light from above.
+  colour += (uColor * 0.4 + 0.6) * uFacet * 0.35 * max(vShade - 1.15, 0.0);
+  // A stone has depth: it is thickest in the middle, where light travels
+  // furthest inside it, and thin at the girdle, where the colour runs dark.
+  float r = clamp(length(vPos.xy) / 0.48, 0.0, 1.0);
+  colour *= mix(1.12, 0.62, r * r);
   // A colourless stone takes its colours from the room: some patches show
   // warm lamplight, some cool daylight, the rest stay clear.
   vec3 hue = facetId < 0.36 ? vec3(1.0, 0.76, 0.42) : facetId > 0.64 ? vec3(0.6, 0.78, 1.0) : vec3(1.0);
@@ -555,9 +596,13 @@ void main() {
   // Only the lamps show, not the walls, and they take a little of its colour.
   vec3 mirrored = room(reflect(-V, N));
   mirrored *= smoothstep(0.4, 1.6, mirrored);
-  colour += mirrored * fresnel * 0.45 * mix(vec3(1.0), uColor + 0.35, 0.55);
+  // A stone mirrors light in its true colour, clear white; a coloured
+  // reflection is what makes metal or foil look like metal or foil.
+  colour += mirrored * fresnel * 0.45;
 
   colour += uColor * uGlow * (0.4 + light);
+  // Light caught in the thin girdle glows as a line round the edge.
+  colour += uRim * smoothstep(0.035, 0.0, vPos.z) * step(0.0, vPos.z);
   gl_FragColor = vec4(colour, 1.0);
 }`;
 
@@ -1255,6 +1300,9 @@ export class GemScene {
         uDeep: { value: cut.deep },
         uBright: { value: cut.bright },
         uTint: { value: cut.tint ?? 0 },
+        uShadow: { value: new THREE.Color(cut.shadow ?? STONE_COLORS[color]) },
+        uFacet: { value: cut.facet ?? 0.2 },
+        uRim: { value: new THREE.Color(cut.rim ?? 0x000000) },
       },
       vertexShader: GEM_VERTEX,
       fragmentShader: GEM_FRAGMENT,
@@ -1783,6 +1831,7 @@ export class GemScene {
               drag: 1.2,
               boost: 1.1,
             });
+            this.collect(c.color, v.group.position);
             this.removeView(c.id);
           },
         );
@@ -1804,6 +1853,7 @@ export class GemScene {
               speed: (c.special ? 4.5 : 3) * (1 + 0.3 * power),
             },
           );
+          this.collect(c.color, v.group.position);
           this.removeView(c.id);
         },
       );
@@ -1817,6 +1867,7 @@ export class GemScene {
         () => {
           this.setIce(i, ice.left);
           this.shards(world(ice.x, ice.y));
+          this.options.onCollect?.({ ice: true }, this.screenOf(world(ice.x, ice.y)));
         },
       );
     }
@@ -2356,6 +2407,23 @@ export class GemScene {
     this.overlay.appendChild(el);
     requestAnimationFrame(() => (el.style.opacity = "0"));
     setTimeout(() => el.remove(), 700);
+  }
+
+  /** Where a point on the board is on the page. */
+  private screenOf(at: THREE.Vector3) {
+    const p = at.clone();
+    this.boardGroup.localToWorld(p);
+    p.project(this.camera);
+    const r = this.renderer.domElement.getBoundingClientRect();
+    return {
+      x: r.left + (p.x * 0.5 + 0.5) * r.width,
+      y: r.top + (-p.y * 0.5 + 0.5) * r.height,
+    };
+  }
+
+  private collect(color: number, at: THREE.Vector3) {
+    if (color >= 0 && this.options.onCollect)
+      this.options.onCollect({ color }, this.screenOf(at));
   }
 
   private floatText(text: string, at: THREE.Vector3, kind: string) {
