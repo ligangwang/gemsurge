@@ -78,15 +78,25 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
    * far, so a goal fills as its pieces arrive. Null shows the real progress.
    */
   const [goalsShown, setGoalsShown] = useState<number[] | null>(null);
+  const goalsShownNow = useRef<number[] | null>(null);
+  const showGoals = (value: number[] | null) => {
+    goalsShownNow.current = value;
+    setGoalsShown(value);
+  };
   const goalsDone = useRef<number[]>([]);
-  const landed = (key: string) =>
-    setGoalsShown((now) => {
-      const i = session.current?.progress().findIndex((g) => goalKey(g.goal) === key) ?? -1;
-      if (!now || i < 0) return now;
-      const next = [...now];
-      next[i] = Math.min(next[i] + 1, goalsDone.current[i] ?? next[i]);
-      return next;
-    });
+  /** A piece has landed on its goal: count it, with a sound. */
+  const landed = (key: string) => {
+    if (key === "ice") sfx.collectIce();
+    else sfx.collect();
+    const goals = session.current?.progress() ?? [];
+    const i = goals.findIndex((g) => goalKey(g.goal) === key);
+    const now = goalsShownNow.current;
+    if (!now || i < 0) return;
+    const next = [...now];
+    next[i] = Math.min(next[i] + 1, goalsDone.current[i] ?? next[i]);
+    if (now[i] < goals[i].target && next[i] >= goals[i].target) sfx.goalDone();
+    showGoals(next);
+  };
   const [end, setEnd] = useState<EndInfo | null>(null);
   const [buying, setBuying] = useState<string | null>(null);
   const [shopNote, setShopNote] = useState("");
@@ -222,7 +232,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       }
       // The goals fill as their pieces land, not all at once.
       goalsDone.current = s.progress().map((g) => g.have);
-      setGoalsShown(goalsBefore);
+      showGoals(goalsBefore);
       rerender();
       let running = before;
       await sc.playTurn(turn, pair, {
@@ -232,7 +242,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
         },
       });
       setShown(s.score);
-      setGoalsShown(null);
+      showGoals(null);
       if (turn.feverStarted) {
         sc.banner("Fever!", 6);
         sfx.fever();
@@ -251,7 +261,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       if (s.outcome) await reward(s, false);
     } finally {
       busy.current = false;
-      setGoalsShown(null);
+      showGoals(null);
       if (session.current === s && !s.outcome) {
         sc.setInput(true);
         armHint();
