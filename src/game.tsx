@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findHint, type Pos } from "./engine/board";
 import { FEVER_MOVES, FREE_UNDO_LEVELS, Session, type Goal, type Turn } from "./engine/session";
+import { version } from "../game.json";
 import { AnimationCancelled, CHEERS, GEM_OUTLINES, GemScene, STONE_CSS, type Collected } from "./gem-scene";
 import { useDingn, useLocale } from "./dingn";
 import {
@@ -77,15 +78,35 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
    * far, so a goal fills as its pieces arrive. Null shows the real progress.
    */
   const [goalsShown, setGoalsShown] = useState<number[] | null>(null);
+  const goalsShownNow = useRef<number[] | null>(null);
+  const showGoals = (value: number[] | null) => {
+    goalsShownNow.current = value;
+    setGoalsShown(value);
+  };
   const goalsDone = useRef<number[]>([]);
-  const landed = (key: string) =>
-    setGoalsShown((now) => {
-      const i = session.current?.progress().findIndex((g) => goalKey(g.goal) === key) ?? -1;
-      if (!now || i < 0) return now;
-      const next = [...now];
-      next[i] = Math.min(next[i] + 1, goalsDone.current[i] ?? next[i]);
-      return next;
-    });
+  /**
+   * Whether the move has finished playing. Its last pieces can still be in
+   * the air, so the HUD keeps counting them in until they have all landed.
+   */
+  const turnOver = useRef(true);
+  const endTurnGoals = () => {
+    turnOver.current = true;
+    if (flying === 0) showGoals(null);
+  };
+  /** A piece has landed on its goal: count it, with a sound. */
+  const landed = (key: string) => {
+    if (key === "ice") sfx.collectIce();
+    else sfx.collect();
+    const goals = session.current?.progress() ?? [];
+    const i = goals.findIndex((g) => goalKey(g.goal) === key);
+    const now = goalsShownNow.current;
+    if (!now || i < 0) return;
+    const next = [...now];
+    next[i] = Math.min(next[i] + 1, goalsDone.current[i] ?? next[i]);
+    if (now[i] < goals[i].target && next[i] >= goals[i].target) sfx.goalDone();
+    showGoals(next);
+    if (turnOver.current && flying === 0) showGoals(null);
+  };
   const [end, setEnd] = useState<EndInfo | null>(null);
   const [buying, setBuying] = useState<string | null>(null);
   const [shopNote, setShopNote] = useState("");
@@ -221,7 +242,8 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       }
       // The goals fill as their pieces land, not all at once.
       goalsDone.current = s.progress().map((g) => g.have);
-      setGoalsShown(goalsBefore);
+      turnOver.current = false;
+      showGoals(goalsBefore);
       rerender();
       let running = before;
       await sc.playTurn(turn, pair, {
@@ -231,7 +253,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
         },
       });
       setShown(s.score);
-      setGoalsShown(null);
+      endTurnGoals();
       if (turn.feverStarted) {
         sc.banner("Fever!", 6);
         sfx.fever();
@@ -250,7 +272,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       if (s.outcome) await reward(s, false);
     } finally {
       busy.current = false;
-      setGoalsShown(null);
+      endTurnGoals();
       if (session.current === s && !s.outcome) {
         sc.setInput(true);
         armHint();
@@ -653,6 +675,8 @@ function Menu(props: {
           );
         })}
       </section>
+      {/* The version, small in a corner, for telling which build a player has. */}
+      <p className="gem-version">v{version}</p>
     </div>
   );
 }
@@ -842,8 +866,13 @@ function Hud(props: {
         </div>
       </div>
       {spec.level > 0 && (
-        <button className="secondary-button hud-undo" disabled={!props.canNova || !s.canUndo} onClick={props.onUndo}>
-          ↶ {t("Undo")} ×{s.undosLeft}
+        <button
+          className="secondary-button hud-undo"
+          disabled={!props.canNova || !s.canUndo}
+          onClick={props.onUndo}
+          aria-label={`${t("Undo")} ×${s.undosLeft}`}
+        >
+          ↶ <span className="hud-word">{t("Undo")}</span> ×{s.undosLeft}
         </button>
       )}
       {spec.level > FREE_UNDO_LEVELS && !props.owned.undo && (
@@ -856,11 +885,16 @@ function Hud(props: {
       )}
       {spec.level > 0 && (
         <div className="hud-nova">
-          <button className="button nova" disabled={!props.canNova || props.novas < 1} onClick={props.onNova}>
+          <button
+            className="button nova"
+            disabled={!props.canNova || props.novas < 1}
+            onClick={props.onNova}
+            aria-label={`${t("Supernova")} ×${props.novas}`}
+          >
             <span className="nova-star" aria-hidden>
               ✹
             </span>
-            {t("Supernova")} ×{props.novas}
+            <span className="hud-word">{t("Supernova")}</span> ×{props.novas}
           </button>
           <div className="nova-bar" aria-hidden>
             <div className="fill" style={{ width: `${(props.charge / NOVA_COST) * 100}%` }} />

@@ -101,7 +101,7 @@ const cushion = (w: number, h: number, power: number) => (a: number) =>
 /**
  * A closed outline as a polar function: the stone's radius at each angle.
  * Built from points along the edge, so pointed and indented shapes (the
- * pear's tip, the heart's notch) keep their corners.
+ * marquise's tips, the heart's notch) keep their corners.
  */
 function polar(points: [number, number][]) {
   const table = points
@@ -158,19 +158,33 @@ const HEART = polar(
 
 /** The morganite, the seventh stone: round. */
 const ROUND = () => 0.46;
-/** The sapphire: an upright oval. */
-const OVAL = (a: number) => {
-  const w = 0.38;
-  const h = 0.48;
-  return 1 / Math.hypot(Math.cos(a) / w, Math.sin(a) / h);
-};
+/**
+ * The sapphire: a marquise, two arcs meeting in a point at the top and the
+ * bottom, full in the middle.
+ */
+const MARQUISE = (() => {
+  const h = 0.49;
+  const w = 0.36;
+  const c = (h * h - w * w) / (2 * w);
+  const r = c + w;
+  const reach = Math.asin(h / r);
+  return polar(
+    traced((t) => {
+      // Up the left arc, then down the right one.
+      const side = t < 0.5 ? -1 : 1;
+      const k = t < 0.5 ? t * 2 : (t - 0.5) * 2;
+      const phi = -reach + 2 * reach * k;
+      return [side * (r * Math.cos(phi) - c), side * r * Math.sin(phi)];
+    }),
+  );
+})();
 
 /** A trillion with bowed sides and rounded corners. */
 const TRILLION = (a: number) => {
   const third = (Math.PI * 2) / 3;
   const fromSide = ((((a - Math.PI / 2) % third) + third) % third) - third / 2;
-  const side = 0.37 / Math.cos(fromSide);
-  return (side ** -6 + 0.58 ** -6) ** (-1 / 6);
+  const side = 0.34 / Math.cos(fromSide);
+  return (side ** -6 + 0.53 ** -6) ** (-1 / 6);
 };
 
 /** Points along a polygon's edges, so its corners stay sharp. */
@@ -193,7 +207,7 @@ const PEAR = polar(
     return [0.47 * Math.sin(a) * Math.sin(a / 2) ** 0.85, 0.49 * Math.cos(a)];
   }),
 );
-/** The amethyst: a cushion standing upright, taller than it is wide. */
+/** The emerald: a cushion standing upright, taller than it is wide. */
 const TALL = cushion(0.4, 0.49, 3.4);
 /** The diamond: a square with its corners cut off, standing on a point. */
 const RADIANT = (() => {
@@ -217,7 +231,7 @@ const RADIANT = (() => {
  * Each stone's outline as an SVG path in a box from -0.6 to 0.6, so the goals
  * can show the same shapes as the board.
  */
-export const GEM_OUTLINES = [HEART, RADIANT, TRILLION, OVAL, TALL, PEAR, ROUND].map(
+export const GEM_OUTLINES = [HEART, RADIANT, TALL, MARQUISE, TRILLION, PEAR, ROUND].map(
   (radius) => {
     const points = Array.from({ length: 96 }, (_, i) => {
       const a = (i / 96) * Math.PI * 2;
@@ -407,16 +421,16 @@ function makeGeometries(): THREE.BufferGeometry[] {
     tableCut(HEART, 10, Math.PI / 2, 0.6, 0.55),
     // The diamond: a brilliant with many fine facets, standing on its point.
     brilliant(RADIANT, 8, Math.PI / 2, { fine: 5 }),
-    // The emerald trillion: a table and six bold triangles.
-    tableCut(TRILLION, 6, Math.PI / 2, 0.5),
-    // The oval sapphire: a classic brilliant with a star round its table.
-    brilliant(OVAL, 8),
-    // The amethyst cushion: a big open table and eight broad triangles.
+    // The emerald cushion, upright: a big open table and eight broad triangles.
     tableCut(TALL, 8, Math.PI / 8, 0.64),
+    // The sapphire marquise: a classic brilliant, its points on facet edges.
+    brilliant(MARQUISE, 8),
+    // The amethyst trillion: a table and six bold triangles.
+    tableCut(TRILLION, 6, Math.PI / 2, 0.5),
     // The yellow pear, which joins from level 11: a brilliant with clear,
     // open facets.
     brilliant(PEAR, 8, Math.PI / 2, { fine: 3 }),
-    // The peach morganite, which joins after level 100: a round brilliant with a
+    // The peach morganite, which joins after level 50: a round brilliant with a
     // big table and many fine facets round it.
     brilliant(ROUND, 8, Math.PI / 2, { fine: 5 }),
   ];

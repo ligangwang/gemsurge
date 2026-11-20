@@ -181,7 +181,7 @@ const PER_MOVE: Record<number, number> = { 5: 200, 6: 110, 7: 70 };
  * that would have six colours has seven, and two more moves to make up for
  * the matches being harder to find.
  */
-export const SEVENTH_COLOR_LEVEL = 101;
+export const SEVENTH_COLOR_LEVEL = 51;
 
 export function levelSpec(level: number): LevelSpec {
   const n = Math.min(Math.max(1, level), LAST_LEVEL);

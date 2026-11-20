@@ -78,6 +78,26 @@ function noise(dur: number, gain: number, freq: number, delay = 0) {
   src.start(t);
 }
 
+/** A short, bright burst of noise in one band: one crack of ice or a glint. */
+function crack(dur: number, gain: number, freq: number, delay = 0) {
+  const a = audio();
+  if (!a || !master) return;
+  const t = a.currentTime + delay;
+  const buffer = a.createBuffer(1, Math.ceil(a.sampleRate * dur), a.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length) ** 3;
+  const src = a.createBufferSource();
+  src.buffer = buffer;
+  const filter = a.createBiquadFilter();
+  filter.type = "bandpass";
+  filter.frequency.value = freq;
+  filter.Q.value = 1.4;
+  const g = a.createGain();
+  g.gain.value = gain;
+  src.connect(filter).connect(g).connect(master);
+  src.start(t);
+}
+
 // A pentatonic scale, so rising chains always sound good.
 const SCALE = [0, 2, 4, 7, 9];
 const note = (step: number, base = 523.25) =>
@@ -120,7 +140,54 @@ export function say(text: string, locale: string) {
   }
 }
 
+/**
+ * Pieces landing on a goal in quick succession climb in pitch, so a big
+ * collection sounds like a rising cascade; a pause starts the run again.
+ */
+let lastLanding = -1;
+let landings = 0;
+function landingStep() {
+  const a = audio();
+  if (!a) return -1;
+  const now = a.currentTime;
+  // Pieces that land together sound once.
+  if (now - lastLanding < 0.035) return -1;
+  landings = now - lastLanding > 0.7 ? 0 : Math.min(landings + 1, 14);
+  lastLanding = now;
+  return landings;
+}
+
 export const sfx = {
+  /**
+   * A gem landing on its goal: a quick run of tiny bells, "sha-la-la", that
+   * ends in a soft pop as it drops into the bag.
+   */
+  collect: () => {
+    const step = landingStep();
+    if (step < 0) return;
+    for (let i = 0; i < 3; i++) {
+      const f = note(step + i + 8);
+      tone(f, { type: "sine", dur: 0.14, gain: 0.085, delay: i * 0.028 });
+      tone(f * 2.01, { type: "sine", dur: 0.08, gain: 0.03, delay: i * 0.028 });
+    }
+    crack(0.06, 0.08, 9000, 0.02);
+    tone(240, { type: "sine", dur: 0.1, gain: 0.12, to: 130, delay: 0.09 });
+  },
+  /** A chip of ice landing on its goal: a crunchy crackle with a glassy tinkle. */
+  collectIce: () => {
+    const step = landingStep();
+    if (step < 0) return;
+    for (let i = 0; i < 5; i++) crack(0.025, 0.18, 2500 + Math.random() * 4500, i * 0.014 + Math.random() * 0.008);
+    tone(note(step + 12) * 2, { type: "triangle", dur: 0.09, gain: 0.05, delay: 0.05 });
+    tone(note(step + 14) * 2, { type: "triangle", dur: 0.12, gain: 0.04, delay: 0.085 });
+  },
+  /** A goal is complete: a bright "ding-ding" with a sparkle. */
+  goalDone: () => {
+    tone(note(12), { type: "triangle", dur: 0.22, gain: 0.12, delay: 0.12 });
+    tone(note(14), { type: "triangle", dur: 0.4, gain: 0.12, delay: 0.22 });
+    tone(note(14) * 2, { type: "sine", dur: 0.3, gain: 0.03, delay: 0.22 });
+    crack(0.3, 0.04, 10000, 0.22);
+  },
   select: () => tone(880, { type: "triangle", dur: 0.06, gain: 0.06 }),
   swap: () => tone(420, { type: "triangle", dur: 0.1, gain: 0.07, to: 620 }),
   invalid: () => {
