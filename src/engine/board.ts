@@ -15,7 +15,7 @@
 import { below, next, shuffleInPlace, type Rng } from "./random";
 
 export const SIZE = 8;
-export const MAX_COLORS = 6;
+export const MAX_COLORS = 7;
 
 export type Special = "row" | "col" | "bomb" | "prism";
 /** A gem. A prism has colour -1. */
@@ -27,7 +27,7 @@ export type Board = {
   cells: (Gem | null)[];
   /** Ice layers under each cell (0-2). Clearing a gem there cracks one. */
   ice: number[];
-  /** How many colours fall (3-6). */
+  /** How many colours fall (3-7). */
   colors: number;
   rng: Rng;
   nextId: number;

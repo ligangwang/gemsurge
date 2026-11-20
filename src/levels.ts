@@ -26,7 +26,7 @@ export const worldNumber = (level: number) => Math.floor((Math.max(1, level) - 1
 /** How many times the worlds have come round by this level: 0 for the first 80 levels. */
 export const worldCycle = (level: number) => Math.floor(worldNumber(level) / WORLDS.length);
 
-export const COLOR_NAMES = ["Ruby", "Diamond", "Peridot", "Sapphire", "Amethyst", "Topaz"];
+export const COLOR_NAMES = ["Ruby", "Diamond", "Emerald", "Sapphire", "Amethyst", "Topaz", "Morganite"];
 
 const ICE: Record<string, string[]> = {
   center: ["........", "........", "..1111..", "..1111..", "..1111..", "..1111..", "........", "........"],
@@ -173,15 +173,25 @@ export const EASY_LEVELS = 100;
  */
 const ease = (n: number) => Math.min(1, Math.max(0, (EASY_LEVELS + 1 - n) / 30));
 
-/** Rough points a move scores with 5 or 6 colours, used to set the star scores. */
-const PER_MOVE: Record<number, number> = { 5: 200, 6: 110 };
+/** Rough points a move scores with 5, 6 or 7 colours, used to set the star scores. */
+const PER_MOVE: Record<number, number> = { 5: 200, 6: 110, 7: 70 };
+
+/**
+ * The seventh stone, the morganite, joins here: from this level on, a level
+ * that would have six colours has seven, and two more moves to make up for
+ * the matches being harder to find.
+ */
+export const SEVENTH_COLOR_LEVEL = 101;
 
 export function levelSpec(level: number): LevelSpec {
   const n = Math.min(Math.max(1, level), LAST_LEVEL);
-  const [tableMoves, colors, text] = n <= HAND_MADE ? TABLE[n - 1] : generated(n);
+  const [tableMoves, tableColors, tableText] = n <= HAND_MADE ? TABLE[n - 1] : generated(n);
+  const seven = tableColors === 6 && n >= SEVENTH_COLOR_LEVEL;
+  const colors = seven ? 7 : tableColors;
+  const text = seven ? withSeventh(tableText, n) : tableText;
   const { goals, ice } = parseGoals(text);
   const easy = ease(n);
-  const moves = Math.round(tableMoves * (1 + 0.3 * easy));
+  const moves = Math.round((tableMoves + (seven ? 2 : 0)) * (1 + 0.3 * easy));
   for (const goal of goals) {
     if (goal.kind === "score") goal.target = Math.round((goal.target * (1 - 0.2 * easy)) / 100) * 100;
     else if (goal.kind === "color") goal.target = Math.round(goal.target * (1 - 0.2 * easy));
@@ -204,6 +214,23 @@ export function levelSpec(level: number): LevelSpec {
 }
 
 const round = (n: number) => Math.round(n / 500) * 500;
+
+/**
+ * A six-colour level's goals made into seven: one colour goal in three,
+ * chosen by the level number, asks for the morganite instead.
+ */
+function withSeventh(text: string, n: number) {
+  if (hashSeed(`gemsurge-seventh-${n}`) % 3 !== 0) return text;
+  let swapped = false;
+  return text
+    .split(" ")
+    .map((part) => {
+      if (swapped || part[0] !== "c") return part;
+      swapped = true;
+      return `c6:${part.split(":")[1]}`;
+    })
+    .join(" ");
+}
 
 /** Today's UTC day, as 2026-11-15. */
 export const utcDay = (now = new Date()) => now.toISOString().slice(0, 10);
