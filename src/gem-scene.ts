@@ -324,48 +324,50 @@ function brilliant(radius: (a: number) => number, mains = 8, turn = Math.PI / 2)
 
 /**
  * A step cut, for the square emerald: rows of long facets stepping up from
- * the girdle to a wide table, light and dark in bands, the "hall of
- * mirrors" an emerald cut shows.
+ * the girdle to a wide table. Through the table you see the steps on the
+ * back, as rings split by the diagonals to the corners, every piece its own
+ * light or dark: the "hall of mirrors" that makes an emerald cut sparkle.
  */
 function stepCut(corners: (scale: number) => [number, number][]) {
   const f = new Facets();
-  const rings: [number, number, number][] = [
-    // [scale, height, shade of the band above it]
-    [1, 0, 0.35],
-    [0.87, CROWN * 0.45, 1.35],
-    [0.75, CROWN * 0.75, 0.45],
-    [0.64, CROWN * 0.92, 1.1],
-    [0.54, CROWN, 0],
+  // How bright each of the eight sides is, going round from the top. The
+  // pattern turns a step with each ring, so neighbouring pieces differ.
+  const tones = [1.8, 1.0, 0.3, 0.7, 1.6, 0.45, 0.22, 1.2];
+  const tone = (side: number, ring: number) => tones[(side + 3 * ring) % 8];
+  const crown: [number, number][] = [
+    // [scale, height]: the girdle, two steps, and the table's edge.
+    [1, 0],
+    [0.86, CROWN * 0.55],
+    [0.72, CROWN * 0.88],
+    [0.6, CROWN],
   ];
-  const ring = (i: number) =>
-    corners(rings[i][0]).map(([x, y]) => [x, y, rings[i][1]]);
-  for (let i = 0; i < rings.length - 1; i++) {
-    const lower = ring(i);
-    const upper = ring(i + 1);
-    lower.forEach((p, j) => {
-      const q = lower[(j + 1) % lower.length];
-      const u = upper[j];
-      const v = upper[(j + 1) % upper.length];
-      // The cut corners are narrower and catch a different light.
-      const shade = rings[i][2] * (j % 2 ? 0.8 : 1);
-      f.tri(p, q, v, shade);
-      f.tri(p, v, u, shade);
+  // Rings seen through the table, from its edge in to the middle.
+  const table = [0.6, 0.47, 0.35, 0.23, 0.11];
+  const band = (
+    outer: number[][],
+    inner: number[][],
+    shade: (side: number) => number,
+  ) =>
+    outer.forEach((p, j) => {
+      const q = outer[(j + 1) % outer.length];
+      const u = inner[j];
+      const v = inner[(j + 1) % inner.length];
+      f.tri(p, q, v, shade(j));
+      f.tri(p, v, u, shade(j));
     });
-  }
-  // The table, with the back's steps showing through it as a darker frame.
-  const top = ring(rings.length - 1);
-  const inner = corners(0.36).map(([x, y]) => [x, y, CROWN]);
-  top.forEach((p, j) => {
-    const q = top[(j + 1) % top.length];
-    const u = inner[j];
-    const v = inner[(j + 1) % inner.length];
-    f.tri(p, q, v, 0.4);
-    f.tri(p, v, u, 0.4);
-  });
-  for (let j = 1; j < inner.length - 1; j++)
-    f.tri(inner[0], inner[j], inner[j + 1], 1.25);
+  const ring = (scale: number, z: number) =>
+    corners(scale).map(([x, y]) => [x, y, z]);
+  for (let i = 0; i < crown.length - 1; i++)
+    band(ring(...crown[i]), ring(...crown[i + 1]), (j) => tone(j, i) * 1.1);
+  for (let i = 0; i < table.length - 1; i++)
+    band(ring(table[i], CROWN), ring(table[i + 1], CROWN), (j) =>
+      tone(j, i + 5) * (i % 2 ? 0.75 : 1.15),
+    );
+  const middle = ring(table[table.length - 1], CROWN);
+  for (let j = 1; j < middle.length - 1; j++)
+    f.tri(middle[0], middle[j], middle[j + 1], 1.8);
   // The pavilion.
-  const base = ring(0);
+  const base = ring(1, 0);
   const culet = [0, 0, -PAVILION];
   base.forEach((p, j) => f.tri(culet, base[(j + 1) % base.length], p, 0.3));
   return f.geometry();
