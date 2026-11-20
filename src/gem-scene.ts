@@ -27,11 +27,11 @@ import type { Cleared } from "./engine/board";
 import { sfx } from "./sound";
 
 export const GEM_COLORS = [
-  0xff2450, 0xffc400, 0x12b060, 0x3a84ff, 0xb450ff, 0xe8f6ff,
+  0xff2450, 0xffdc1e, 0x12b060, 0x3a84ff, 0xb450ff, 0xfff8ee,
 ];
 /** The stones themselves are a little deeper, since the light inside brightens them. */
 const STONE_COLORS = [
-  0xb00a26, 0xe08c00, 0x067a3c, 0x0e3cc0, 0x6218c0, 0xe4f2ff,
+  0xb00a26, 0xf6d200, 0x067a3c, 0x1446d0, 0x7a30d8, 0xf3efe6,
 ];
 /** CSS versions for the HUD. */
 export const GEM_CSS = GEM_COLORS.map(
@@ -96,7 +96,12 @@ const cushion = (w: number, h: number, power: number) => (a: number) =>
  * the rim and under the highlight, and glows low on the right, where light
  * that came in through the top gathers on its way out.
  */
-function domeGem(radius: (angle: number) => number, height: number, turn = 0) {
+function domeGem(
+  radius: (angle: number) => number,
+  height: number,
+  turn = 0,
+  shading: "gem" | "jade" = "gem",
+) {
   const around = 72;
   const rings = 14;
   const positions: number[] = [0, 0, height];
@@ -104,6 +109,14 @@ function domeGem(radius: (angle: number) => number, height: number, turn = 0) {
   // `edge` is 0 at the middle of the stone and 1 at its rim; the glow is a
   // crescent low on the right, opposite the window the top reflects.
   const shadeAt = (angle: number, edge: number) => {
+    if (shading === "jade") {
+      // Jade is opaque: an even milky white, a touch brighter where the light
+      // falls on it from the upper left, softly darker towards the rim.
+      const lit = 0.06 * Math.max(0, Math.cos(angle - Math.PI * 0.75)) * edge;
+      const shade = 1 + lit - 0.22 * edge ** 6;
+      shades.push(shade, shade, shade);
+      return;
+    }
     const facing = Math.max(0, Math.cos(angle + Math.PI * 0.28));
     // Light that came in at the top gathers into a bright crescent on its way
     // out, and a thin line of it runs round the rim: that depth is what makes
@@ -155,8 +168,8 @@ function domeGem(radius: (angle: number) => number, height: number, turn = 0) {
   return g;
 }
 
-/** The diamond: a lozenge standing on its point, with rounded corners. */
-const LOZENGE = cushion(0.46, 0.49, 1.45);
+/** The white stone: a round disc of polished white jade. */
+const DISC = () => 0.45;
 /** The emerald: a cushion, a square with soft sides and corners. */
 const CUSHION = cushion(0.4, 0.485, 3.2);
 /** How far a smooth stone domes up from the board. */
@@ -164,7 +177,7 @@ const DOME = 0.2;
 
 /**
  * The stones that stay smooth polished domes, as Gem Surge first had them,
- * rather than cut: the emerald and the white diamond. They reflect a single window
+ * rather than cut: the emerald and the white jade. They reflect a single window
  * (windowTexture) where the cut stones reflect the whole studio.
  */
 const SMOOTH = new Set([2, 5]);
@@ -269,7 +282,7 @@ const TRILLION = (a: number) => {
  * Each stone's outline as an SVG path in a box from -0.6 to 0.6, so the goals
  * can show the same shapes as the board.
  */
-export const GEM_OUTLINES = [HEART, PEAR, CUSHION, MARQUISE, TRILLION, LOZENGE].map(
+export const GEM_OUTLINES = [HEART, PEAR, CUSHION, MARQUISE, TRILLION, DISC].map(
   (radius) => {
     const points = Array.from({ length: 96 }, (_, i) => {
       const a = (i / 96) * Math.PI * 2;
@@ -340,8 +353,40 @@ const at = (radius: (a: number) => number, a: number, scale: number, z: number) 
  * and `turn` where the first one points, so the outline's corners and tips
  * fall on a facet edge.
  */
-function brilliant(radius: (a: number) => number, mains = 8, turn = Math.PI / 2) {
-  const f = new Facets();
+function brilliant(
+  radius: (a: number) => number,
+  mains = 8,
+  turn = Math.PI / 2,
+  {
+    contrast = 1,
+    sparkle = 0,
+    lift = 0,
+    fine = 4,
+  }: {
+    /** Added to every facet's shade, for a stone lit through. */
+    lift?: number;
+    /** 1 keeps the light and dark as cut; lower is a brighter, more even stone. */
+    contrast?: number;
+    /** How much each small facet varies on its own, for a crushed-ice glitter. */
+    sparkle?: number;
+    /** How many girdle facets between a main point and the next midpoint. */
+    fine?: number;
+  } = {},
+) {
+  const facets = new Facets();
+  // A fixed sequence, so every stone of a colour is cut the same.
+  let seed = 7;
+  const next = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) - 0.5;
+  const f = {
+    tri: (p: number[], q: number[], r: number[], shade: number) =>
+      facets.tri(
+        p,
+        q,
+        r,
+        1 + lift + (shade - 1) * contrast + sparkle * next(),
+      ),
+    geometry: () => facets.geometry(),
+  };
   const step = (Math.PI * 2) / mains;
   const main = (j: number) => turn + j * step;
   const mid = (j: number) => main(j) + step / 2;
@@ -350,8 +395,6 @@ function brilliant(radius: (a: number) => number, mains = 8, turn = Math.PI / 2)
   const girdle = (a: number) => at(radius, a, 1, 0);
   const centre = [0, 0, CROWN];
   const culet = [0, 0, -PAVILION];
-  // How many girdle points between a main point and the next midpoint.
-  const fine = 4;
   for (let j = 0; j < mains; j++) {
     const odd = j % 2;
     // The table, split into a pinwheel: through it you see the back facets.
@@ -425,7 +468,7 @@ function broadCut(
 /**
  * Six cut stones with six different outlines, so a gem reads by shape as well
  * as colour: a simply cut heart, a pear, a square emerald cut, a marquise, a trillion,
- * and the diamond, a smooth white lozenge as it always was.
+ * and a disc of white jade.
  */
 function makeGeometries(): THREE.BufferGeometry[] {
   return [
@@ -435,11 +478,19 @@ function makeGeometries(): THREE.BufferGeometry[] {
       [Math.PI / 2, (Math.PI * 7) / 6, (Math.PI * 11) / 6],
       [1.45, 0.5, 0.85],
     ),
-    brilliant(PEAR, 8),
+    // A canary pear: many small, bright facets that glitter like crushed ice.
+    brilliant(PEAR, 12, Math.PI / 2, {
+      contrast: 0.4,
+      sparkle: 0.55,
+      lift: 0.3,
+      fine: 6,
+    }),
     domeGem(CUSHION, DOME),
-    brilliant(MARQUISE, 8),
-    brilliant(TRILLION, 6),
-    domeGem(LOZENGE, DOME),
+    // The sapphire and the amethyst are lit through too: big facets, mostly
+    // light, with some deep ones.
+    brilliant(MARQUISE, 8, Math.PI / 2, { contrast: 0.7, sparkle: 0.25, lift: 0.15 }),
+    brilliant(TRILLION, 6, Math.PI / 2, { contrast: 0.65, sparkle: 0.2, lift: 0.2 }),
+    domeGem(DISC, DOME * 0.8, 0, "jade"),
   ];
 }
 
@@ -1008,33 +1059,41 @@ export class GemScene {
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x6a5a8a, 2.8));
 
     // The body of each stone: its colour, with the light and dark of each
-    // facet baked into the geometry. The smooth stones are shaded by the
-    // glow and rim baked into their domes; the diamond is clear, with a play
-    // of colour.
+    // facet baked into the geometry. The smooth emerald is shaded by the
+    // glow and rim baked into its dome; the jade is an even, opaque white.
     this.materials = STONE_COLORS.map((c, i) =>
-      SMOOTH.has(i)
-        ? new THREE.MeshPhysicalMaterial({
+      i === 5
+        ? // White jade: opaque and milky, with a satin polish.
+          new THREE.MeshPhysicalMaterial({
             color: c,
             emissive: c,
-            emissiveIntensity: i === 5 ? 0.6 : 0.22,
-            // The diamond is see-through: the scene shows faintly through its middle.
-            transparent: i === 5,
-            opacity: i === 5 ? 0.72 : 1,
+            emissiveIntensity: 0.45,
             envMap: windowLight,
-            roughness: i === 5 ? 0.08 : 0.25,
+            roughness: 0.35,
             metalness: 0,
-            clearcoat: i === 5 ? 1 : 0,
-            clearcoatRoughness: 0.05,
-            iridescence: i === 5 ? 1 : 0,
-            iridescenceIOR: 1.6,
-            envMapIntensity: i === 5 ? 1.2 : 0.3,
+            clearcoat: 0.7,
+            clearcoatRoughness: 0.18,
+            envMapIntensity: 0.5,
             vertexColors: true,
           })
+        : SMOOTH.has(i)
+          ? new THREE.MeshPhysicalMaterial({
+              color: c,
+              emissive: c,
+              emissiveIntensity: 0.22,
+              envMap: windowLight,
+              roughness: 0.25,
+              metalness: 0,
+              clearcoatRoughness: 0.05,
+              envMapIntensity: 0.3,
+              vertexColors: true,
+            })
         : shadeGlow(
             new THREE.MeshPhysicalMaterial({
               color: c,
               emissive: c,
-              emissiveIntensity: 0.35,
+              // The cut stones are lit through, so they glow; the canary most.
+              emissiveIntensity: i === 1 ? 0.55 : i === 0 ? 0.35 : 0.45,
               roughness: 0.12,
               metalness: 0,
               flatShading: true,
@@ -1051,14 +1110,15 @@ export class GemScene {
       (c, i) =>
         new THREE.MeshPhysicalMaterial({
           color: new THREE.Color(c).multiplyScalar(0.04),
-          roughness: SMOOTH.has(i) ? 0.04 : 0.03,
+          // Jade's polish is satin: one broad, soft highlight.
+          roughness: i === 5 ? 0.1 : SMOOTH.has(i) ? 0.04 : 0.03,
           metalness: 0,
           ior: 2.2,
           flatShading: !SMOOTH.has(i),
           clearcoat: 1,
           clearcoatRoughness: SMOOTH.has(i) ? 0.03 : 0.02,
           envMap: SMOOTH.has(i) ? windowLight : null,
-          envMapIntensity: SMOOTH.has(i) ? 2.4 : 1.6,
+          envMapIntensity: i === 5 ? 2.2 : SMOOTH.has(i) ? 2.4 : 1.6,
           transparent: true,
           blending: THREE.AdditiveBlending,
           depthWrite: false,
