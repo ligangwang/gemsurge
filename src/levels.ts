@@ -10,7 +10,7 @@ export type World = { id: string; name: string };
  * time (see `worldCycle`).
  */
 export const WORLDS: World[] = [
-  { id: "neon", name: "Neon City" },
+  { id: "neon", name: "Crystal Forest" },
   { id: "sea", name: "Deep Sea" },
   { id: "space", name: "Outer Space" },
   { id: "lake", name: "Lantern Lake" },
@@ -50,7 +50,7 @@ const iceCells = (name?: string) =>
  * out as `center`.
  */
 const TABLE: [number, number, string][] = [
-  // Neon City
+  // Crystal Forest
   [20, 5, "s3000"],
   [20, 5, "c0:30"],
   [18, 5, "i:center"],

@@ -25,6 +25,7 @@ import {
 import type { Turn } from "./engine/session";
 import type { Cleared } from "./engine/board";
 import { sfx } from "./sound";
+import { CrystalForest } from "./scenery";
 
 export const GEM_COLORS = [
   0xff2450, 0xe8f6ff, 0x16c878, 0x2a96ff, 0xb450ff, 0xffc81e, 0xffb39c,
@@ -1071,6 +1072,10 @@ export class GemScene {
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(36, 1, 0.1, 100);
   private bg: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+  /** The first world's 3D scene, drawn behind the board by its own pass. */
+  private forest = new CrystalForest();
+  private forestPass!: RenderPass;
+  private shade!: THREE.Mesh;
   private boardGroup = new THREE.Group();
   private fx = new THREE.Group();
   private geometries = makeGeometries();
@@ -1149,7 +1154,13 @@ export class GemScene {
       samples: 4,
     });
     this.composer = new EffectComposer(this.renderer, target);
-    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    // The first world's scene first, then the board over it.
+    this.forestPass = new RenderPass(this.forest.scene, this.forest.camera);
+    this.composer.addPass(this.forestPass);
+    const boardPass = new RenderPass(this.scene, this.camera);
+    boardPass.clear = false;
+    boardPass.clearDepth = true;
+    this.composer.addPass(boardPass);
     this.bloom = new UnrealBloomPass(
       new THREE.Vector2(256, 256),
       0.4,
@@ -1262,6 +1273,25 @@ export class GemScene {
         m.makeTranslation(p.x, p.y, -0.5);
         this.tiles.setMatrixAt(idx(x, y), m);
       }
+    // Over a bright 3D scene, a soft dark pane behind the board keeps the
+    // stones easy to see.
+    const pane = document.createElement("canvas");
+    pane.width = pane.height = 256;
+    const pg = pane.getContext("2d")!;
+    pg.filter = "blur(10px)";
+    pg.fillStyle = "#000";
+    pg.beginPath();
+    pg.roundRect(20, 20, 216, 216, 28);
+    pg.fill();
+    const paneTex = new THREE.CanvasTexture(pane);
+    this.shade = new THREE.Mesh(
+      new THREE.PlaneGeometry(SIZE + 0.9, SIZE + 0.9),
+      new THREE.MeshBasicMaterial({ map: paneTex, color: 0x02100c, transparent: true, opacity: 0.5, depthWrite: false }),
+    );
+    this.shade.position.z = -0.7;
+    this.shade.renderOrder = -2;
+    this.shade.visible = false;
+    this.boardGroup.add(this.shade);
     // The cells are not drawn: the stones float straight over the scene,
     // with only faint lines between them to show the board.
     this.tiles.visible = false;
@@ -1497,6 +1527,11 @@ export class GemScene {
   setWorld(i: number, cycle = 0) {
     this.worldIndex = i;
     this.worldCycle = cycle;
+    // The first world is a 3D scene; the others are painted by the background shader.
+    const forest = i === 0;
+    this.forestPass.enabled = forest;
+    this.bg.visible = !forest;
+    this.shade.visible = forest;
     this.bg.material.uniforms.world.value = i;
     this.bg.material.uniforms.cycle.value = cycle;
     this.paintTiles();
@@ -2498,6 +2533,7 @@ export class GemScene {
     this.composer.setSize(w, h);
     this.bloom.resolution.set(w / 2, h / 2);
     this.camera.aspect = w / h;
+    this.forest.resize(w / h);
     // Fit the board (8 units) in both directions, as big as it goes: the
     // margin only leaves room for a line blaster's tips on an edge gem.
     const fit = 8.4;
@@ -2602,6 +2638,7 @@ export class GemScene {
     this.camera.lookAt(sx * 0.5, sy * 0.5, 0);
 
     this.particles.update(dt);
+    if (this.forestPass.enabled) this.forest.update(real, this.tilt);
     if (this.time > this.nextGlint) {
       this.nextGlint = this.time + 0.9 + Math.random() * 1.3;
       this.glint();
