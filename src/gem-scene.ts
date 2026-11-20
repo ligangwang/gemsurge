@@ -183,8 +183,8 @@ const MARQUISE = (() => {
 const TRILLION = (a: number) => {
   const third = (Math.PI * 2) / 3;
   const fromSide = ((((a - Math.PI / 2) % third) + third) % third) - third / 2;
-  const side = 0.37 / Math.cos(fromSide);
-  return (side ** -6 + 0.58 ** -6) ** (-1 / 6);
+  const side = 0.34 / Math.cos(fromSide);
+  return (side ** -6 + 0.53 ** -6) ** (-1 / 6);
 };
 
 /** Points along a polygon's edges, so its corners stay sharp. */
