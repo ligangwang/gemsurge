@@ -27,11 +27,11 @@ import type { Cleared } from "./engine/board";
 import { sfx } from "./sound";
 
 export const GEM_COLORS = [
-  0xff2450, 0xe8f6ff, 0x7ed62a, 0x2a96ff, 0xb450ff, 0xffc81e,
+  0xff2450, 0xe8f6ff, 0x16c878, 0x2a96ff, 0xb450ff, 0xffc81e,
 ];
 /** The stones themselves are a little deeper, since the light inside brightens them. */
 const STONE_COLORS = [
-  0xc01030, 0xf2f6ff, 0x5cb616, 0x0c6ee8, 0x7a30d8, 0xffd41c,
+  0xc01030, 0xf2f6ff, 0x0a9a56, 0x0c6ee8, 0x7a30d8, 0xffd41c,
 ];
 /** CSS versions for the HUD. */
 export const GEM_CSS = GEM_COLORS.map(
@@ -101,7 +101,7 @@ const cushion = (w: number, h: number, power: number) => (a: number) =>
 /**
  * A closed outline as a polar function: the stone's radius at each angle.
  * Built from points along the edge, so pointed and indented shapes (the
- * marquise's tips, the heart's notch) keep their corners.
+ * pear's tip, the heart's notch) keep their corners.
  */
 function polar(points: [number, number][]) {
   const table = points
@@ -156,26 +156,15 @@ const HEART = polar(
   }),
 );
 
-/** A marquise: two arcs meeting in a point at each end. */
-const MARQUISE = (() => {
-  const h = 0.49;
-  const w = 0.44;
-  const c = (h * h - w * w) / (2 * w);
-  const r = c + w;
-  const reach = Math.asin(h / r);
-  return polar(
-    traced((t) => {
-      // Up the left arc, then down the right one.
-      const side = t < 0.5 ? -1 : 1;
-      const k = t < 0.5 ? t * 2 : (t - 0.5) * 2;
-      const phi = -reach + 2 * reach * k;
-      return [
-        side * (r * Math.cos(phi) - c),
-        side * r * Math.sin(phi),
-      ];
-    }),
-  );
-})();
+/**
+ * The sapphire: an oval lying on its side, so it does not look like the
+ * upright amethyst beside it in colour.
+ */
+const OVAL = (a: number) => {
+  const w = 0.48;
+  const h = 0.38;
+  return 1 / Math.hypot(Math.cos(a) / w, Math.sin(a) / h);
+};
 
 /** A trillion with bowed sides and rounded corners. */
 const TRILLION = (a: number) => {
@@ -229,7 +218,7 @@ const RADIANT = (() => {
  * Each stone's outline as an SVG path in a box from -0.6 to 0.6, so the goals
  * can show the same shapes as the board.
  */
-export const GEM_OUTLINES = [HEART, RADIANT, TRILLION, MARQUISE, TALL, PEAR].map(
+export const GEM_OUTLINES = [HEART, RADIANT, TRILLION, OVAL, TALL, PEAR].map(
   (radius) => {
     const points = Array.from({ length: 96 }, (_, i) => {
       const a = (i / 96) * Math.PI * 2;
@@ -419,10 +408,10 @@ function makeGeometries(): THREE.BufferGeometry[] {
     tableCut(HEART, 10, Math.PI / 2, 0.6, 0.55),
     // The diamond: a brilliant with many fine facets, standing on its point.
     brilliant(RADIANT, 8, Math.PI / 2, { fine: 5 }),
-    // The green trillion: a table and six bold triangles.
+    // The emerald trillion: a table and six bold triangles.
     tableCut(TRILLION, 6, Math.PI / 2, 0.5),
-    // The plump sapphire: a classic brilliant with a star round its table.
-    brilliant(MARQUISE, 8),
+    // The oval sapphire: a classic brilliant with a star round its table.
+    brilliant(OVAL, 8, 0),
     // The amethyst cushion: a big open table and eight broad triangles.
     tableCut(TALL, 8, Math.PI / 8, 0.64),
     // The yellow pear, which joins from level 11: a brilliant with clear,
@@ -468,7 +457,18 @@ const CUTS: Record<
     shadow: 0xa00c26,
   },
   1: { wedges: 16, culet: [0, 0], fire: 0.16, deep: 0.24, bright: 1.15, tint: 0.85 },
-  2: { wedges: 12, culet: [0, -0.04], fire: 0.06, deep: 0.2, bright: 1.75 },
+  // An emerald glows from within, deep and velvety: little fire, soft
+  // flashes, and blue-green shadows that still hold colour.
+  2: {
+    wedges: 10,
+    culet: [0, -0.04],
+    fire: 0.015,
+    deep: 0.34,
+    bright: 1.45,
+    facet: 0.32,
+    shadow: 0x046c50,
+    rim: 0x0c4a30,
+  },
   3: { wedges: 16, culet: [0, 0], fire: 0.04, deep: 0.2, bright: 1.4 },
   4: { wedges: 8, culet: [0, 0], fire: 0.05, deep: 0.17, bright: 1.3 },
   // A yellow stone's shadows are warm amber, not a muddy dark yellow.
