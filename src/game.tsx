@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findHint, type Pos } from "./engine/board";
 import { FEVER_MOVES, FREE_UNDO_LEVELS, Session, type Goal, type Turn } from "./engine/session";
-import { AnimationCancelled, CHEERS, GEM_OUTLINES, GemScene, STONE_CSS } from "./gem-scene";
+import { AnimationCancelled, CHEERS, GEM_OUTLINES, GemScene, STONE_CSS, type Collected } from "./gem-scene";
 import { useDingn, useLocale } from "./dingn";
 import {
   COLOR_NAMES,
@@ -129,6 +129,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       s = new GemScene(host.current, {
         onSwap: (a, b) => onSwap.current(a, b),
         onPoke: () => armHint(),
+        onCollect: flyToGoal,
       });
     } catch (err) {
       console.warn("Gem Surge: no WebGL", err);
@@ -637,6 +638,58 @@ function Menu(props: {
 
 // --------------------------------------------------------------------- HUD
 
+/** How many pieces are flying to the goals now: past this, the rest just count. */
+let flying = 0;
+const MAX_FLYING = 24;
+
+/**
+ * Flies a cleared gem, or a chip of ice, from where it was on the board to
+ * its goal in the HUD, and bumps the goal's count as it lands.
+ */
+function flyToGoal(what: Collected, at: { x: number; y: number }) {
+  const key = "ice" in what ? "ice" : `color-${what.color}`;
+  const goal = document.querySelector<HTMLElement>(`.goal[data-goal="${key}"]:not(.done)`);
+  const icon = goal?.querySelector<HTMLElement>(".goal-gem, .goal-ice");
+  const count = goal?.querySelector<HTMLElement>(".goal-count");
+  if (!icon || !count) return;
+  const bump = () => {
+    count.classList.remove("bump");
+    void count.offsetWidth; // restart the animation
+    count.classList.add("bump");
+  };
+  const to = icon.getBoundingClientRect();
+  const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  if (still || flying >= MAX_FLYING || !to.width || !icon.animate) return bump();
+  const piece = icon.cloneNode(true) as HTMLElement;
+  piece.classList.add("goal-fly");
+  piece.style.left = `${at.x}px`;
+  piece.style.top = `${at.y}px`;
+  document.body.appendChild(piece);
+  flying++;
+  const dx = to.left + to.width / 2 - at.x;
+  const dy = to.top + to.height / 2 - at.y;
+  // Up and away first, then a quickening swoop onto the goal.
+  const flight = piece.animate(
+    [
+      { transform: "translate(-50%, -50%) scale(1.6)", opacity: 1 },
+      {
+        transform: `translate(calc(-50% + ${dx * 0.25}px), calc(-50% + ${dy * 0.25 - 50}px)) scale(1.3)`,
+        opacity: 1,
+        offset: 0.35,
+      },
+      { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(0.8)`, opacity: 0.9 },
+    ],
+    { duration: 620 + Math.random() * 180, easing: "cubic-bezier(0.45, 0, 0.75, 1)" },
+  );
+  const land = () => {
+    piece.remove();
+    flying--;
+    bump();
+  };
+  flight.onfinish = land;
+  flight.oncancel = land;
+}
+
 function GoalIcon({ goal }: { goal: Goal }) {
   // The same outline and colour as the stone on the board.
   if (goal.kind === "color")
@@ -727,7 +780,11 @@ function Hud(props: {
       <div className="hud-goals">
         <p className="eyebrow">{t("Goals")}</p>
         {s.progress().map((g, i) => (
-          <div key={i} className={`goal${g.done ? " done" : ""}`}>
+          <div
+            key={i}
+            className={`goal${g.done ? " done" : ""}`}
+            data-goal={g.goal.kind === "color" ? `color-${g.goal.color}` : g.goal.kind}
+          >
             <GoalIcon goal={g.goal} />
             <span className="goal-label">{goalLabel(g.goal, t)}</span>
             <span className="goal-count">

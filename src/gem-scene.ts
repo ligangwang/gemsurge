@@ -46,10 +46,18 @@ const HALF = (SIZE - 1) / 2;
 const world = (x: number, y: number) =>
   new THREE.Vector3(x - HALF, HALF - y, 0);
 
+/** Something cleared off the board that a goal may count. */
+export type Collected = { color: number } | { ice: true };
+
 type SceneOptions = {
   onSwap: (a: Pos, b: Pos) => void;
   /** Called on any pointer action on the board, to reset the hint timer. */
   onPoke?: () => void;
+  /**
+   * Called as each gem is cleared and each layer of ice cracks, with where
+   * it was on screen (page coordinates), so the game can fly it to a goal.
+   */
+  onCollect?: (what: Collected, at: { x: number; y: number }) => void;
 };
 
 type GemView = {
@@ -1823,6 +1831,7 @@ export class GemScene {
               drag: 1.2,
               boost: 1.1,
             });
+            this.collect(c.color, v.group.position);
             this.removeView(c.id);
           },
         );
@@ -1844,6 +1853,7 @@ export class GemScene {
               speed: (c.special ? 4.5 : 3) * (1 + 0.3 * power),
             },
           );
+          this.collect(c.color, v.group.position);
           this.removeView(c.id);
         },
       );
@@ -1857,6 +1867,7 @@ export class GemScene {
         () => {
           this.setIce(i, ice.left);
           this.shards(world(ice.x, ice.y));
+          this.options.onCollect?.({ ice: true }, this.screenOf(world(ice.x, ice.y)));
         },
       );
     }
@@ -2396,6 +2407,23 @@ export class GemScene {
     this.overlay.appendChild(el);
     requestAnimationFrame(() => (el.style.opacity = "0"));
     setTimeout(() => el.remove(), 700);
+  }
+
+  /** Where a point on the board is on the page. */
+  private screenOf(at: THREE.Vector3) {
+    const p = at.clone();
+    this.boardGroup.localToWorld(p);
+    p.project(this.camera);
+    const r = this.renderer.domElement.getBoundingClientRect();
+    return {
+      x: r.left + (p.x * 0.5 + 0.5) * r.width,
+      y: r.top + (-p.y * 0.5 + 0.5) * r.height,
+    };
+  }
+
+  private collect(color: number, at: THREE.Vector3) {
+    if (color >= 0 && this.options.onCollect)
+      this.options.onCollect({ color }, this.screenOf(at));
   }
 
   private floatText(text: string, at: THREE.Vector3, kind: string) {

@@ -332,7 +332,22 @@
 }
 .goal.done { background: rgba(74, 240, 164, 0.14); }
 .goal-label { flex: 1; }
-.goal-count { font-variant-numeric: tabular-nums; font-weight: 600; }
+.goal-count { display: inline-block; font-variant-numeric: tabular-nums; font-weight: 600; }
+/* A goal's count jumps as a piece lands on it. */
+.goal-count.bump { animation: goal-bump 0.35s ease-out; }
+@keyframes goal-bump {
+  0% { transform: scale(1.45); color: #fff; text-shadow: 0 0 10px rgba(255, 255, 255, 0.9); }
+  100% { transform: scale(1); }
+}
+/* A cleared gem, or a chip of ice, flying from the board to its goal. */
+.goal-fly {
+  position: fixed;
+  z-index: 50;
+  margin: 0;
+  pointer-events: none;
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.7));
+  will-change: transform;
+}
 .goal.done .goal-count { color: #4af0a4; }
 .goal-gem {
   width: 26px;
