@@ -205,8 +205,8 @@ const PEAR = polar(
     return [0.47 * Math.sin(a) * Math.sin(a / 2) ** 0.85, 0.49 * Math.cos(a)];
   }),
 );
-/** The amethyst: a cushion wider than it is tall. */
-const WIDE = cushion(0.49, 0.4, 3.4);
+/** The amethyst: a cushion standing upright, taller than it is wide. */
+const TALL = cushion(0.4, 0.49, 3.4);
 /** The diamond: a square with its corners cut off, standing on a point. */
 const RADIANT = (() => {
   const s = 0.38;
@@ -229,7 +229,7 @@ const RADIANT = (() => {
  * Each stone's outline as an SVG path in a box from -0.6 to 0.6, so the goals
  * can show the same shapes as the board.
  */
-export const GEM_OUTLINES = [HEART, RADIANT, TRILLION, MARQUISE, WIDE, PEAR].map(
+export const GEM_OUTLINES = [HEART, RADIANT, TRILLION, MARQUISE, TALL, PEAR].map(
   (radius) => {
     const points = Array.from({ length: 96 }, (_, i) => {
       const a = (i / 96) * Math.PI * 2;
@@ -424,7 +424,7 @@ function makeGeometries(): THREE.BufferGeometry[] {
     // The plump sapphire: a classic brilliant with a star round its table.
     brilliant(MARQUISE, 8),
     // The amethyst cushion: a big open table and eight broad triangles.
-    tableCut(WIDE, 8, Math.PI / 8, 0.64),
+    tableCut(TALL, 8, Math.PI / 8, 0.64),
     // The yellow pear, which joins from level 11: a brilliant with clear,
     // open facets.
     brilliant(PEAR, 8, Math.PI / 2, { fine: 3 }),
