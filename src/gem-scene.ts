@@ -31,7 +31,7 @@ export const GEM_COLORS = [
 ];
 /** The stones themselves are a little deeper, since the light inside brightens them. */
 const STONE_COLORS = [
-  0xc8102e, 0xffd41c, 0x5cb616, 0x0c6ee8, 0x7a30d8, 0xf2f6ff,
+  0xc01030, 0xffd41c, 0x5cb616, 0x0c6ee8, 0x7a30d8, 0xf2f6ff,
 ];
 /** CSS versions for the HUD. */
 export const GEM_CSS = GEM_COLORS.map(
@@ -371,8 +371,13 @@ function tableCut(
   mains: number,
   turn = Math.PI / 2,
   tableScale = 0.6,
+  /** Extra light on the crown triangles facing up (0 for none). */
+  litFromAbove = 0,
 ) {
   const f = new Facets();
+  // Up is where the room's light comes from, so the triangles facing it
+  // shine pale and the ones facing down stay deep.
+  const up = (a: number) => 1 + litFromAbove * Math.sin(a);
   const step = (Math.PI * 2) / mains;
   const main = (j: number) => turn + j * step;
   const mid = (j: number) => main(j) + step / 2;
@@ -384,12 +389,12 @@ function tableCut(
   for (let j = 0; j < mains; j++) {
     f.tri(centre, table(j), table(j + 1), 1);
     // A triangle hanging from the table's edge to a point on the girdle.
-    f.tri(table(j), table(j + 1), girdle(mid(j)), j % 2 ? 1.3 : 0.9);
+    f.tri(table(j), table(j + 1), girdle(mid(j)), (j % 2 ? 1.3 : 0.9) * up(mid(j)));
     // A triangle standing on the girdle, its tip at the table's corner.
     for (let k = 0; k < fine; k++) {
       const a0 = mid(j - 1) + (k / fine) * step;
       const a1 = mid(j - 1) + ((k + 1) / fine) * step;
-      f.tri(table(j), girdle(a0), girdle(a1), j % 2 ? 0.5 : 0.75);
+      f.tri(table(j), girdle(a0), girdle(a1), (j % 2 ? 0.5 : 0.75) * up(main(j)));
       f.tri(culet, girdle(a1), girdle(a0), 0.3);
     }
   }
@@ -403,7 +408,7 @@ function tableCut(
 function makeGeometries(): THREE.BufferGeometry[] {
   return [
     // The ruby heart: a wide table ringed by big triangles.
-    tableCut(HEART, 10, Math.PI / 2, 0.62),
+    tableCut(HEART, 10, Math.PI / 2, 0.6, 0.55),
     // The yellow pear: a brilliant with clear, open facets.
     brilliant(PEAR, 8, Math.PI / 2, { fine: 3 }),
     // The green trillion: a table and six bold triangles.
@@ -436,9 +441,24 @@ const CUTS: Record<
     tint?: number;
     /** The colour of its shadows, when not a darker shade of its own colour. */
     shadow?: number;
+    /** How strongly the crown's own facets show, 0.2 if not given. */
+    facet?: number;
+    /** The colour of light glowing along its girdle, if any. */
+    rim?: number;
   }
 > = {
-  0: { wedges: 16, culet: [0, -0.1], fire: 0.03, deep: 0.14, bright: 1.75 },
+  // The ruby heart: wine-red depths, pale triangles on its upper lobes and a
+  // pink line of light round its edge.
+  0: {
+    wedges: 16,
+    culet: [0, -0.12],
+    fire: 0.03,
+    deep: 0.3,
+    bright: 1.9,
+    facet: 0.5,
+    rim: 0xa0283c,
+    shadow: 0xa00c26,
+  },
   // A yellow stone's shadows are warm amber, not a muddy dark yellow.
   1: { wedges: 12, culet: [0, -0.1], fire: 0.06, deep: 0.4, bright: 1.3, shadow: 0xe06a00 },
   2: { wedges: 12, culet: [0, -0.04], fire: 0.06, deep: 0.2, bright: 1.75 },
@@ -480,6 +500,8 @@ uniform float uDeep;
 uniform float uBright;
 uniform float uTint;
 uniform vec3 uShadow;
+uniform float uFacet;
+uniform vec3 uRim;
 varying vec3 vPos;
 varying vec3 vNormal;
 varying vec3 vView;
@@ -548,7 +570,10 @@ void main() {
   vec3 colour = mix(deep, lit, clamp(back, 0.0, 1.0));
   // The strongest flashes pale towards white, tinted by the fire.
   colour += (uColor * 0.6 + 0.4) * max(back - 1.0, 0.0) * 0.2;
-  colour *= mix(1.0, vShade, 0.2);
+  // The crown's own facets show as lighter and darker triangles.
+  colour *= mix(1.0, vShade, uFacet);
+  // A pale crescent where a crown facet catches the light from above.
+  colour += (uColor * 0.4 + 0.6) * uFacet * 0.35 * max(vShade - 1.15, 0.0);
   // A stone has depth: it is thickest in the middle, where light travels
   // furthest inside it, and thin at the girdle, where the colour runs dark.
   float r = clamp(length(vPos.xy) / 0.48, 0.0, 1.0);
@@ -568,6 +593,8 @@ void main() {
   colour += mirrored * fresnel * 0.45;
 
   colour += uColor * uGlow * (0.4 + light);
+  // Light caught in the thin girdle glows as a line round the edge.
+  colour += uRim * smoothstep(0.035, 0.0, vPos.z) * step(0.0, vPos.z);
   gl_FragColor = vec4(colour, 1.0);
 }`;
 
@@ -1266,6 +1293,8 @@ export class GemScene {
         uBright: { value: cut.bright },
         uTint: { value: cut.tint ?? 0 },
         uShadow: { value: new THREE.Color(cut.shadow ?? STONE_COLORS[color]) },
+        uFacet: { value: cut.facet ?? 0.2 },
+        uRim: { value: new THREE.Color(cut.rim ?? 0x000000) },
       },
       vertexShader: GEM_VERTEX,
       fragmentShader: GEM_FRAGMENT,
