@@ -3,36 +3,74 @@
 // link and its preview ("A friend scored 12,400 points in Gem Surge. Can you
 // beat it?"); following it opens the game with that challenge, and the game
 // starts that round.
+//
+// A challenge also carries the rules its round was played with: the
+// upgrades the player had and how many Supernovas they set off. The friend
+// plays under exactly those rules, whatever they own themselves, so the two
+// scores are fair to compare.
 import type { Challenge } from "../sdk/dingn-sdk.js";
 import { LAST_LEVEL } from "./levels";
+import { NONE, PRICES, UPGRADE_KINDS, type Owned } from "./upgrades";
 
-/** The round a challenge is for, and the score to beat. */
+/** The upgrade tiers a round was played with, and the Supernovas it allowed. */
+export type Rules = { owned: Owned; novas: number };
+/** A daily board's rules: no upgrades and no Supernovas, for everyone. */
+export const DAILY_RULES: Rules = { owned: NONE, novas: 0 };
+/** Supernovas one challenge round may allow at most. */
+export const MAX_NOVAS = 9;
+
+/** The round a challenge is for, the score to beat, and the rules it was played with. */
 export type Round =
-  | { kind: "daily"; day: string; score: number }
-  | { kind: "level"; level: number; score: number };
+  | { kind: "daily"; day: string; score: number; rules: Rules }
+  | { kind: "level"; level: number; score: number; rules: Rules };
+
+/** Rules as dingn keeps them: "u" and each upgrade's tier, then "n" and the Supernovas, e.g. "u3-1-0-0-2-0.n1". */
+export const writeRules = (r: Rules) => `u${UPGRADE_KINDS.map((k) => r.owned[k]).join("-")}.n${r.novas}`;
+
+/** Rules written by writeRules, or null for anything else. */
+export function readRules(text: string | undefined): Rules | null {
+  const m = /^u(\d)-(\d)-(\d)-(\d)-(\d)-(\d)\.n(\d)$/.exec(text ?? "");
+  if (!m) return null;
+  const owned = { ...NONE };
+  for (const [i, kind] of UPGRADE_KINDS.entries()) {
+    const tier = Number(m[i + 1]);
+    if (tier > PRICES[kind].length) return null;
+    owned[kind] = tier;
+  }
+  const novas = Number(m[7]);
+  return novas <= MAX_NOVAS ? { owned, novas } : null;
+}
+
+/** Whether `rules` give anything beyond what the player owns (a higher tier, or Supernovas). */
+export const beyond = (rules: Rules, owned: Owned) =>
+  rules.novas > 0 || UPGRADE_KINDS.some((k) => rules.owned[k] > owned[k]);
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * The round a friend's challenge asks for, or null for one Gem Surge does
- * not know (another game's, or a malformed one).
+ * not know (another game's, a malformed one, or one without its rules).
  */
 export function readChallenge(c: Challenge | null | undefined): Round | null {
   if (!c || c.unit !== "points" || !Number.isInteger(c.score) || c.score < 0) return null;
+  const rules = readRules(c.rules);
+  if (!rules) return null;
   if (c.mode === "daily" && c.seed && DAY.test(c.seed) && !Number.isNaN(Date.parse(c.seed)))
-    return { kind: "daily", day: c.seed, score: c.score };
+    // The daily board is played without upgrades or Supernovas.
+    return { kind: "daily", day: c.seed, score: c.score, rules: DAILY_RULES };
   if (c.mode === "level" && c.seed && /^\d{1,5}$/.test(c.seed)) {
     const level = Number(c.seed);
-    if (level >= 1 && level <= LAST_LEVEL) return { kind: "level", level, score: c.score };
+    if (level >= 1 && level <= LAST_LEVEL) return { kind: "level", level, score: c.score, rules };
   }
   return null;
 }
 
 /** The challenge for a round just played, to make a link with. */
 export function challengeFor(round: Round): Challenge {
+  const rules = writeRules(round.kind === "daily" ? DAILY_RULES : round.rules);
   return round.kind === "daily"
-    ? { mode: "daily", seed: round.day, score: round.score, unit: "points" }
-    : { mode: "level", seed: String(round.level), score: round.score, unit: "points" };
+    ? { mode: "daily", seed: round.day, score: round.score, unit: "points", rules }
+    : { mode: "level", seed: String(round.level), score: round.score, unit: "points", rules };
 }
 
 /** Whether a challenge is for this round (the same daily board or level). */

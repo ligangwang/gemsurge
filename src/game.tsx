@@ -34,7 +34,7 @@ import {
   type UpgradeKind,
 } from "./upgrades";
 import { say, setMuted, sfx } from "./sound";
-import { challengeFor, readChallenge, sameRound, shareLink, type Round } from "./challenge";
+import { beyond, challengeFor, DAILY_RULES, readChallenge, sameRound, shareLink, type Round, type Rules } from "./challenge";
 import { DRAW, ROUND, WHEEL, draw, isMilestone, lastLevelOf, rewardOf, roundOf, sliceFor, storyOf, titleOf, worldOf } from "./rounds";
 
 type Screen = "menu" | "play" | "end" | "shop";
@@ -132,16 +132,27 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   const challenge = useRef<Round | null>(readChallenge(sdk.challenge));
   /** Each session's daily-board day, kept with the session so a late reward reads its own. */
   const [sessionDay] = useState(() => new WeakMap<Session, string>());
+  /** The upgrade tiers each session was started with. */
+  const [sessionOwned] = useState(() => new WeakMap<Session, Owned>());
+  /**
+   * A friend's challenge's rules, for the sessions played under them: the
+   * friend's upgrades instead of the player's own, and the Supernovas the
+   * friend set off (free, instead of the player's own) and no more.
+   */
+  const [sessionRules] = useState(() => new WeakMap<Session, Rules>());
   /**
    * Whether a session is played for the score alone, paying and saving
-   * nothing: a friend's challenge on an older daily board, or on a level the
-   * player has not reached.
+   * nothing: a friend's challenge on an older daily board, on a level the
+   * player has not reached, or with rules that give more than the player owns.
    */
-  const scoreOnly = (s: Session) =>
-    s.spec.level === 0
+  const scoreOnly = (s: Session) => {
+    const rules = sessionRules.get(s);
+    if (rules && beyond(rules, owned)) return true;
+    return s.spec.level === 0
       ? (sessionDay.get(s) ?? today) !== utcDay()
       : s.spec.level > highest(savedRef.current) + 1;
-  /** Set once the player's upgrades are known, so a challenge level starts with them. */
+  };
+  /** Set once the player's upgrades are known, to compare a challenge's with them. */
   const [ownedLoaded, setOwnedLoaded] = useState(false);
   const challengeStarted = useRef(false);
 
@@ -211,8 +222,9 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Opened by a friend's challenge link: go straight to that round. A level
-  // waits for the player's upgrades (the daily board is played without them).
+  // Opened by a friend's challenge link: go straight to that round, under the
+  // friend's rules. A level waits for the player's upgrades, which decide
+  // whether the round can pay (scoreOnly).
   useEffect(() => {
     const c = challenge.current;
     if (challengeStarted.current || !c || !scene.current) return;
@@ -230,11 +242,17 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   function start(level: number, day = today) {
     // Playing a different round leaves the friend's challenge behind.
     const c = challenge.current;
-    if (c && !sameRound(c, level === 0 ? { kind: "daily", day, score: 0 } : { kind: "level", level, score: 0 }))
-      challenge.current = null;
+    const round: Round =
+      level === 0 ? { kind: "daily", day, score: 0, rules: DAILY_RULES } : { kind: "level", level, score: 0, rules: DAILY_RULES };
+    if (c && !sameRound(c, round)) challenge.current = null;
+    // The friend's challenge is played under the friend's rules.
+    const rules = challenge.current?.rules ?? null;
+    const tiers = level === 0 ? NONE : (rules?.owned ?? owned);
     const spec = level === 0 ? dailySpec(day) : levelSpec(level);
-    const s = new Session(spec, level === 0 ? boostsFor(NONE) : boostsFor(owned));
+    const s = new Session(spec, boostsFor(tiers));
     sessionDay.set(s, level === 0 ? day : today);
+    sessionOwned.set(s, tiers);
+    if (rules) sessionRules.set(s, rules);
     session.current = s;
     setShown(0);
     setEnd(null);
@@ -256,12 +274,19 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
 
   onSwap.current = (a, b) => play([a, b]);
 
+  /** The Supernovas a session can still set off. */
+  function novasLeft(s: Session) {
+    const rules = sessionRules.get(s);
+    return rules ? Math.max(0, rules.novas - s.novas) : novas(savedRef.current);
+  }
+
   /** Plays a swap, or a Supernova when there is no `pair`. */
   async function play(pair: [Pos, Pos] | null) {
     const s = session.current;
     const sc = scene.current;
     if (!s || !sc || busy.current || screen !== "play") return;
-    if (!pair && (s.outcome || !s.spec.level || novas(savedRef.current) < 1)) return;
+    const rules = sessionRules.get(s);
+    if (!pair && (s.outcome || !s.spec.level || novasLeft(s) < 1)) return;
     busy.current = true;
     sc.setInput(false);
     clearTimeout(hintTimer.current);
@@ -276,10 +301,13 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
         return;
       }
       if (!pair) {
-        const next = { ...savedRef.current, novasUsed: savedRef.current.novasUsed + 1 };
-        savedRef.current = next;
-        setSaved(next);
-        store(sdk, next).catch(() => {});
+        // A challenge's Supernovas are the friend's, so the player's own stay.
+        if (!rules) {
+          const next = { ...savedRef.current, novasUsed: savedRef.current.novasUsed + 1 };
+          savedRef.current = next;
+          setSaved(next);
+          store(sdk, next).catch(() => {});
+        }
         sc.banner("Supernova!", 6);
       }
       // The goals fill as their pieces land, not all at once.
@@ -371,7 +399,9 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     const level = s.spec.level;
     const stars = s.stars;
     const day = sessionDay.get(s) ?? today;
-    const played: Round = level === 0 ? { kind: "daily", day, score: s.score } : { kind: "level", level, score: s.score };
+    // The rules it was played under go with a challenge made from it.
+    const rules: Rules = level === 0 ? DAILY_RULES : { owned: sessionOwned.get(s) ?? NONE, novas: s.novas };
+    const played: Round = level === 0 ? { kind: "daily", day, score: s.score, rules } : { kind: "level", level, score: s.score, rules };
     const rival = challenge.current && sameRound(challenge.current, played) ? challenge.current : null;
     // A friend's challenge on an older daily board, or on a level not reached
     // yet, is played for the score alone: nothing is saved or paid.
@@ -550,8 +580,9 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
           muted={muted}
           onMute={toggleMute}
           onMenu={toMenu}
-          owned={owned}
-          novas={novas(saved)}
+          owned={sessionOwned.get(s) ?? owned}
+          friendRules={sessionRules.has(s)}
+          novas={novasLeft(s)}
           charge={novaCharge(saved)}
           onNova={() => play(null)}
           onUndo={undo}
@@ -827,6 +858,8 @@ function Hud(props: {
   goalsShown: number[] | null;
   muted: boolean;
   owned: Owned;
+  /** Played under a friend's challenge's rules. */
+  friendRules: boolean;
   onMute: () => void;
   onMenu: () => void;
   /** Supernovas ready, and coins towards the next one. */
@@ -933,7 +966,10 @@ function Hud(props: {
           ↶ <span className="hud-word">{t("Undo")}</span> ×{s.undosLeft}
         </button>
       )}
-      {spec.level > FREE_UNDO_LEVELS && !props.owned.undo && (
+      {props.friendRules && spec.level > 0 && (
+        <p className="hud-note">{t("Your friend's upgrades and Supernovas, so it's a fair match.")}</p>
+      )}
+      {spec.level > FREE_UNDO_LEVELS && !props.owned.undo && !props.friendRules && (
         <p className="hud-note">{t("Buy Undo in Upgrades to use it after level 100.")}</p>
       )}
       {spec.level > 0 && s.chainCoins > 0 && (
