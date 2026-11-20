@@ -41,7 +41,7 @@ vi.mock("../src/gem-scene", () => ({
 }));
 
 let sdk: DingnGame;
-const calls = { save: vi.fn(), earn: vi.fn(), unlock: vi.fn(), spend: vi.fn() };
+const calls = { save: vi.fn(), earn: vi.fn(), unlock: vi.fn(), spend: vi.fn(), link: vi.fn(), roundEnded: vi.fn() };
 let owned: string[] = [];
 let stored: Map<string, unknown>;
 let account: unknown = null;
@@ -53,6 +53,10 @@ function fakeSdk(signedIn: boolean, locale: Locale = "en") {
   calls.save.mockReset().mockResolvedValue(undefined);
   calls.earn.mockReset().mockImplementation(async (coins: number) => ({ coins, left: 100 }));
   calls.unlock.mockReset().mockResolvedValue({ new: true, coins: 10 });
+  calls.link.mockReset().mockImplementation(async (c: { mode: string; seed: string; score: number }) =>
+    `https://dingn.com/play/gemsurge/?challenge=${c.mode}&seed=${c.seed}&score=${c.score}&unit=points`,
+  );
+  calls.roundEnded.mockReset();
   calls.spend.mockReset().mockImplementation(async (id: string) => {
     owned.push(id);
     return { new: true, coins: 60 };
@@ -82,6 +86,9 @@ function fakeSdk(signedIn: boolean, locale: Locale = "en") {
         ),
       earn: calls.earn,
     },
+    challenge: null,
+    challengeLink: calls.link,
+    roundEnded: calls.roundEnded,
     requestSignIn: () => {},
     navigate: () => {},
     ready() {},
@@ -269,4 +276,53 @@ test("undo takes the last move back, three times a level", async () => {
   expect(JSON.stringify(session().board.cells)).toBe(cells);
   expect(undo().textContent).toContain("×2");
   expect(undo().disabled).toBe(true);
+});
+
+test("after a round, a player challenges a friend to beat the score", async () => {
+  const writeText = vi.fn(async () => {});
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  play();
+  fireEvent.click(screen.getByRole("button", { name: "Daily board" }));
+  await playOut();
+  // Each finished round is reported to dingn once.
+  expect(calls.roundEnded).toHaveBeenCalledTimes(1);
+  const score = session().score;
+  const button = await screen.findByRole("button", { name: /Challenge a friend/ });
+  await act(async () => fireEvent.click(button));
+  const today = new Date().toISOString().slice(0, 10);
+  expect(calls.link).toHaveBeenCalledWith({ mode: "daily", seed: today, score, unit: "points" });
+  // No share sheet here, so the link is copied with a line to send.
+  expect(writeText).toHaveBeenCalledWith(expect.stringContaining(`score=${score}`));
+  expect(writeText).toHaveBeenCalledWith(expect.stringContaining("Can you beat my"));
+  expect(await screen.findByText("Link copied. Send it to a friend!")).toBeTruthy();
+});
+
+test("a friend's challenge opens that daily board and says whether it was beaten", async () => {
+  sdk.challenge = { mode: "daily", seed: "2026-11-01", score: 999999, unit: "points" };
+  play();
+  // Straight into the friend's board: the daily board of that day, not today's.
+  expect(screen.getByRole("heading", { name: "2026-11-01" })).toBeTruthy();
+  await playOut();
+  expect(await screen.findByText(/Your friend scored 999,999\./)).toBeTruthy();
+  // An older day's board is played for the score alone: no coins, and it is
+  // not saved as today's (the save on sign-in still has no daily board).
+  expect(calls.earn).not.toHaveBeenCalled();
+  expect((stored.get("gemsurge") as { daily: unknown }).daily).toBeNull();
+});
+
+test("a friend's challenge on a level not reached yet plays it without unlocking anything", async () => {
+  sdk.challenge = { mode: "level", seed: "40", score: 1, unit: "points" };
+  play();
+  expect(screen.getByRole("heading", { name: "Level 40" })).toBeTruthy();
+  await playOut();
+  if (session().score > 1) expect(await screen.findByText("You beat your friend's 1!")).toBeTruthy();
+  expect(calls.earn).not.toHaveBeenCalled();
+  // No level is cleared or unlocked by it.
+  expect((stored.get("gemsurge") as { stars: string }).stars).toBe("");
+});
+
+test("a challenge for another game, or a malformed one, opens the menu", () => {
+  sdk.challenge = { mode: "ladder", seed: "2026-11-16", score: 10, unit: "digits" };
+  play();
+  expect(screen.getByRole("heading", { name: /Gem Surge/ })).toBeTruthy();
 });
