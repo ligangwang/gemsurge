@@ -150,8 +150,8 @@ const HEART = polar(
 
 /** A marquise: two arcs meeting in a point at each end. */
 const MARQUISE = (() => {
-  const h = 0.48;
-  const w = 0.28;
+  const h = 0.49;
+  const w = 0.37;
   const c = (h * h - w * w) / (2 * w);
   const r = c + w;
   const reach = Math.asin(h / r);
@@ -2356,8 +2356,9 @@ export class GemScene {
     this.composer.setSize(w, h);
     this.bloom.resolution.set(w / 2, h / 2);
     this.camera.aspect = w / h;
-    // Fit the board (8 units) in both directions, with a thin margin.
-    const fit = 9.0;
+    // Fit the board (8 units) in both directions, as big as it goes: the
+    // margin only leaves room for a line blaster's tips on an edge gem.
+    const fit = 8.4;
     const vFov = (this.camera.fov * Math.PI) / 180;
     const distH = fit / 2 / Math.tan(vFov / 2);
     const distW = fit / 2 / (Math.tan(vFov / 2) * this.camera.aspect);
