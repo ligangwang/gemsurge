@@ -27,11 +27,11 @@ import type { Cleared } from "./engine/board";
 import { sfx } from "./sound";
 
 export const GEM_COLORS = [
-  0xe8f6ff, 0xffc81e, 0x7ed62a, 0x2a96ff, 0xb450ff, 0xff2450,
+  0xff2450, 0xffc81e, 0x7ed62a, 0x2a96ff, 0xb450ff, 0xe8f6ff,
 ];
 /** The stones themselves are a little deeper, since the light inside brightens them. */
 const STONE_COLORS = [
-  0xf2f6ff, 0xffc400, 0x6cc21c, 0x0c6ee8, 0x7a30d8, 0xc8102e,
+  0xc8102e, 0xffc400, 0x6cc21c, 0x0c6ee8, 0x7a30d8, 0xf2f6ff,
 ];
 /** CSS versions for the HUD. */
 export const GEM_CSS = GEM_COLORS.map(
@@ -190,8 +190,13 @@ function polygon(corners: [number, number][], perSide = 40) {
   return pts;
 }
 
-/** The yellow stone: a square cushion with soft corners. */
-const SQUARE = cushion(0.45, 0.46, 4.5);
+/** The yellow stone: a pear, a round bulb drawn up to a point. */
+const PEAR = polar(
+  traced((t) => {
+    const a = t * Math.PI * 2;
+    return [0.47 * Math.sin(a) * Math.sin(a / 2) ** 0.85, 0.49 * Math.cos(a)];
+  }),
+);
 /** The amethyst: a cushion wider than it is tall. */
 const WIDE = cushion(0.49, 0.4, 3.4);
 /** The diamond: a square with its corners cut off, standing on a point. */
@@ -216,7 +221,7 @@ const RADIANT = (() => {
  * Each stone's outline as an SVG path in a box from -0.6 to 0.6, so the goals
  * can show the same shapes as the board.
  */
-export const GEM_OUTLINES = [RADIANT, SQUARE, TRILLION, MARQUISE, WIDE, HEART].map(
+export const GEM_OUTLINES = [HEART, PEAR, TRILLION, MARQUISE, WIDE, RADIANT].map(
   (radius) => {
     const points = Array.from({ length: 96 }, (_, i) => {
       const a = (i / 96) * Math.PI * 2;
@@ -397,19 +402,19 @@ function tableCut(
  */
 function makeGeometries(): THREE.BufferGeometry[] {
   return [
-    // The diamond: a brilliant with many fine facets, standing on its point.
-    brilliant(RADIANT, 8, Math.PI / 2, { fine: 5 }),
-    // The yellow square cushion: a brilliant, its star facing the corners.
-    brilliant(SQUARE, 8, Math.PI / 4),
+    // The ruby heart: a wide table ringed by big triangles.
+    tableCut(HEART, 10, Math.PI / 2, 0.62),
+    // The yellow pear: a brilliant with many small facets, like crushed ice.
+    brilliant(PEAR, 12, Math.PI / 2, { fine: 6 }),
     // The green trillion: a table and six bold triangles.
     tableCut(TRILLION, 6, Math.PI / 2, 0.5),
-    // The sapphire marquise: a classic brilliant with a star round its table.
+    // The plump sapphire: a classic brilliant with a star round its table.
     brilliant(MARQUISE, 8),
     // The amethyst cushion: a big open table and eight broad triangles.
     tableCut(WIDE, 8, Math.PI / 8, 0.64),
-    // The ruby heart, which joins from level 11: a wide table ringed by big
-    // triangles.
-    tableCut(HEART, 10, Math.PI / 2, 0.62),
+    // The diamond, which joins from level 11: a brilliant with many fine
+    // facets, standing on its point.
+    brilliant(RADIANT, 8, Math.PI / 2, { fine: 5 }),
   ];
 }
 
@@ -431,12 +436,12 @@ const CUTS: Record<
     tint?: number;
   }
 > = {
-  0: { wedges: 16, culet: [0, 0], fire: 0.16, deep: 0.3, bright: 1.3, tint: 0.7 },
-  1: { wedges: 8, culet: [0, 0], fire: 0.08, deep: 0.36, bright: 1.45 },
-  2: { wedges: 6, culet: [0, -0.04], fire: 0.06, deep: 0.22, bright: 1.7 },
-  3: { wedges: 16, culet: [0, 0], fire: 0.04, deep: 0.26, bright: 1.9 },
-  4: { wedges: 8, culet: [0, 0], fire: 0.05, deep: 0.2, bright: 1.7 },
-  5: { wedges: 10, culet: [0, -0.1], fire: 0.03, deep: 0.2, bright: 1.7 },
+  0: { wedges: 10, culet: [0, -0.1], fire: 0.03, deep: 0.17, bright: 1.3 },
+  1: { wedges: 24, culet: [0, -0.1], fire: 0.08, deep: 0.26, bright: 1.05 },
+  2: { wedges: 6, culet: [0, -0.04], fire: 0.06, deep: 0.18, bright: 1.25 },
+  3: { wedges: 16, culet: [0, 0], fire: 0.04, deep: 0.2, bright: 1.4 },
+  4: { wedges: 8, culet: [0, 0], fire: 0.05, deep: 0.17, bright: 1.3 },
+  5: { wedges: 16, culet: [0, 0], fire: 0.16, deep: 0.2, bright: 0.95, tint: 0.7 },
 };
 
 const GEM_VERTEX = /* glsl */ `
@@ -538,7 +543,7 @@ void main() {
   vec3 lit = uColor * uBright;
   vec3 colour = mix(deep, lit, clamp(back, 0.0, 1.0));
   // The strongest flashes pale towards white, tinted by the fire.
-  colour += (uColor * 0.6 + 0.4) * max(back - 1.0, 0.0) * 0.5;
+  colour += (uColor * 0.6 + 0.4) * max(back - 1.0, 0.0) * 0.2;
   colour *= mix(1.0, vShade, 0.2);
   // A colourless stone takes its colours from the room: some patches show
   // warm lamplight, some cool daylight, the rest stay clear.
@@ -550,7 +555,7 @@ void main() {
   // Only the lamps show, not the walls, and they take a little of its colour.
   vec3 mirrored = room(reflect(-V, N));
   mirrored *= smoothstep(0.4, 1.6, mirrored);
-  colour += mirrored * fresnel * 0.8 * mix(vec3(1.0), uColor + 0.35, 0.55);
+  colour += mirrored * fresnel * 0.45 * mix(vec3(1.0), uColor + 0.35, 0.55);
 
   colour += uColor * uGlow * (0.4 + light);
   gl_FragColor = vec4(colour, 1.0);
@@ -1184,9 +1189,31 @@ export class GemScene {
         m.makeTranslation(p.x, p.y, -0.5);
         this.tiles.setMatrixAt(idx(x, y), m);
       }
-    // The cells are not drawn: the stones float straight over the scene.
+    // The cells are not drawn: the stones float straight over the scene,
+    // with only faint lines between them to show the board.
     this.tiles.visible = false;
     this.boardGroup.add(this.tiles);
+    const lines: number[] = [];
+    const edge = SIZE / 2;
+    for (let i = 0; i <= SIZE; i++) {
+      const at = i - edge;
+      lines.push(at, -edge, 0, at, edge, 0, -edge, at, 0, edge, at, 0);
+    }
+    const grid = new THREE.LineSegments(
+      new THREE.BufferGeometry().setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(lines, 3),
+      ),
+      new THREE.LineBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.14,
+        depthWrite: false,
+      }),
+    );
+    grid.position.z = -0.3;
+    grid.renderOrder = -1;
+    this.boardGroup.add(grid);
     this.paintTiles();
   }
 
@@ -1258,7 +1285,7 @@ export class GemScene {
     const glow = new THREE.Sprite(
       new THREE.SpriteMaterial({
         map: this.glowTex,
-        color: color.clone().multiplyScalar(special ? 0.8 : 0.22),
+        color: color.clone().multiplyScalar(special ? 0.8 : 0.08),
         transparent: true,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
@@ -2462,7 +2489,7 @@ export class GemScene {
     const u = this.bg.material.uniforms;
     u.time.value = this.time;
     u.fever.value = this.fever;
-    this.bloom.strength = 0.4 + this.fever * 0.35;
+    this.bloom.strength = 0.28 + this.fever * 0.35;
     for (const m of this.materials) m.uniforms.uGlow.value = this.fever * 0.3;
 
     // Camera: a slight tilt, a touch of parallax, and shake.

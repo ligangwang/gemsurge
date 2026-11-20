@@ -26,7 +26,7 @@ export const worldNumber = (level: number) => Math.floor((Math.max(1, level) - 1
 /** How many times the worlds have come round by this level: 0 for the first 80 levels. */
 export const worldCycle = (level: number) => Math.floor(worldNumber(level) / WORLDS.length);
 
-export const COLOR_NAMES = ["Diamond", "Topaz", "Peridot", "Sapphire", "Amethyst", "Ruby"];
+export const COLOR_NAMES = ["Ruby", "Topaz", "Peridot", "Sapphire", "Amethyst", "Diamond"];
 
 const ICE: Record<string, string[]> = {
   center: ["........", "........", "..1111..", "..1111..", "..1111..", "..1111..", "........", "........"],
