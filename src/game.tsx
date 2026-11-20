@@ -72,6 +72,20 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   const [webgl, setWebgl] = useState(true);
   const [, setTick] = useState(0);
   const [shown, setShown] = useState(0);
+  /**
+   * During a move, how much of each goal the HUD shows: what has landed so
+   * far, so a goal fills as its pieces arrive. Null shows the real progress.
+   */
+  const [goalsShown, setGoalsShown] = useState<number[] | null>(null);
+  const goalsDone = useRef<number[]>([]);
+  const landed = (key: string) =>
+    setGoalsShown((now) => {
+      const i = session.current?.progress().findIndex((g) => goalKey(g.goal) === key) ?? -1;
+      if (!now || i < 0) return now;
+      const next = [...now];
+      next[i] = Math.min(next[i] + 1, goalsDone.current[i] ?? next[i]);
+      return next;
+    });
   const [end, setEnd] = useState<EndInfo | null>(null);
   const [buying, setBuying] = useState<string | null>(null);
   const [shopNote, setShopNote] = useState("");
@@ -129,7 +143,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       s = new GemScene(host.current, {
         onSwap: (a, b) => onSwap.current(a, b),
         onPoke: () => armHint(),
-        onCollect: flyToGoal,
+        onCollect: (what, at) => flyToGoal(what, at, landed),
       });
     } catch (err) {
       console.warn("Gem Surge: no WebGL", err);
@@ -192,6 +206,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     try {
       const before = s.score;
       const chainBefore = s.chainCoins;
+      const goalsBefore = s.progress().map((g) => g.have);
       const turn = pair ? s.move(pair[0], pair[1]) : s.nova();
       if (!turn) {
         if (pair) await sc.playInvalid(pair[0], pair[1]);
@@ -204,6 +219,9 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
         store(sdk, next).catch(() => {});
         sc.banner("Supernova!", 6);
       }
+      // The goals fill as their pieces land, not all at once.
+      goalsDone.current = s.progress().map((g) => g.have);
+      setGoalsShown(goalsBefore);
       rerender();
       let running = before;
       await sc.playTurn(turn, pair, {
@@ -213,6 +231,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
         },
       });
       setShown(s.score);
+      setGoalsShown(null);
       if (turn.feverStarted) {
         sc.banner("Fever!", 6);
         sfx.fever();
@@ -231,6 +250,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       if (s.outcome) await reward(s, false);
     } finally {
       busy.current = false;
+      setGoalsShown(null);
       if (session.current === s && !s.outcome) {
         sc.setInput(true);
         armHint();
@@ -448,6 +468,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
         <Hud
           session={s}
           shown={shown}
+          goalsShown={goalsShown}
           muted={muted}
           onMute={toggleMute}
           onMenu={toMenu}
@@ -638,6 +659,9 @@ function Menu(props: {
 
 // --------------------------------------------------------------------- HUD
 
+/** How a goal is named in the HUD, to match what is cleared to its goal. */
+const goalKey = (goal: Goal) => (goal.kind === "color" ? `color-${goal.color}` : goal.kind);
+
 /** How many pieces are flying to the goals now: past this, the rest just count. */
 let flying = 0;
 const MAX_FLYING = 24;
@@ -646,13 +670,18 @@ const MAX_FLYING = 24;
  * Flies a cleared gem, or a chip of ice, from where it was on the board to
  * its goal in the HUD, and bumps the goal's count as it lands.
  */
-function flyToGoal(what: Collected, at: { x: number; y: number }) {
+function flyToGoal(
+  what: Collected,
+  at: { x: number; y: number },
+  onLand: (key: string) => void,
+) {
   const key = "ice" in what ? "ice" : `color-${what.color}`;
   const goal = document.querySelector<HTMLElement>(`.goal[data-goal="${key}"]:not(.done)`);
   const icon = goal?.querySelector<HTMLElement>(".goal-gem, .goal-ice");
   const count = goal?.querySelector<HTMLElement>(".goal-count");
   if (!icon || !count) return;
   const bump = () => {
+    onLand(key);
     count.classList.remove("bump");
     void count.offsetWidth; // restart the animation
     count.classList.add("bump");
@@ -712,6 +741,8 @@ function goalLabel(goal: Goal, t: (s: string, ...a: string[]) => string) {
 function Hud(props: {
   session: Session;
   shown: number;
+  /** How much of each goal to show during a move, or null for the real progress. */
+  goalsShown: number[] | null;
   muted: boolean;
   owned: Owned;
   onMute: () => void;
@@ -779,11 +810,15 @@ function Hud(props: {
       </div>
       <div className="hud-goals">
         <p className="eyebrow">{t("Goals")}</p>
-        {s.progress().map((g, i) => (
+        {s.progress().map((real, i) => {
+          // A score goal follows the score; the others what has landed.
+          const have = real.goal.kind === "score" ? real.have : (props.goalsShown?.[i] ?? real.have);
+          const g = { ...real, have, done: have >= real.target };
+          return (
           <div
             key={i}
             className={`goal${g.done ? " done" : ""}`}
-            data-goal={g.goal.kind === "color" ? `color-${g.goal.color}` : g.goal.kind}
+            data-goal={goalKey(g.goal)}
           >
             <GoalIcon goal={g.goal} />
             <span className="goal-label">{goalLabel(g.goal, t)}</span>
@@ -791,7 +826,8 @@ function Hud(props: {
               {g.done ? "✓" : `${g.have.toLocaleString()} / ${g.target.toLocaleString()}`}
             </span>
           </div>
-        ))}
+          );
+        })}
         {spec.level > 0 && lastLevelOf(roundOf(spec.level)) - spec.level <= 1 && (
           <p className="goal-note round-note">
             {t("Finish level {0} to win:", String(lastLevelOf(roundOf(spec.level))))} <RoundPrize round={roundOf(spec.level)} />
