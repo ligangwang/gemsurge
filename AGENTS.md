@@ -30,4 +30,6 @@ Notes for AI coding agents working on Gem Surge.
   other match-3 games. The gems are three.js shapes and the sounds are
   synthesised. The only third-party assets are the background photos in
   `public/scenes/` (CC0, from Poly Haven), each listed in
-  `public/scenes/CREDITS.md`.
+  `public/scenes/CREDITS.md`, and the painting behind the board on the cover,
+  which the game's owner supplied (`cover-src/`, which also says how the
+  cover is put together).
