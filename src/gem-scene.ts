@@ -158,7 +158,7 @@ const HEART = polar(
 );
 
 /** The morganite, the seventh stone: round. */
-const ROUND = () => 0.46;
+const ROUND = () => 0.4;
 /**
  * The sapphire: a marquise, two arcs meeting in a point at the top and the
  * bottom, full in the middle.
@@ -377,7 +377,7 @@ function brilliant(
  * shallow rounded back. Its points are shared, so the normals run smoothly
  * and the surface mirrors the lamps as round, unbroken highlights.
  */
-function cabochon(radius: (a: number) => number, height = 0.21, back = 0.08) {
+function cabochon(radius: (a: number) => number, height = 0.24, back = 0.08) {
   const rings = 18;
   const around = 120;
   const positions: number[] = [0, 0, height];
@@ -387,7 +387,9 @@ function cabochon(radius: (a: number) => number, height = 0.21, back = 0.08) {
   const ring = (k: number) => 1 + (k - 1) * around;
   for (let k = 1; k <= rings; k++) {
     const s = ringAt(k);
-    const z = height * Math.sqrt(Math.max(0, 1 - s * s));
+    // A gentle dome that meets the girdle at a slope, not straight down:
+    // steep sides would mirror the room in a shiny, plastic-looking band.
+    const z = height * (1 - s * s);
     for (let j = 0; j < around; j++) {
       const a = (j / around) * Math.PI * 2;
       positions.push(...at(radius, a, s, z));
@@ -700,6 +702,10 @@ void main() {
 
   // The polished surface mirrors the room too, most at a glancing angle.
   float fresnel = 0.09 + 0.91 * pow(1.0 - facing, 5.0);
+  // A smooth stone does not mirror the room's hard-edged lamps, which would
+  // show as pale patches and a shiny rim like plastic: its only shine is the
+  // one round highlight below.
+  fresnel *= 1.0 - 0.92 * uSmooth;
   // Only the lamps show, not the walls, and they take a little of its colour.
   vec3 mirrored = room(reflect(-V, N));
   mirrored *= smoothstep(0.4, 1.6, mirrored);
