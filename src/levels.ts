@@ -177,21 +177,26 @@ const ease = (n: number) => Math.min(1, Math.max(0, (EASY_LEVELS + 1 - n) / 30))
 const PER_MOVE: Record<number, number> = { 5: 200, 6: 110, 7: 70 };
 
 /**
- * The seventh stone, the morganite, joins here: from this level on, a level
- * that would have six colours has seven, and two more moves to make up for
- * the matches being harder to find.
+ * The seventh stone, the morganite, joins here and is in every level from
+ * then on: a level that would have six colours has seven, and one that would
+ * have five has six, the morganite among them. Either way the level gets two
+ * more moves, since the matches are harder to find.
  */
 export const SEVENTH_COLOR_LEVEL = 51;
+/** A five-colour level's stones once the morganite (6) has joined. */
+export const FIVE_WITH_MORGANITE = [0, 1, 2, 3, 4, 6] as const;
 
 export function levelSpec(level: number): LevelSpec {
   const n = Math.min(Math.max(1, level), LAST_LEVEL);
   const [tableMoves, tableColors, tableText] = n <= HAND_MADE ? TABLE[n - 1] : generated(n);
-  const seven = tableColors === 6 && n >= SEVENTH_COLOR_LEVEL;
-  const colors = seven ? 7 : tableColors;
-  const text = seven ? withSeventh(tableText, n) : tableText;
+  const morganite = n >= SEVENTH_COLOR_LEVEL;
+  const seven = morganite && tableColors === 6;
+  const sixWithPink = morganite && tableColors === 5;
+  const colors = seven ? 7 : sixWithPink ? 6 : tableColors;
+  const text = morganite ? withSeventh(tableText, n) : tableText;
   const { goals, ice } = parseGoals(text);
   const easy = ease(n);
-  const moves = Math.round((tableMoves + (seven ? 2 : 0)) * (1 + 0.3 * easy));
+  const moves = Math.round((tableMoves + (morganite ? 2 : 0)) * (1 + 0.3 * easy));
   for (const goal of goals) {
     if (goal.kind === "score") goal.target = Math.round((goal.target * (1 - 0.2 * easy)) / 100) * 100;
     else if (goal.kind === "color") goal.target = Math.round(goal.target * (1 - 0.2 * easy));
@@ -206,6 +211,7 @@ export function levelSpec(level: number): LevelSpec {
     world: worldNumber(n) % WORLDS.length,
     moves,
     colors,
+    ...(sixWithPink ? { palette: FIVE_WITH_MORGANITE } : {}),
     goals,
     ice: ice && n > HAND_MADE ? variedIce(n, iceCells(ice)) : iceCells(ice),
     stars: [base, two, three],
@@ -216,7 +222,7 @@ export function levelSpec(level: number): LevelSpec {
 const round = (n: number) => Math.round(n / 500) * 500;
 
 /**
- * A six-colour level's goals made into seven: one colour goal in three,
+ * A level's goals once the morganite has joined: one colour goal in three,
  * chosen by the level number, asks for the morganite instead.
  */
 function withSeventh(text: string, n: number) {

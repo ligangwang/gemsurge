@@ -26,6 +26,8 @@ export type LevelSpec = {
   world: number;
   moves: number;
   colors: number;
+  /** Which stones the colours are, when not the first `colors` (see Board). */
+  palette?: readonly number[];
   goals: Goal[];
   /** Ice layers per cell, SIZE × SIZE, row by row. */
   ice: number[];
@@ -98,7 +100,7 @@ export class Session {
     readonly spec: LevelSpec,
     readonly boosts: Boosts = NO_BOOSTS,
   ) {
-    this.board = createBoard(spec.seed, spec.colors, spec.ice);
+    this.board = createBoard(spec.seed, spec.palette ?? spec.colors, spec.ice);
     placeSpecials(this.board, boosts.specials);
     this.movesLeft = spec.moves + boosts.moves;
     this.undosLeft = undosFor(spec.level, boosts.undos ?? 0);

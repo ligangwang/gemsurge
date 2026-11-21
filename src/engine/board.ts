@@ -29,6 +29,12 @@ export type Board = {
   ice: number[];
   /** How many colours fall (3-7). */
   colors: number;
+  /**
+   * Which stones those colours are, when not simply the first `colors`
+   * (0, 1, 2, …): a level after 50 with six colours has the morganite (6)
+   * in place of stone 5.
+   */
+  palette?: readonly number[];
   rng: Rng;
   nextId: number;
 };
@@ -92,6 +98,12 @@ export const SCORE = {
   made: { row: 40, col: 40, bomb: 80, prism: 150 } as Record<Special, number>,
 };
 
+/** A falling gem's stone: one of the board's colours (its palette's, if it has one). */
+const drawColor = (b: Board) => {
+  const n = below(b.rng, b.colors);
+  return b.palette ? b.palette[n] : n;
+};
+
 const newGem = (b: Board, color: number, special?: Special): Gem =>
   special ? { id: b.nextId++, color, special } : { id: b.nextId++, color };
 
@@ -99,6 +111,7 @@ export const cloneBoard = (b: Board): Board => ({
   cells: b.cells.map((g) => (g ? { ...g } : null)),
   ice: [...b.ice],
   colors: b.colors,
+  ...(b.palette ? { palette: b.palette } : {}),
   rng: { ...b.rng },
   nextId: b.nextId,
 });
@@ -106,13 +119,15 @@ export const cloneBoard = (b: Board): Board => ({
 /** A full board with no matches and at least one swap. */
 export function createBoard(
   seed: number,
-  colors: number,
+  colors: number | readonly number[],
   ice: number[] = [],
 ): Board {
+  const palette = typeof colors === "number" ? undefined : colors;
   const b: Board = {
     cells: [],
     ice: Array.from({ length: SIZE * SIZE }, (_, i) => ice[i] ?? 0),
-    colors: Math.min(MAX_COLORS, Math.max(3, colors)),
+    colors: Math.min(MAX_COLORS, Math.max(3, palette?.length ?? (colors as number))),
+    ...(palette ? { palette } : {}),
     rng: { seed },
     nextId: 1,
   };
@@ -121,7 +136,7 @@ export function createBoard(
     for (let i = 0; i < SIZE * SIZE; i++) {
       const { x, y } = pos(i);
       let color: number;
-      do color = below(b.rng, b.colors);
+      do color = drawColor(b);
       while (
         (x >= 2 &&
           b.cells[i - 1]!.color === color &&
@@ -420,7 +435,7 @@ function fall(b: Board): number[] {
       b.cells[idx(x, write--)] = g;
     }
     for (let y = write; y >= 0; y--) {
-      const g = newGem(b, below(b.rng, b.colors));
+      const g = newGem(b, drawColor(b));
       b.cells[idx(x, y)] = g;
       spawned.push(g.id);
     }
@@ -652,7 +667,7 @@ export function shuffle(b: Board) {
     if (!findGroups(b.cells).length && findHint(b)) return;
   }
   // Very unlikely: recolour from scratch, keeping ids.
-  const fresh = createBoard(b.rng.seed, b.colors, b.ice);
+  const fresh = createBoard(b.rng.seed, b.palette ?? b.colors, b.ice);
   b.cells = fresh.cells.map((g, i) => ({ ...g!, id: gems[i]?.id ?? b.nextId++ }));
   b.rng = fresh.rng;
 }
