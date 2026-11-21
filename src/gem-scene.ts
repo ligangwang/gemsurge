@@ -209,7 +209,7 @@ const PEAR = polar(
   }),
 );
 /** The emerald: a cushion standing upright, taller than it is wide. */
-const TALL = cushion(0.37, 0.45, 3.4);
+const TALL = cushion(0.385, 0.47, 3.4);
 /** The diamond: a square with its corners cut off, standing on a point. */
 const RADIANT = (() => {
   const s = 0.38;
