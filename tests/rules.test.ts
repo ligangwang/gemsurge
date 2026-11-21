@@ -19,7 +19,9 @@ test("every level has goals it can meet", () => {
     assert.equal(spec.ice.length, SIZE * SIZE);
     assert.ok(spec.goals.length > 0, `level ${n}`);
     for (const g of spec.goals) {
-      if (g.kind === "color") assert.ok(g.color < spec.colors, `level ${n} colour`);
+      // A colour goal asks for a stone the board drops.
+      const stones = spec.palette ?? Array.from({ length: spec.colors }, (_, i) => i);
+      if (g.kind === "color") assert.ok(stones.includes(g.color), `level ${n} colour`);
       if (g.kind === "ice") assert.ok(spec.ice.some((i) => i > 0), `level ${n} ice`);
     }
     const [one, two, three] = spec.stars;
@@ -117,8 +119,9 @@ test("the first 100 levels are eased, and the easing fades out by level 101", ()
   for (let n = 71; n <= 101; n++) {
     assert.ok(levelSpec(n).moves <= 39, `level ${n} moves`);
   }
-  // Past the eased levels the moves are the generator's own: 16 to 30.
-  for (let n = 101; n <= 130; n++) assert.ok(levelSpec(n).moves <= 30, `level ${n} moves`);
+  // Past the eased levels the moves are the generator's own: 16 to 30, plus
+  // 2 for each colour beyond the design's (seven colours: up to 4 more).
+  for (let n = 101; n <= 130; n++) assert.ok(levelSpec(n).moves <= 34, `level ${n} moves`);
 });
 
 test("every 100 coins a play is worth charge a Supernova", () => {
@@ -274,4 +277,24 @@ test("the draw's wheel shows the true odds and stops on the prize that was drawn
     assert.equal(WHEEL.filter((n) => n === novas).length / WHEEL.length, chance);
     for (const roll of [0, 0.3, 0.6, 0.999]) assert.equal(WHEEL[sliceFor(novas, roll)], novas);
   }
+});
+
+test("levels have 5 colours to 50, 6 with the morganite to 100, and all 7 after", () => {
+  for (let n = 1; n <= 300; n++) {
+    const spec = levelSpec(n);
+    const stones = spec.palette ?? Array.from({ length: spec.colors }, (_, i) => i);
+    const want = n <= 50 ? [0, 1, 2, 3, 4] : n <= 100 ? [0, 1, 2, 3, 4, 6] : [0, 1, 2, 3, 4, 5, 6];
+    assert.deepEqual([...stones], want, `level ${n}`);
+    // The morganite falls on the board from level 51.
+    if (n >= 51 && n <= 120)
+      assert.ok(
+        new Session(spec).board.cells.some((g) => g?.color === 6),
+        `level ${n} board`,
+      );
+  }
+  // Up to level 50 the boards are drawn as before stones could be listed.
+  assert.equal(levelSpec(20).palette, undefined);
+  // A level designed for six colours gets two fewer moves with five, and one
+  // designed for five two more for each colour it gains.
+  assert.equal(levelSpec(11).colors, 5);
 });
