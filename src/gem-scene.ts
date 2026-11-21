@@ -32,7 +32,7 @@ export const GEM_COLORS = [
 ];
 /** The stones themselves are a little deeper, since the light inside brightens them. */
 const STONE_COLORS = [
-  0xc01030, 0xf2f6ff, 0x0a9a56, 0x0c6ee8, 0xa874ec, 0xffd41c, 0xffc4b4,
+  0xb0122e, 0xf2f6ff, 0x0a9a56, 0x0c6ee8, 0xa874ec, 0xffd41c, 0xffc4b4,
 ];
 /** CSS versions for the HUD. */
 export const GEM_CSS = GEM_COLORS.map(
@@ -534,11 +534,11 @@ const CUTS: Record<
     wedges: 16,
     culet: [0, -0.12],
     fire: 0.03,
-    deep: 0.3,
-    bright: 1.9,
-    facet: 0.5,
-    rim: 0xa0283c,
-    shadow: 0xa00c26,
+    deep: 0.32,
+    bright: 1.45,
+    facet: 0.45,
+    rim: 0x5a1420,
+    shadow: 0x6a0818,
   },
   1: { wedges: 16, culet: [0, 0], fire: 0.16, deep: 0.24, bright: 1.15, tint: 0.85 },
   // The emerald is polished smooth: no flashes, just a deep green glow
