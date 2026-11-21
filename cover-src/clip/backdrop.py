@@ -6,8 +6,9 @@ import sys
 import numpy as np
 from PIL import Image
 src_path, out_path, W, H, GAIN = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), float(sys.argv[5])
-src = Image.open(src_path).convert("RGB").crop((6, 0, 792, 440))
-big = src.resize((round(src.width * 1500 / 440), 1500), Image.BICUBIC).crop((0, 0, 2400, 1500))
+# Cropped and scaled as cover-src/cover.py does, so clip and cover line up.
+src = Image.open(src_path).convert("RGB").crop((6, 8, 792, 440))
+big = src.resize((round(src.width * 1500 / src.height), 1500), Image.BICUBIC).crop((0, 0, 2400, 1500))
 img = np.asarray(big.resize((W, H), Image.LANCZOS)).astype(np.float64) / 255
 to_linear = lambda c: np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
 to_srgb = lambda c: np.where(c <= 0.0031308, c * 12.92, 1.055 * np.clip(c, 0, None) ** (1 / 2.4) - 0.055)

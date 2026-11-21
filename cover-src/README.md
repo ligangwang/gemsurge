@@ -22,8 +22,8 @@ python3 cover.py backdrop.jpg board-on-black.png board-on-white.png ../public/co
 ```
 
 - **The backdrop.** `backdrop.jpg` is a painting of a forest glade with a
-  castle and a river, supplied by the game's owner. Its pale right and
-  bottom edges are trimmed, and it is scaled to fill the cover, keeping the
+  castle and a river, supplied by the game's owner. Its pale edges (a strip
+  along the top, and the right and bottom) are trimmed, and it is scaled to fill the cover, keeping the
   left of the picture so the castle on the right stays clear of the board.
 - **The board.** The two board shots are not kept here. To make them, run
   the game with that ice pattern on the board, the scenery left out, and

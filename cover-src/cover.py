@@ -8,10 +8,11 @@ from PIL import Image, ImageFilter
 backdrop, on_black, on_white, out = sys.argv[1:5]
 W, H = 2400, 1500
 
-# The painting: pale right and bottom edges trimmed, scaled to fill, keeping
-# its left so the castle on the right clears the board.
-src = Image.open(backdrop).convert("RGB").crop((6, 0, 792, 440))
-big = src.resize((round(src.width * H / 440), H), Image.BICUBIC)
+# The painting: its pale edges trimmed (a strip along the top, and the right
+# and bottom), scaled to fill, keeping its left so the castle on the right
+# clears the board. cover-src/clip/backdrop.py crops it the same way.
+src = Image.open(backdrop).convert("RGB").crop((6, 8, 792, 440))
+big = src.resize((round(src.width * H / src.height), H), Image.BICUBIC)
 bg = big.crop((0, 0, W, H)).convert("RGBA")
 
 # The board's transparency is what differs between the two shots: nothing
