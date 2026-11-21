@@ -28,11 +28,11 @@ import { sfx } from "./sound";
 import { Scenery } from "./scenery";
 
 export const GEM_COLORS = [
-  0xff2450, 0xe8f6ff, 0x16c878, 0x2a96ff, 0xa877ee, 0xffc81e, 0xffb39c,
+  0xff2450, 0xe8f6ff, 0x16c878, 0x2a96ff, 0xa877ee, 0xffc81e, 0xffa8b4,
 ];
 /** The stones themselves are a little deeper, since the light inside brightens them. */
 const STONE_COLORS = [
-  0xc01030, 0xf2f6ff, 0x0a9a56, 0x0c6ee8, 0xa874ec, 0xffd41c, 0xffc4b4,
+  0xc01030, 0xf2f6ff, 0x0a9a56, 0x0c6ee8, 0xa874ec, 0xffd41c, 0xffbcc4,
 ];
 /** CSS versions for the HUD. */
 export const GEM_CSS = GEM_COLORS.map(
@@ -209,7 +209,7 @@ const PEAR = polar(
   }),
 );
 /** The emerald: a cushion standing upright, taller than it is wide. */
-const TALL = cushion(0.4, 0.49, 3.4);
+const TALL = cushion(0.37, 0.45, 3.4);
 /** The diamond: a square with its corners cut off, standing on a point. */
 const RADIANT = (() => {
   const s = 0.38;
@@ -560,7 +560,7 @@ const CUTS: Record<
   4: { wedges: 8, culet: [0, 0], fire: 0.05, deep: 0.5, bright: 1.6, shadow: 0x5a2ca0 },
   // A yellow stone's shadows are warm amber, not a muddy dark yellow.
   5: { wedges: 12, culet: [0, -0.1], fire: 0.06, deep: 0.4, bright: 1.3, shadow: 0xe06a00 },
-  // The morganite heart is soft peach-pink, lit from within, with warm salmon
+  // The morganite heart is soft rose-pink, lit from within, with warm pink
   // shadows and a glowing edge.
   6: {
     wedges: 16,
@@ -569,8 +569,8 @@ const CUTS: Record<
     deep: 0.55,
     bright: 1.3,
     facet: 0.3,
-    shadow: 0xe08a86,
-    rim: 0x8a4a40,
+    shadow: 0xe08494,
+    rim: 0x8a4452,
   },
 };
 

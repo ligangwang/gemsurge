@@ -2,7 +2,7 @@
 // few records. Saved on the device (sdk.storage) and, for a signed-in player,
 // to their dingn account (sdk.progress).
 import type { DingnGame, Json } from "../sdk/dingn-sdk.js";
-import { LAST_LEVEL, NOVA_COST, coinsFor } from "./levels";
+import { LAST_LEVEL, LEVELS_PER_WORLD, NOVA_COST, coinsFor } from "./levels";
 
 export type Saved = {
   /** Best stars for each level (index 0 is level 1); 0 for not cleared. */
@@ -22,6 +22,8 @@ export type Saved = {
   novasUsed: number;
   /** Supernovas won as round rewards and in lucky draws. */
   novasWon: number;
+  /** Lucky draws spun: one is owed for each round finished. */
+  drawsDone: number;
 };
 type Sdk = Pick<DingnGame, "storage" | "progress" | "player">;
 
@@ -33,6 +35,7 @@ export const empty = (): Saved => ({
   earned: 0,
   novasUsed: 0,
   novasWon: 0,
+  drawsDone: 0,
 });
 const whole = (value: unknown, max: number) => {
   const n = Number(value);
@@ -45,6 +48,15 @@ export const highest = (s: Saved) => {
   while (n < LAST_LEVEL && s.stars[n] > 0) n++;
   return n;
 };
+
+/** Rounds finished: each round ends with its last level cleared. */
+export const roundsFinished = (s: Saved) => {
+  let n = 0;
+  for (let i = LEVELS_PER_WORLD - 1; i < s.stars.length; i += LEVELS_PER_WORLD) if (s.stars[i] > 0) n++;
+  return n;
+};
+/** Lucky draws earned by finishing a round but not spun yet. */
+export const drawsOwed = (s: Saved) => Math.max(0, roundsFinished(s) - s.drawsDone);
 
 /** Supernovas ready to set off. */
 export const novas = (s: Saved) =>
@@ -75,6 +87,10 @@ export function parse(value: Json): Saved {
       : whole(value.earned, 1e9);
   saved.novasUsed = whole(value.novasUsed, 1e7);
   saved.novasWon = whole(value.novasWon, 1e7);
+  // Saves from before the player stopped the wheel drew at once, so every
+  // round they finished has had its draw.
+  saved.drawsDone =
+    value.drawsDone === undefined ? roundsFinished(saved) : whole(value.drawsDone, LAST_LEVEL);
   const d = value.daily;
   if (
     d &&
@@ -109,6 +125,7 @@ export function merge(a: Saved, b: Saved): Saved {
     earned: Math.max(a.earned, b.earned),
     novasUsed: Math.max(a.novasUsed, b.novasUsed),
     novasWon: Math.max(a.novasWon, b.novasWon),
+    drawsDone: Math.max(a.drawsDone, b.drawsDone),
   };
 }
 

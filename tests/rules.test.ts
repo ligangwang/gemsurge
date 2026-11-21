@@ -7,8 +7,8 @@ import { CHAIN_COIN_CAP, Session, chainCoinsFor } from "../src/engine/session";
 import { DAILY_COINS, HAND_MADE, LAST_LEVEL, WORLDS, LEVELS_PER_WORLD, coinsFor, dailySpec, levelSpec, worldCycle } from "../src/levels";
 import { DAILY, levelBadges, CHAIN_5, CHAIN_8, COMBO, FEVER, PRISM, THREE_STARS, WIPE } from "../src/badges";
 import { boostsFor, nextTier, NONE, ownedFrom, PRICES, shopManifest, upgradeId } from "../src/upgrades";
-import { BEST_KEPT, novas, novaCharge, empty, highest, merge, parse, store } from "../src/save";
-import { DRAW, ROUND, ROUNDS, STORY, TITLES, WHEEL, draw, isMilestone, lastLevelOf, rewardOf, roundOf, sliceFor, storyOf, titleOf, worldOf } from "../src/rounds";
+import { BEST_KEPT, drawsOwed, novas, novaCharge, empty, highest, merge, parse, roundsFinished, store } from "../src/save";
+import { DRAW, JACKPOT, PUSH_MAX, PUSH_MIN, ROUND, ROUNDS, STORY, TITLES, WHEEL, isMilestone, lastLevelOf, restAngle, rewardOf, roundOf, sliceAt, storyOf, titleOf, worldOf } from "../src/rounds";
 
 test("every level has goals it can meet", () => {
   assert.equal(HAND_MADE, 30);
@@ -181,8 +181,7 @@ test("rounds: ten levels each, a title, a reward and a story line", () => {
   assert.ok(rewardOf(10).coins > rewardOf(9).coins);
   assert.ok(rewardOf(40).novas > rewardOf(4).novas);
   assert.ok(Math.abs(DRAW.reduce((sum, d) => sum + d.chance, 0) - 1) < 1e-9);
-  assert.equal(draw(0).novas, 1);
-  assert.equal(draw(0.999).novas, 5);
+  assert.equal(JACKPOT, 5);
   for (let round = 1; round <= ROUNDS; round++) assert.ok(storyOf(round));
   for (const text of [...TITLES, ...STORY, storyOf(100), storyOf(101), storyOf(102)])
     for (const [locale, pack] of Object.entries(PACKS)) assert.ok(pack[text], `no ${locale} for "${text}"`);
@@ -265,11 +264,51 @@ test("chain reactions earn coins, more for longer chains, up to a cap a play", (
   }
 });
 
-test("the draw's wheel shows the true odds and stops on the prize that was drawn", () => {
-  for (const { novas, chance } of DRAW) {
-    assert.equal(WHEEL.filter((n) => n === novas).length / WHEEL.length, chance);
-    for (const roll of [0, 0.3, 0.6, 0.999]) assert.equal(WHEEL[sliceFor(novas, roll)], novas);
+test("the draw's wheel shows the true odds", () => {
+  for (const { novas, chance } of DRAW) assert.equal(WHEEL.filter((n) => n === novas).length / WHEEL.length, chance);
+});
+
+test("the pin reads the slice the wheel has turned under it", () => {
+  const step = 360 / WHEEL.length;
+  assert.equal(sliceAt(0), 0);
+  // Turning clockwise brings the slices before it under the pin.
+  assert.equal(sliceAt(-step * 3.5), 3);
+  assert.equal(sliceAt(step * 0.5), WHEEL.length - 1);
+  assert.equal(sliceAt(360 * 7 - step * 9.5), 9);
+  assert.equal(sliceAt(-360 * 4 - step * 9.5), 9);
+});
+
+test("however hard the player spins, every prize is as likely as its share of the wheel", () => {
+  // The push is the player's: it decides how far the wheel goes, at least a
+  // turn and at most PUSH_MAX, plus up to a turn of coasting.
+  assert.equal(restAngle(0, 10, 0), PUSH_MIN);
+  assert.equal(restAngle(0, -10, 0), -PUSH_MIN);
+  assert.equal(restAngle(30, 1e6, 0.5), 30 + PUSH_MAX + 180);
+  for (const start of [0, 37.3, -250]) {
+    for (const push of [0, 500, -900, 1333.3, PUSH_MAX]) {
+      const counts = new Map<number, number>();
+      const tries = 20000;
+      for (let i = 0; i < tries; i++) {
+        const prize = WHEEL[sliceAt(restAngle(start, push, (i + 0.5) / tries))];
+        counts.set(prize, (counts.get(prize) ?? 0) + 1);
+      }
+      for (const { novas, chance } of DRAW) assert.ok(Math.abs(counts.get(novas)! / tries - chance) < 0.001, `${novas} at push ${push}`);
+    }
   }
+});
+
+test("a lucky draw is owed for each round finished, and old saves have had theirs", () => {
+  const saved = empty();
+  for (let i = 0; i < 30; i++) saved.stars[i] = 2;
+  assert.equal(roundsFinished(saved), 3);
+  assert.equal(drawsOwed(saved), 3);
+  assert.equal(drawsOwed({ ...saved, drawsDone: 2 }), 1);
+  // A save from before the wheel was the player's drew at once.
+  assert.equal(parse({ stars: "2".repeat(30) }).drawsDone, 3);
+  assert.equal(drawsOwed(parse({ stars: "2".repeat(30) })), 0);
+  assert.equal(parse({ stars: "2".repeat(30), drawsDone: 1 }).drawsDone, 1);
+  // Merging keeps the most draws spun, so a draw is never paid twice.
+  assert.equal(merge({ ...saved, drawsDone: 3 }, { ...saved, drawsDone: 1 }).drawsDone, 3);
 });
 
 test("levels have 5 colours to 50, 6 with the morganite to 100, and all 7 after", () => {

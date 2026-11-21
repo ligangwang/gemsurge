@@ -332,17 +332,61 @@ test("finishing a round's last level holds the ceremony: a new title, a reward a
   expect(screen.getByText("New title")).toBeTruthy();
   expect(screen.getAllByText(/Pebble Picker/).length).toBeGreaterThan(0);
   expect(screen.getByText(/Lucky draw/)).toBeTruthy();
-  // The draw is the player's to spin, and the round goes on once it lands.
+  // The draw is owed until the player spins it: only the round's own prize is paid.
   expect(screen.queryByRole("button", { name: "Start round 2" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Spin the wheel" }));
-  expect(await screen.findByRole("button", { name: "Start round 2" }, { timeout: 8000 })).toBeTruthy();
-  expect(screen.getByRole("status").textContent).toMatch(/You won.*Supernova ×\d/);
-  const last = calls.save.mock.calls.at(-1)![0] as { novasWon: number };
-  expect(last.novasWon).toBeGreaterThanOrEqual(2);
+  const before = calls.save.mock.calls.at(-1)![0] as { novasWon: number; drawsDone: number };
+  expect(before.drawsDone).toBe(0);
+  // Holding the button charges the spin; letting go spins the wheel.
+  const spin = screen.getByRole("button", { name: "Spin the wheel" });
+  fireEvent.pointerDown(spin);
+  expect(await screen.findByRole("button", { name: "Let go to spin!" })).toBeTruthy();
+  await new Promise((r) => setTimeout(r, 300));
+  fireEvent.pointerUp(spin);
+  // The prize is paid the moment the wheel is let go, before it stops.
+  await waitFor(() => expect((calls.save.mock.calls.at(-1)![0] as { drawsDone: number }).drawsDone).toBe(1));
+  expect(screen.queryByRole("status")).toBeNull();
+  const after = calls.save.mock.calls.at(-1)![0] as { novasWon: number; drawsDone: number };
+  const won = after.novasWon - before.novasWon;
+  expect([1, 2, 3, 5]).toContain(won);
+  expect(await screen.findByRole("button", { name: "Start round 2" }, { timeout: 12000 })).toBeTruthy();
+  // It shows the slice it came to rest on, which is what was paid.
+  expect(screen.getByRole("status").textContent).toMatch(new RegExp(`You won.*Supernova ×${won}`));
   // The level's own coins, then 10 more for the round.
   expect(calls.earn).toHaveBeenLastCalledWith(10);
   expect(calls.earn.mock.calls.length).toBeGreaterThanOrEqual(2);
 }, 20000);
+
+test("a lucky draw left unspun waits on the menu", async () => {
+  // Round 1 finished, but the game was closed before its wheel was spun.
+  const saved = { ...empty(), earned: 100, drawsDone: 0 };
+  for (let i = 0; i < 10; i++) saved.stars[i] = 1;
+  play(saved);
+  expect(await screen.findByText("A lucky draw is waiting for you")).toBeTruthy();
+  const spin = screen.getByRole("button", { name: "Spin the wheel" });
+  fireEvent.pointerDown(spin);
+  await new Promise((r) => setTimeout(r, 100));
+  fireEvent.pointerUp(spin);
+  await waitFor(() => expect((calls.save.mock.calls.at(-1)![0] as { drawsDone: number }).drawsDone).toBe(1));
+  // It stays open to show the prize, then closes for good.
+  fireEvent.click(await screen.findByRole("button", { name: "Close" }, { timeout: 12000 }));
+  expect(screen.queryByText("A lucky draw is waiting for you")).toBeNull();
+  expect(screen.getByRole("button", { name: "Play level 11" })).toBeTruthy();
+}, 20000);
+
+test("a click alone spins the wheel too, and each waiting draw gets its own", async () => {
+  // Two rounds finished with neither wheel spun.
+  const saved = { ...empty(), earned: 100, drawsDone: 0 };
+  for (let i = 0; i < 20; i++) saved.stars[i] = 1;
+  play(saved);
+  for (const spun of [1, 2]) {
+    expect(await screen.findByText("A lucky draw is waiting for you")).toBeTruthy();
+    // A screen reader activates the button with a click, no press or release.
+    fireEvent.click(screen.getByRole("button", { name: "Spin the wheel" }));
+    await waitFor(() => expect((calls.save.mock.calls.at(-1)![0] as { drawsDone: number }).drawsDone).toBe(spun));
+    fireEvent.click(await screen.findByRole("button", { name: "Close" }, { timeout: 12000 }));
+  }
+  expect(screen.queryByText("A lucky draw is waiting for you")).toBeNull();
+}, 30000);
 
 test("undo takes the last move back, three times a level", async () => {
   play();

@@ -21,7 +21,7 @@ import {
   worldCycle,
 } from "./levels";
 import { badges, endBadges, playBadges } from "./badges";
-import { highest, loadSaved, merge, novaCharge, novas, store, type Saved } from "./save";
+import { drawsOwed, highest, loadSaved, merge, novaCharge, novas, store, type Saved } from "./save";
 import {
   NONE,
   PRICES,
@@ -35,7 +35,7 @@ import {
 } from "./upgrades";
 import { say, setMuted, sfx } from "./sound";
 import { beyond, challengeFor, DAILY_RULES, readChallenge, sameRound, shareLink, type Round, type Rules } from "./challenge";
-import { DRAW, ROUND, WHEEL, draw, isMilestone, lastLevelOf, rewardOf, roundOf, sliceFor, storyOf, titleOf, worldOf } from "./rounds";
+import { JACKPOT, ROUND, WHEEL, isMilestone, lastLevelOf, restAngle, rewardOf, roundOf, sliceAt, storyOf, titleOf, worldOf } from "./rounds";
 
 type Screen = "menu" | "play" | "end" | "shop";
 type EndInfo = {
@@ -59,9 +59,8 @@ type EndInfo = {
 };
 type RoundEnd = {
   round: number;
-  /** Supernovas from the round's reward and from the lucky draw. */
+  /** Supernovas from the round's reward; the lucky draw adds more once spun. */
   novas: number;
-  luck: { index: number; novas: number };
   /** dingn coins paid for the round, or null when signed out. */
   coins: number | null;
 };
@@ -76,6 +75,11 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   localeNow.current = locale;
   const [saved, setSaved] = useState(initial);
   const [screen, setScreen] = useState<Screen>("menu");
+  // A lucky draw left unspun (the game was closed first) waits on the menu;
+  // this keeps it open to show what it won.
+  const [owedOpen, setOwedOpen] = useState(false);
+  // Counts the owed draws shown, so the next one starts with a fresh wheel.
+  const [owedShown, setOwedShown] = useState(0);
   const [owned, setOwned] = useState<Owned>(NONE);
   const [muted, setMute] = useState(prefs.muted);
   const [webgl, setWebgl] = useState(true);
@@ -438,9 +442,9 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       // The first win on a round's last level finishes the round.
       if (won && level % ROUND === 0 && !next.stars[level - 1]) {
         const prize = rewardOf(roundOf(level));
-        const luck = draw(Math.random());
-        next.novasWon += prize.novas + luck.novas;
-        round = { round: roundOf(level), novas: prize.novas, luck, coins: null };
+        // The lucky draw is owed now and paid when the player spins it.
+        next.novasWon += prize.novas;
+        round = { round: roundOf(level), novas: prize.novas, coins: null };
       }
       best = s.score > next.best[level - 1];
       next.stars[level - 1] = Math.max(next.stars[level - 1], stars);
@@ -508,6 +512,16 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     if (charged) setTimeout(() => sfx.fever(), 900);
     setScreen("end");
     stars && [1, 2, 3].slice(0, stars).forEach((n, i) => setTimeout(() => sfx.star(n), 300 + i * 250));
+  }
+
+  /** A lucky draw came to rest on `won` Supernovas: pay them and mark it spun. */
+  function drawn(won: number) {
+    const now = savedRef.current;
+    if (drawsOwed(now) <= 0) return;
+    const next = { ...now, novasWon: now.novasWon + won, drawsDone: now.drawsDone + 1 };
+    savedRef.current = next;
+    setSaved(next);
+    store(sdk, next).catch(() => {});
   }
 
   function toMenu() {
@@ -604,10 +618,23 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
         />
       )}
 
+      {webgl && screen === "menu" && (drawsOwed(saved) > 0 || owedOpen) && (
+        <OwedDraw
+          key={owedShown}
+          onDrawn={drawn}
+          onOpen={() => setOwedOpen(true)}
+          onClose={() => {
+            setOwedOpen(false);
+            setOwedShown((n) => n + 1);
+          }}
+        />
+      )}
+
       {screen === "end" && end && s && end.round && (
         <RoundPanel
           end={end}
           round={end.round}
+          onDrawn={drawn}
           onNext={() => start(Math.min(s.spec.level + 1, LAST_LEVEL))}
           onMenu={toMenu}
           last={s.spec.level >= LAST_LEVEL}
@@ -1194,37 +1221,19 @@ function RoundPrize({ round }: { round: number }) {
 }
 
 /** The ceremony for finishing a round: a new title, the reward, the draw and a line of the story. */
-function RoundPanel(props: { end: EndInfo; round: RoundEnd; last: boolean; onNext: () => void; onMenu: () => void }) {
+function RoundPanel(props: {
+  end: EndInfo;
+  round: RoundEnd;
+  last: boolean;
+  onDrawn: (novas: number) => void;
+  onNext: () => void;
+  onMenu: () => void;
+}) {
   const { t } = useLocale();
   const { end, round } = props;
   const title = titleOf(round.round + 1);
   const milestone = isMilestone(round.round);
-  // The prize is already won and saved; the player spins the wheel to see it.
-  const [stage, setStage] = useState<"ready" | "spinning" | "landed">("ready");
-  const [turn, setTurn] = useState(0);
-  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
-  useEffect(() => () => timers.current.forEach(clearTimeout), []);
-  const spin = () => {
-    if (stage !== "ready") return;
-    const slice = sliceFor(round.luck.novas, Math.random());
-    const step = 360 / WHEEL.length;
-    // Six full turns, then on to the slice, stopping a little off its middle.
-    setTurn(360 * 6 - (slice + 0.5) * step + (Math.random() - 0.5) * step * 0.6);
-    setStage("spinning");
-    // Ticks that slow down with the wheel.
-    for (let i = 0, at = 0; at < SPIN_MS - 300; i++) {
-      timers.current.push(setTimeout(() => sfx.select(), at));
-      at += 60 + i * i * 1.6;
-    }
-    timers.current.push(
-      setTimeout(() => {
-        setStage("landed");
-        if (round.luck.index === DRAW.length - 1) sfx.fanfare();
-        else sfx.star(3);
-      }, SPIN_MS),
-    );
-  };
-  const landed = stage === "landed";
+  const [landed, setLanded] = useState(false);
   return (
     <div className="gem-end round-end" role="dialog" aria-label={t("Round complete!")}>
       <div className={`gem-panel round-panel${milestone ? " milestone" : ""}`}>
@@ -1255,23 +1264,7 @@ function RoundPanel(props: { end: EndInfo; round: RoundEnd; last: boolean; onNex
             </li>
           )}
         </ul>
-        <div className={`round-draw ${stage}`}>
-          <p className="round-draw-title">🎁 {t("Lucky draw")}</p>
-          <div className="wheel-box">
-            <Wheel turn={turn} won={landed ? round.luck.novas : 0} />
-            <span className="wheel-pin" aria-hidden />
-          </div>
-          {landed ? (
-            <p className="round-won" role="status">
-              {t("You won")} <strong>✹ {t("Supernova")} ×{round.luck.novas}</strong>
-              {round.luck.index === DRAW.length - 1 ? ` · ${t("Jackpot!")}` : ""}
-            </p>
-          ) : (
-            <button className="button big" onClick={spin} disabled={stage !== "ready"}>
-              {stage === "ready" ? t("Spin the wheel") : t("Spinning…")}
-            </button>
-          )}
-        </div>
+        <LuckyDraw onDrawn={props.onDrawn} onLanded={() => setLanded(true)} />
         {landed && (
           <>
             <p className="round-story">“{t(storyOf(round.round))}”</p>
@@ -1297,8 +1290,221 @@ function RoundPanel(props: { end: EndInfo; round: RoundEnd; last: boolean; onNex
   );
 }
 
-/** How long the wheel turns before it stops. */
-const SPIN_MS = 4200;
+/** A lucky draw owed from a round whose wheel was never spun. */
+function OwedDraw(props: { onDrawn: (novas: number) => void; onOpen: () => void; onClose: () => void }) {
+  const { t } = useLocale();
+  const [landed, setLanded] = useState(false);
+  return (
+    <div className="gem-end round-end" role="dialog" aria-label={t("Lucky draw")}>
+      <div className="gem-panel round-panel">
+        <p className="eyebrow">{t("A lucky draw is waiting for you")}</p>
+        <LuckyDraw
+          onDrawn={(won) => {
+            // Stay open to show the prize, though the draw is no longer owed.
+            props.onOpen();
+            props.onDrawn(won);
+          }}
+          onLanded={() => setLanded(true)}
+        />
+        {landed && (
+          <div className="gem-actions">
+            <button className="button big" onClick={props.onClose}>
+              {t("Close")}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** How fast a spinning wheel slows down, in degrees per millisecond squared. */
+const FRICTION = 0.0003;
+/** How long the button's power bar takes to fill. */
+const CHARGE_MS = 900;
+
+/**
+ * The lucky draw: the player spins the wheel as hard as they like, by swiping
+ * it or by holding the button while a power bar fills, and wins the slice it
+ * comes to rest on. The prize is paid (`onDrawn`) the moment the wheel is let
+ * go, so leaving while it turns changes nothing.
+ */
+function LuckyDraw(props: { onDrawn: (novas: number) => void; onLanded: (novas: number) => void }) {
+  const { t } = useLocale();
+  const [stage, setStage] = useState<"ready" | "charging" | "spinning" | "landed">("ready");
+  const [turn, setTurn] = useState(0);
+  const [power, setPower] = useState(0);
+  const [won, setWon] = useState(0);
+  const angle = useRef(0);
+  const stageRef = useRef(stage);
+  stageRef.current = stage;
+  const frame = useRef(0);
+  const box = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ id: number; at: number; samples: { t: number; a: number }[] } | null>(null);
+  const charge = useRef({ start: 0, power: 0 });
+  useEffect(() => () => cancelAnimationFrame(frame.current), []);
+  const turnTo = (a: number) => {
+    angle.current = a;
+    setTurn(a);
+  };
+
+  /** Lets the wheel go with a push that would carry it `push` degrees. */
+  const letGo = (push: number) => {
+    cancelAnimationFrame(frame.current);
+    stageRef.current = "spinning";
+    const start = angle.current;
+    const rest = restAngle(start, push, Math.random());
+    const prize = WHEEL[sliceAt(rest)];
+    props.onDrawn(prize);
+    setStage("spinning");
+    // It slows down evenly, from just the speed that carries it to rest.
+    const dir = Math.sign(rest - start);
+    const distance = Math.abs(rest - start);
+    const speed = Math.sqrt(2 * FRICTION * distance);
+    const duration = speed / FRICTION;
+    const begun = performance.now();
+    let slice = sliceAt(start);
+    let ticked = 0;
+    const step = (now: number) => {
+      const t = Math.min(duration, now - begun);
+      const a = start + dir * (speed * t - (FRICTION * t * t) / 2);
+      turnTo(a);
+      // The pin clicks over each slice it passes, as often as it can be heard.
+      if (sliceAt(a) !== slice) {
+        slice = sliceAt(a);
+        if (now - ticked > 45) {
+          ticked = now;
+          sfx.select();
+        }
+      }
+      if (t < duration) {
+        frame.current = requestAnimationFrame(step);
+        return;
+      }
+      turnTo(rest);
+      setWon(prize);
+      setStage("landed");
+      if (prize === JACKPOT) sfx.fanfare();
+      else sfx.star(3);
+      props.onLanded(prize);
+    };
+    frame.current = requestAnimationFrame(step);
+  };
+
+  // Swiping the wheel: it follows the finger, and spins on with the speed it
+  // had when let go.
+  const pointerAngle = (e: React.PointerEvent) => {
+    const r = box.current!.getBoundingClientRect();
+    const x = e.clientX - (r.left + r.width / 2);
+    const y = e.clientY - (r.top + r.height / 2);
+    return (Math.atan2(x, -y) * 180) / Math.PI;
+  };
+  const onWheelDown = (e: React.PointerEvent) => {
+    if (stageRef.current !== "ready") return;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    const a = pointerAngle(e);
+    drag.current = { id: e.pointerId, at: a, samples: [{ t: performance.now(), a: angle.current }] };
+  };
+  const onWheelMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d || d.id !== e.pointerId) return;
+    const a = pointerAngle(e);
+    // The change in angle, taking the short way round.
+    const delta = ((((a - d.at) % 360) + 540) % 360) - 180;
+    d.at = a;
+    turnTo(angle.current + delta);
+    const now = performance.now();
+    d.samples.push({ t: now, a: angle.current });
+    while (d.samples.length > 2 && now - d.samples[0].t > 120) d.samples.shift();
+  };
+  const onWheelUp = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d || d.id !== e.pointerId) return;
+    drag.current = null;
+    const first = d.samples[0];
+    const last = d.samples[d.samples.length - 1];
+    const dt = performance.now() - first.t;
+    const speed = dt > 0 ? (last.a - first.a) / dt : 0;
+    // Too gentle to count as a spin: the wheel just stays where it was put.
+    if (Math.abs(speed) < 0.2) return;
+    // The distance a wheel let go at this speed would roll before stopping.
+    letGo((Math.sign(speed) * speed * speed) / (2 * FRICTION));
+  };
+
+  // Holding the button: a power bar fills and empties again; letting go
+  // spins the wheel as hard as the bar shows.
+  const startCharge = () => {
+    if (stageRef.current !== "ready") return;
+    setStage("charging");
+    charge.current = { start: performance.now(), power: 0 };
+    const fill = (now: number) => {
+      if (stageRef.current !== "charging") return;
+      const k = ((now - charge.current.start) / CHARGE_MS) % 2;
+      charge.current.power = k < 1 ? k : 2 - k;
+      setPower(charge.current.power);
+      frame.current = requestAnimationFrame(fill);
+    };
+    frame.current = requestAnimationFrame(fill);
+  };
+  const endCharge = () => {
+    if (stageRef.current !== "charging") return;
+    letGo(360 + charge.current.power * 360 * 4);
+  };
+  // A click with no press and release before it (a screen reader's, say)
+  // still spins the wheel, with a middling push.
+  const clickSpin = () => {
+    if (stageRef.current === "ready") letGo(360 * 2.5);
+  };
+  const key = (e: React.KeyboardEvent, down: boolean) => {
+    if (e.key !== " " && e.key !== "Enter") return;
+    e.preventDefault();
+    if (down && !e.repeat) startCharge();
+    if (!down) endCharge();
+  };
+
+  return (
+    <div className={`round-draw ${stage}`}>
+      <p className="round-draw-title">🎁 {t("Lucky draw")}</p>
+      <div
+        className="wheel-box"
+        ref={box}
+        onPointerDown={onWheelDown}
+        onPointerMove={onWheelMove}
+        onPointerUp={onWheelUp}
+        onPointerCancel={() => (drag.current = null)}
+      >
+        <Wheel turn={turn} won={stage === "landed" ? won : 0} />
+        <span className="wheel-pin" aria-hidden />
+      </div>
+      {stage === "landed" ? (
+        <p className="round-won" role="status">
+          {t("You won")} <strong>✹ {t("Supernova")} ×{won}</strong>
+          {won === JACKPOT ? ` · ${t("Jackpot!")}` : ""}
+        </p>
+      ) : (
+        <>
+          <button
+            className="button big draw-button"
+            disabled={stage === "spinning"}
+            onPointerDown={startCharge}
+            onPointerUp={endCharge}
+            onPointerLeave={endCharge}
+            onKeyDown={(e) => key(e, true)}
+            onKeyUp={(e) => key(e, false)}
+            onClick={clickSpin}
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            {stage === "spinning" ? t("Spinning…") : stage === "charging" ? t("Let go to spin!") : t("Spin the wheel")}
+          </button>
+          <div className="draw-power" aria-hidden style={{ visibility: stage === "charging" ? "visible" : "hidden" }}>
+            <span style={{ width: `${Math.round(power * 100)}%` }} />
+          </div>
+          {stage === "ready" && <p className="draw-hint">{t("Swipe the wheel, or hold the button: the harder the push, the longer it spins.")}</p>}
+        </>
+      )}
+    </div>
+  );
+}
 const SLICE_COLORS: Record<number, string> = { 1: "#22306e", 2: "#5a2a9c", 3: "#0b7a4a", 5: "#d9a21b" };
 
 /** The lucky draw's wheel: a slice for each twentieth of the odds. */
@@ -1310,7 +1516,7 @@ function Wheel({ turn, won }: { turn: number; won: number }) {
       className="wheel"
       viewBox="-104 -104 208 208"
       aria-hidden
-      style={{ transform: `rotate(${turn}deg)`, transitionDuration: `${SPIN_MS}ms` }}
+      style={{ transform: `rotate(${turn}deg)` }}
     >
       <circle r="100.5" fill="#120e26" stroke="#ffe9a8" strokeWidth="5" />
       {WHEEL.map((novas, i) => {
