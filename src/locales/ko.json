@@ -187,5 +187,8 @@
   "Your friend's upgrades and Supernovas, so it's a fair match.": "친구와 같은 업그레이드와 초신성으로 공정하게 겨뤄요.",
   "Your upgrades and Supernovas from that round.": "그때 쓴 내 업그레이드와 초신성으로 해요.",
   "You beat your own {0}!": "내 기록 {0}점을 넘었어요!",
-  "Your score to beat: {0}. {1} more to beat it.": "넘어야 할 점수: {0}점. {1}점만 더 받으면 넘어요."
+  "Your score to beat: {0}. {1} more to beat it.": "넘어야 할 점수: {0}점. {1}점만 더 받으면 넘어요.",
+  "Let go to spin!": "놓으면 돌아가요!",
+  "Swipe the wheel, or hold the button: the harder the push, the longer it spins.": "룰렛을 밀거나 버튼을 꾹 누르세요. 세게 밀수록 오래 돌아가요.",
+  "A lucky draw is waiting for you": "행운 뽑기가 기다리고 있어요"
 }
