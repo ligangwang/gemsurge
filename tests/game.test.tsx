@@ -180,6 +180,10 @@ test("upgrades are bought with coins and start the next level", async () => {
   await act(async () => fireEvent.click(buttons[0]));
   expect(calls.spend).toHaveBeenCalledWith("moves-1");
   expect(await screen.findByText("Upgrade bought! It works from your next level.")).toBeTruthy();
+  // The message follows a language switch while it is showing.
+  act(() => setLanguage("es"));
+  expect(screen.getByText("¡Mejora comprada! Funciona desde tu próximo nivel.")).toBeTruthy();
+  act(() => setLanguage("en"));
   fireEvent.click(screen.getByRole("button", { name: "Close" }));
   fireEvent.click(screen.getByRole("button", { name: "Play" }));
   expect(session().movesLeft).toBe(27);

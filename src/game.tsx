@@ -117,6 +117,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   };
   const [end, setEnd] = useState<EndInfo | null>(null);
   const [buying, setBuying] = useState<string | null>(null);
+  // Kept in English and translated when shown, so it follows a language switch.
   const [shopNote, setShopNote] = useState("");
   const host = useRef<HTMLDivElement>(null);
   const scene = useRef<GemScene | null>(null);
@@ -534,10 +535,10 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     setBuying(null);
     if (r === "bought") {
       setOwned(await loadOwned(sdk));
-      setShopNote(t("Upgrade bought! It works from your next level."));
+      setShopNote("Upgrade bought! It works from your next level.");
       sfx.win();
-    } else if (r === "poor") setShopNote(t("Not enough coins yet. Clear levels and the daily board to earn more."));
-    else if (r === "failed") setShopNote(t("That didn't go through. Try again in a moment."));
+    } else if (r === "poor") setShopNote("Not enough coins yet. Clear levels and the daily board to earn more.");
+    else if (r === "failed") setShopNote("That didn't go through. Try again in a moment.");
   }
 
   function toggleMute() {
@@ -634,7 +635,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
           owned={owned}
           signedIn={signedIn}
           buying={buying}
-          note={shopNote}
+          note={shopNote && t(shopNote)}
           onBuy={purchase}
           onClose={() => {
             setShopNote("");

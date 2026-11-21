@@ -61,6 +61,7 @@ test("every string the game shows is in every pack", () => {
     for (const m of source.matchAll(/\bt\(\s*"((?:[^"\\]|\\.)+)"/g)) shown.add(m[1]);
     for (const m of source.matchAll(/\.banner\(\s*"((?:[^"\\]|\\.)+)"/g)) shown.add(m[1]);
     for (const m of source.matchAll(/\bnote = "((?:[^"\\]|\\.)+)"/g)) shown.add(m[1]);
+    for (const m of source.matchAll(/\bsetShopNote\(\s*"((?:[^"\\]|\\.)+)"/g)) shown.add(m[1]);
     for (const m of source.matchAll(/\b(?:name|what): "((?:[^"\\]|\\.)+)"/g)) shown.add(m[1]);
   }
   const words = readFileSync(new URL("../src/gem-scene.ts", import.meta.url), "utf8").match(/CHAIN_WORDS = \[([^\]]*)\]/)![1];
