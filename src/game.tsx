@@ -78,6 +78,8 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   // A lucky draw left unspun (the game was closed first) waits on the menu;
   // this keeps it open to show what it won.
   const [owedOpen, setOwedOpen] = useState(false);
+  // Counts the owed draws shown, so the next one starts with a fresh wheel.
+  const [owedShown, setOwedShown] = useState(0);
   const [owned, setOwned] = useState<Owned>(NONE);
   const [muted, setMute] = useState(prefs.muted);
   const [webgl, setWebgl] = useState(true);
@@ -617,7 +619,15 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       )}
 
       {webgl && screen === "menu" && (drawsOwed(saved) > 0 || owedOpen) && (
-        <OwedDraw onDrawn={drawn} onOpen={() => setOwedOpen(true)} onClose={() => setOwedOpen(false)} />
+        <OwedDraw
+          key={owedShown}
+          onDrawn={drawn}
+          onOpen={() => setOwedOpen(true)}
+          onClose={() => {
+            setOwedOpen(false);
+            setOwedShown((n) => n + 1);
+          }}
+        />
       )}
 
       {screen === "end" && end && s && end.round && (
@@ -1341,6 +1351,7 @@ function LuckyDraw(props: { onDrawn: (novas: number) => void; onLanded: (novas: 
   /** Lets the wheel go with a push that would carry it `push` degrees. */
   const letGo = (push: number) => {
     cancelAnimationFrame(frame.current);
+    stageRef.current = "spinning";
     const start = angle.current;
     const rest = restAngle(start, push, Math.random());
     const prize = WHEEL[sliceAt(rest)];
@@ -1437,8 +1448,12 @@ function LuckyDraw(props: { onDrawn: (novas: number) => void; onLanded: (novas: 
   };
   const endCharge = () => {
     if (stageRef.current !== "charging") return;
-    stageRef.current = "spinning";
     letGo(360 + charge.current.power * 360 * 4);
+  };
+  // A click with no press and release before it (a screen reader's, say)
+  // still spins the wheel, with a middling push.
+  const clickSpin = () => {
+    if (stageRef.current === "ready") letGo(360 * 2.5);
   };
   const key = (e: React.KeyboardEvent, down: boolean) => {
     if (e.key !== " " && e.key !== "Enter") return;
@@ -1476,6 +1491,7 @@ function LuckyDraw(props: { onDrawn: (novas: number) => void; onLanded: (novas: 
             onPointerLeave={endCharge}
             onKeyDown={(e) => key(e, true)}
             onKeyUp={(e) => key(e, false)}
+            onClick={clickSpin}
             onContextMenu={(e) => e.preventDefault()}
           >
             {stage === "spinning" ? t("Spinning…") : stage === "charging" ? t("Let go to spin!") : t("Spin the wheel")}

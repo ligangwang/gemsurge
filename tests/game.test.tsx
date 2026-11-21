@@ -373,6 +373,21 @@ test("a lucky draw left unspun waits on the menu", async () => {
   expect(screen.getByRole("button", { name: "Play level 11" })).toBeTruthy();
 }, 20000);
 
+test("a click alone spins the wheel too, and each waiting draw gets its own", async () => {
+  // Two rounds finished with neither wheel spun.
+  const saved = { ...empty(), earned: 100, drawsDone: 0 };
+  for (let i = 0; i < 20; i++) saved.stars[i] = 1;
+  play(saved);
+  for (const spun of [1, 2]) {
+    expect(await screen.findByText("A lucky draw is waiting for you")).toBeTruthy();
+    // A screen reader activates the button with a click, no press or release.
+    fireEvent.click(screen.getByRole("button", { name: "Spin the wheel" }));
+    await waitFor(() => expect((calls.save.mock.calls.at(-1)![0] as { drawsDone: number }).drawsDone).toBe(spun));
+    fireEvent.click(await screen.findByRole("button", { name: "Close" }, { timeout: 12000 }));
+  }
+  expect(screen.queryByText("A lucky draw is waiting for you")).toBeNull();
+}, 30000);
+
 test("undo takes the last move back, three times a level", async () => {
   play();
   fireEvent.click(screen.getByRole("button", { name: "Play" }));
