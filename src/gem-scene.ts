@@ -28,11 +28,11 @@ import { sfx } from "./sound";
 import { Scenery } from "./scenery";
 
 export const GEM_COLORS = [
-  0xff2450, 0xe8f6ff, 0x16c878, 0x2a96ff, 0xb450ff, 0xffc81e, 0xffb39c,
+  0xff2450, 0xe8f6ff, 0x16c878, 0x2a96ff, 0xa877ee, 0xffc81e, 0xffb39c,
 ];
 /** The stones themselves are a little deeper, since the light inside brightens them. */
 const STONE_COLORS = [
-  0xc01030, 0xf2f6ff, 0x0a9a56, 0x0c6ee8, 0x7a30d8, 0xffd41c, 0xffc4b4,
+  0xc01030, 0xf2f6ff, 0x0a9a56, 0x0c6ee8, 0xa874ec, 0xffd41c, 0xffc4b4,
 ];
 /** CSS versions for the HUD. */
 export const GEM_CSS = GEM_COLORS.map(
@@ -373,6 +373,69 @@ function brilliant(
 }
 
 /**
+ * A cabochon: no facets at all, a smooth polished dome over the outline and a
+ * shallow rounded back. Its points are shared, so the normals run smoothly
+ * and the surface mirrors the lamps as round, unbroken highlights.
+ */
+function cabochon(radius: (a: number) => number, height = 0.21, back = 0.08) {
+  const rings = 18;
+  const around = 120;
+  const positions: number[] = [0, 0, height];
+  const index: number[] = [];
+  // Rings are closer together near the edge, where the dome curves fastest.
+  const ringAt = (k: number) => Math.sin(((k / rings) * Math.PI) / 2);
+  const ring = (k: number) => 1 + (k - 1) * around;
+  for (let k = 1; k <= rings; k++) {
+    const s = ringAt(k);
+    const z = height * Math.sqrt(Math.max(0, 1 - s * s));
+    for (let j = 0; j < around; j++) {
+      const a = (j / around) * Math.PI * 2;
+      positions.push(...at(radius, a, s, z));
+    }
+  }
+  // The back: the same rings below the girdle, so they share its edge.
+  const below = positions.length / 3;
+  for (let k = rings - 1; k >= 1; k--) {
+    const s = ringAt(k);
+    const z = -back * Math.sqrt(Math.max(0, 1 - s * s));
+    for (let j = 0; j < around; j++) {
+      const a = (j / around) * Math.PI * 2;
+      positions.push(...at(radius, a, s, z));
+    }
+  }
+  const bottom = positions.length / 3;
+  positions.push(0, 0, -back);
+  // The back ring under top ring k (k < rings), or the girdle itself.
+  const backRing = (k: number) => (k === rings ? ring(rings) : below + (rings - 1 - k) * around);
+  const next = (j: number) => (j + 1) % around;
+  for (let j = 0; j < around; j++) {
+    index.push(0, ring(1) + j, ring(1) + next(j));
+    index.push(bottom, backRing(1) + next(j), backRing(1) + j);
+  }
+  for (let k = 1; k < rings; k++) {
+    for (let j = 0; j < around; j++) {
+      const i0 = ring(k) + j;
+      const i1 = ring(k) + next(j);
+      const o0 = ring(k + 1) + j;
+      const o1 = ring(k + 1) + next(j);
+      index.push(i0, o0, o1, i0, o1, i1);
+      const b0 = backRing(k) + j;
+      const b1 = backRing(k) + next(j);
+      const c0 = backRing(k + 1) + j;
+      const c1 = backRing(k + 1) + next(j);
+      index.push(b0, c1, c0, b0, b1, c1);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  // No facets, so every point carries the same even shade.
+  g.setAttribute("color", new THREE.Float32BufferAttribute(new Array(positions.length).fill(1), 3));
+  g.setIndex(index);
+  g.computeVertexNormals();
+  return g;
+}
+
+/**
  * A table cut: a wide flat table, through which the back of the stone shows,
  * ringed by one row of large triangles pointing down and up in turn. `mains`
  * is the number of table corners.
@@ -422,8 +485,8 @@ function makeGeometries(): THREE.BufferGeometry[] {
     tableCut(HEART, 10, Math.PI / 2, 0.6, 0.55),
     // The diamond: a brilliant with many fine facets, standing on its point.
     brilliant(RADIANT, 8, Math.PI / 2, { fine: 5 }),
-    // The emerald cushion, upright: a big open table and eight broad triangles.
-    tableCut(TALL, 8, Math.PI / 8, 0.64),
+    // The emerald cushion, upright, polished smooth as a cabochon.
+    cabochon(TALL),
     // The sapphire marquise: a classic brilliant, its points on facet edges.
     brilliant(MARQUISE, 8),
     // The amethyst trillion: a table and six bold triangles.
@@ -457,6 +520,8 @@ const CUTS: Record<
     shadow?: number;
     /** How strongly the crown's own facets show, 0.2 if not given. */
     facet?: number;
+    /** 1 for a smooth, unfaceted stone that glows evenly from inside. */
+    smooth?: number;
     /** The colour of light glowing along its girdle, if any. */
     rim?: number;
   }
@@ -474,20 +539,23 @@ const CUTS: Record<
     shadow: 0xa00c26,
   },
   1: { wedges: 16, culet: [0, 0], fire: 0.16, deep: 0.24, bright: 1.15, tint: 0.85 },
-  // An emerald glows from within, deep and velvety: little fire, soft
-  // flashes, and blue-green shadows that still hold colour.
+  // The emerald is polished smooth: no flashes, just a deep green glow
+  // that is brightest in the middle, dark blue-green towards the edge, and
+  // clear white highlights where the dome mirrors the lamps.
   2: {
     wedges: 10,
-    culet: [0, -0.04],
-    fire: 0.015,
-    deep: 0.34,
-    bright: 1.45,
-    facet: 0.32,
-    shadow: 0x046c50,
-    rim: 0x0c4a30,
+    culet: [0, 0],
+    fire: 0,
+    deep: 0.22,
+    bright: 1.7,
+    facet: 0,
+    smooth: 1,
+    shadow: 0x013a2c,
   },
   3: { wedges: 16, culet: [0, 0], fire: 0.04, deep: 0.2, bright: 1.4 },
-  4: { wedges: 8, culet: [0, 0], fire: 0.05, deep: 0.17, bright: 1.3 },
+  // Amethyst is a clear lavender violet: pale lilac flashes over shadows of
+  // deep grape purple, never near-black.
+  4: { wedges: 8, culet: [0, 0], fire: 0.05, deep: 0.5, bright: 1.6, shadow: 0x5a2ca0 },
   // A yellow stone's shadows are warm amber, not a muddy dark yellow.
   5: { wedges: 12, culet: [0, -0.1], fire: 0.06, deep: 0.4, bright: 1.3, shadow: 0xe06a00 },
   // Morganite is soft peach-pink, lit from within, with warm salmon shadows
@@ -539,6 +607,7 @@ uniform float uTint;
 uniform vec3 uShadow;
 uniform float uFacet;
 uniform vec3 uRim;
+uniform float uSmooth;
 varying vec3 vPos;
 varying vec3 vNormal;
 varying vec3 vView;
@@ -601,6 +670,15 @@ void main() {
     inside(V, N, 1.76).g,
     inside(V, N, 1.76 + uFire).b
   );
+  // A smooth stone has no back facets to flash: its light is an even glow,
+  // strongest where you look straight in, with a softer pool of light below
+  // the middle where light gathers on the far side of the dome.
+  vec2 pool = vPos.xy - vec2(0.05, -0.13);
+  float glowing = 0.02 + 0.6 * pow(facing, 6.0) + 0.7 * exp(-dot(pool, pool) / 0.012);
+  // Real emeralds are never glass-clear: soft veils inside break the glow up.
+  float veil = sin(vPos.x * 9.0 + vPos.y * 5.0 + sin(vPos.y * 7.0) * 1.5) * sin(vPos.y * 8.0 - vPos.x * 6.0 + 1.7);
+  glowing *= 0.9 + 0.18 * veil;
+  back = mix(back, vec3(glowing), uSmooth);
   float light = dot(back, vec3(0.3, 0.5, 0.2));
   vec3 deep = uShadow * uDeep;
   vec3 lit = uColor * uBright;
@@ -628,6 +706,10 @@ void main() {
   // A stone mirrors light in its true colour, clear white; a coloured
   // reflection is what makes metal or foil look like metal or foil.
   colour += mirrored * fresnel * 0.45;
+  // A polished dome shows one bright round highlight from the main lamp.
+  vec3 key = normalize(vec3(-0.45, 0.55, 0.7));
+  float shine = pow(max(dot(reflect(-V, N), key), 0.0), 220.0);
+  colour += vec3(1.0) * shine * 2.0 * uSmooth;
 
   colour += uColor * uGlow * (0.4 + light);
   // Light caught in the thin girdle glows as a line round the edge.
@@ -1152,6 +1234,7 @@ export class GemScene {
         uShadow: { value: new THREE.Color(cut.shadow ?? STONE_COLORS[color]) },
         uFacet: { value: cut.facet ?? 0.2 },
         uRim: { value: new THREE.Color(cut.rim ?? 0x000000) },
+        uSmooth: { value: cut.smooth ?? 0 },
       },
       vertexShader: GEM_VERTEX,
       fragmentShader: GEM_FRAGMENT,
