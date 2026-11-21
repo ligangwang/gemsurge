@@ -33,3 +33,34 @@ python3 cover.py backdrop.jpg board-on-black.png board-on-white.png ../public/co
   white. The difference between the two shots gives each pixel's
   transparency, so the ice and the dark pane stay see-through.
 - A soft shadow under the board lifts it off the painting.
+
+# The clip
+
+`public/clip.mp4` (960×600, 6.7 s, silent, about 850 KB) is what dingn plays
+over the cover: a match of 3, a match of 4 that makes a line blaster, a match
+of 5 that makes a prism, then the prism and the blaster swapped together. It
+is framed exactly like the cover, with the same backdrop and the same ice.
+
+It is captured from the game itself, one frame at a time, with the game's
+clock under the script's control, so it is smooth however slow the machine.
+From `cover-src/clip/`:
+
+```
+python3 backdrop.py ../backdrop.jpg bg.png 960 600 2   # the backdrop, as the game needs it
+python3 hack.py apply                                  # capture-only changes to the game
+(cd ../.. && npx vite --port 5295 --strictPort) &      # the game, running
+node capture.cjs frames                                # about 250 pictures, 30 a second
+python3 hack.py restore                                # put the game back; never commit the hack
+python3 encode.py frames 6 206 ../../public/clip.mp4 27
+```
+
+- `hack.py` gives the game a set board (so the three matches are there to
+  make), the backdrop in place of its scenery, the cover's framing, all seven
+  stones, and hooks for `capture.cjs` to make the swaps.
+- `backdrop.py` undoes the game's tone mapping on the painting in advance, so
+  it comes out of the game looking as it does on the cover.
+- `capture.cjs` holds the board and the four swaps. Check a new board with
+  the engine first: every swap must make its match, and nothing else may
+  match before it.
+- `encode.py` cuts the frames to a loop, before the level's own ending
+  begins, and blends its last frames into its first.

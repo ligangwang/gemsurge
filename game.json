@@ -1,6 +1,6 @@
 {
   "id": "gemsurge",
-  "version": "1.4.7",
+  "version": "1.4.8",
   "title": {
     "en": "Gem Surge",
     "zh": "宝石狂潮",
@@ -31,6 +31,7 @@
   "category": "casual",
   "entry": "index.html",
   "cover": "cover.jpg",
+  "clip": "clip.mp4",
   "badges": [
     {
       "id": "level-5",
