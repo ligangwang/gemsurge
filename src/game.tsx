@@ -70,7 +70,10 @@ const HINT_AFTER = 7000;
 
 export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: boolean } }) {
   const sdk = useDingn();
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
+  /** The player's language right now, for the scene's callbacks. */
+  const localeNow = useRef(locale);
+  localeNow.current = locale;
   const [saved, setSaved] = useState(initial);
   const [screen, setScreen] = useState<Screen>("menu");
   const [owned, setOwned] = useState<Owned>(NONE);
@@ -114,6 +117,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   };
   const [end, setEnd] = useState<EndInfo | null>(null);
   const [buying, setBuying] = useState<string | null>(null);
+  // Kept in English and translated when shown, so it follows a language switch.
   const [shopNote, setShopNote] = useState("");
   const host = useRef<HTMLDivElement>(null);
   const scene = useRef<GemScene | null>(null);
@@ -208,7 +212,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       return;
     }
     s.setBannerTranslator(t);
-    s.setBannerListener((text, shown) => CHEERS.has(text) && say(shown, sdk.locale));
+    s.setBannerListener((text, shown) => CHEERS.has(text) && say(shown, localeNow.current, text));
     scene.current = s;
     // A board to look at behind the menu.
     const demo = new Session(levelSpec(Math.max(1, top)));
@@ -221,6 +225,13 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // The player switched language: the banners on the board follow, even one
+  // already showing.
+  useEffect(() => {
+    scene.current?.setBannerTranslator(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locale]);
 
   // Opened by a friend's challenge link: go straight to that round, under the
   // friend's rules. A level waits for the player's upgrades, which decide
@@ -524,10 +535,10 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     setBuying(null);
     if (r === "bought") {
       setOwned(await loadOwned(sdk));
-      setShopNote(t("Upgrade bought! It works from your next level."));
+      setShopNote("Upgrade bought! It works from your next level.");
       sfx.win();
-    } else if (r === "poor") setShopNote(t("Not enough coins yet. Clear levels and the daily board to earn more."));
-    else if (r === "failed") setShopNote(t("That didn't go through. Try again in a moment."));
+    } else if (r === "poor") setShopNote("Not enough coins yet. Clear levels and the daily board to earn more.");
+    else if (r === "failed") setShopNote("That didn't go through. Try again in a moment.");
   }
 
   function toggleMute() {
@@ -624,7 +635,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
           owned={owned}
           signedIn={signedIn}
           buying={buying}
-          note={shopNote}
+          note={shopNote && t(shopNote)}
           onBuy={purchase}
           onClose={() => {
             setShopNote("");

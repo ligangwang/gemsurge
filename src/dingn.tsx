@@ -1,5 +1,5 @@
 // The game's link to dingn: the SDK connection, shared through React context,
-// plus the translations Gem Surge needs.
+// plus the translations Gem Surge needs, in the player's language.
 import {
   createContext,
   useContext,
@@ -22,8 +22,15 @@ export function DingnProvider({
   // Re-render when the player signs in or out.
   const [player, setPlayer] = useState(sdk.player);
   useEffect(() => sdk.onPlayer(setPlayer), [sdk]);
+  // And when they switch language while playing: the game keeps going, in
+  // the new language. Older dingn builds have no onLanguage.
+  const [locale, setLocale] = useState(sdk.locale);
+  useEffect(() => sdk.onLanguage?.(setLocale), [sdk]);
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
   return (
-    <DingnContext.Provider value={{ ...sdk, player }}>
+    <DingnContext.Provider value={{ ...sdk, player, locale }}>
       {children}
     </DingnContext.Provider>
   );
@@ -38,7 +45,7 @@ export function useDingn() {
 export function useLocale() {
   const { locale } = useDingn();
   // t("Level {0}", "3") fills in the English, then translates it, so a
-  // pattern such as "Level {0}" in zh-CN.json matches.
+  // pattern such as "Level {0}" in locales/<lang>.json matches.
   const t = (text: string, ...args: string[]) =>
     translate(
       args.reduce((s, a, i) => s.replace(`{${i}}`, a), text),

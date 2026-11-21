@@ -11,6 +11,8 @@ import { shopManifest } from "../src/upgrades";
 // A stand-in for the three.js scene: every animation finishes at once.
 const mocks = vi.hoisted(() => ({
   scene: null as null | { onSwap: (a: Pos, b: Pos) => void; boards: number },
+  /** The scene's banner translator, as the game last set it. */
+  translate: (s: string) => s,
 }));
 vi.mock("../src/gem-scene", () => ({
   GEM_CSS: ["#f00", "#fa0", "#0f0", "#00f", "#a0f", "#fff"],
@@ -31,7 +33,9 @@ vi.mock("../src/gem-scene", () => ({
     showHint() {}
     setFever() {}
     banner() {}
-    setBannerTranslator() {}
+    setBannerTranslator(t: (s: string) => string) {
+      mocks.translate = t;
+    }
     setBannerListener() {}
     async playInvalid() {}
     async playTurn() {}
@@ -46,6 +50,11 @@ let owned: string[] = [];
 let stored: Map<string, unknown>;
 let account: unknown = null;
 let setPlayer: (p: DingnGame["player"]) => void = () => {};
+/** The game's language listeners, as dingn holds them. */
+const languageListeners = new Set<(locale: Locale) => void>();
+const setLanguage = (locale: Locale) => {
+  for (const listener of languageListeners) listener(locale);
+};
 function fakeSdk(signedIn: boolean, locale: Locale = "en") {
   stored = new Map<string, unknown>();
   account = null;
@@ -68,6 +77,10 @@ function fakeSdk(signedIn: boolean, locale: Locale = "en") {
     onPlayer: (listener) => {
       setPlayer = listener;
       return () => {};
+    },
+    onLanguage: (listener) => {
+      languageListeners.add(listener);
+      return () => languageListeners.delete(listener);
     },
     storage: {
       get: async (key) => (stored.get(key) ?? null) as never,
@@ -167,6 +180,10 @@ test("upgrades are bought with coins and start the next level", async () => {
   await act(async () => fireEvent.click(buttons[0]));
   expect(calls.spend).toHaveBeenCalledWith("moves-1");
   expect(await screen.findByText("Upgrade bought! It works from your next level.")).toBeTruthy();
+  // The message follows a language switch while it is showing.
+  act(() => setLanguage("es"));
+  expect(screen.getByText("¡Mejora comprada! Funciona desde tu próximo nivel.")).toBeTruthy();
+  act(() => setLanguage("en"));
   fireEvent.click(screen.getByRole("button", { name: "Close" }));
   fireEvent.click(screen.getByRole("button", { name: "Play" }));
   expect(session().movesLeft).toBe(27);
@@ -212,6 +229,75 @@ test("speaks Chinese", () => {
   expect(screen.getByRole("button", { name: "每日棋盘" })).toBeTruthy();
   expect(screen.getByText(/水晶森林/)).toBeTruthy();
   expect(screen.getByText("登录以赚取金币和徽章")).toBeTruthy();
+});
+
+test("speaks every language dingn gives it, in its own words", () => {
+  const words: Record<string, [string, string, string]> = {
+    es: ["Jugar", "Tablero diario", "Bosque de Cristal"],
+    "pt-BR": ["Jogar", "Tabuleiro diário", "Floresta de Cristal"],
+    id: ["Main", "Papan harian", "Hutan Kristal"],
+    ja: ["プレイ", "デイリーボード", "クリスタルの森"],
+    ko: ["플레이", "오늘의 보드", "수정 숲"],
+  };
+  for (const [locale, [playWord, daily, world]] of Object.entries(words)) {
+    fakeSdk(false, locale);
+    play();
+    expect(screen.getByRole("button", { name: playWord }), locale).toBeTruthy();
+    expect(screen.getByRole("button", { name: daily }), locale).toBeTruthy();
+    expect(screen.getAllByText(new RegExp(world)).length, locale).toBeGreaterThan(0);
+    // Never the Chinese text (Japanese writes kanji, so look for the Chinese words).
+    expect(document.body.textContent, locale).not.toMatch(locale === "ja" ? /开始|每日棋盘|水晶森林/ : /[\u4e00-\u9fff]/);
+    cleanup();
+  }
+});
+
+test("switching language mid-level redraws everything in it and keeps the game going", async () => {
+  fakeSdk(true, "en");
+  const view = play();
+  fireEvent.click(screen.getByRole("button", { name: "Play" }));
+  const [a, b] = findHint(session().board)!;
+  await act(async () => mocks.scene!.onSwap(a, b));
+  const before = session();
+  const moves = before.movesLeft;
+  const score = before.score;
+  const cells = JSON.stringify(before.board.cells);
+  expect(screen.getByRole("heading", { name: "Level 1" })).toBeTruthy();
+  expect(mocks.translate("Surge!")).toBe("Surge!");
+
+  act(() => setLanguage("es"));
+  expect(screen.getByRole("heading", { name: "Nivel 1" })).toBeTruthy();
+  expect(screen.getByText("Movimientos")).toBeTruthy();
+  expect(screen.queryByText("Moves")).toBeNull();
+  // The same level, mid-play: nothing restarted.
+  expect(session()).toBe(before);
+  expect(session().movesLeft).toBe(moves);
+  expect(session().score).toBe(score);
+  expect(JSON.stringify(session().board.cells)).toBe(cells);
+  // The banners on the board follow the new language too.
+  expect(mocks.translate("Surge!")).toBe("¡Oleada!");
+  expect(mocks.translate("Level 3")).toBe("Nivel 3");
+  expect(document.documentElement.lang).toBe("es");
+
+  act(() => setLanguage("ko"));
+  expect(screen.getByRole("heading", { name: "레벨 1" })).toBeTruthy();
+  expect(mocks.translate("Daily board")).toBe("오늘의 보드");
+  expect(session()).toBe(before);
+
+  // And back to the menu, still in Korean.
+  fireEvent.click(screen.getByRole("button", { name: "메뉴" }));
+  expect(screen.getByRole("button", { name: "레벨 2" })).toBeTruthy();
+
+  // Leaving the game stops listening.
+  expect(languageListeners.size).toBe(1);
+  view.unmount();
+  expect(languageListeners.size).toBe(0);
+});
+
+test("an older dingn without onLanguage still plays", () => {
+  fakeSdk(false, "ja");
+  delete (sdk as Partial<DingnGame>).onLanguage;
+  play();
+  expect(screen.getByRole("button", { name: "プレイ" })).toBeTruthy();
 });
 
 test("a charged Supernova clears the board without using a move", async () => {
