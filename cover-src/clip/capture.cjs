@@ -1,5 +1,5 @@
 // Plays the scripted moves in the game with time under our control, and saves
-// one picture every 30th of a second. Usage: capture.cjs outDir [maxFrames]
+// one picture every 32 ms. Usage: capture.cjs outDir [maxFrames]
 const { chromium } = require('playwright');
 const fs = require('fs');
 const L = 'RDESATM';
@@ -26,7 +26,9 @@ const MOVES = [[[6, 4], [7, 4]], [[4, 6], [4, 5]], [[6, 3], [5, 3]], [[5, 5], [4
   let next = 0, idle = 0, last = -1;
   const t0 = Date.now();
   for (let f = 0; f < max; f++) {
-    await p.clock.runFor(1000 / 30);
+    // Exactly two of the fake clock's 16 ms animation frames, so every
+    // picture is the same 32 ms after the last.
+    await p.clock.runFor(32);
     await p.screenshot({ path: `${out}/f${String(f).padStart(4, '0')}.png`, timeout: 120000 });
     const input = await p.evaluate(() => window.__input);
     idle = input ? idle + 1 : 0;

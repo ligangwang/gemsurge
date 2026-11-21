@@ -15,7 +15,7 @@ for i in range(first, last + 1):
     if left < FADE:
         im = Image.blend(im, start, (FADE - left) / (FADE + 1))
     im.save(f"{tmp}/{n:04d}.png"); n += 1
-subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-framerate", "30", "-i", f"{tmp}/%04d.png",
+subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-framerate", "31.25", "-i", f"{tmp}/%04d.png",
     "-c:v", "libx264", "-preset", "veryslow", "-crf", crf, "-pix_fmt", "yuv420p", "-profile:v", "high",
     "-movflags", "+faststart", "-an", out], check=True)
-print(n, "frames,", round(n / 30, 2), "s,", round(os.path.getsize(out) / 1024), "KB")
+print(n, "frames,", round(n * 0.032, 2), "s,", round(os.path.getsize(out) / 1024), "KB")

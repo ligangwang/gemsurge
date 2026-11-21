@@ -1,6 +1,7 @@
 # Usage: hack.py apply | restore
 # Applies (or with "restore", removes) the capture-only changes to the game:
-# a set board, a set backdrop, the cover's framing, and hooks to drive swaps.
+# a set board, a set backdrop, the cover's framing, no screen shake, and hooks
+# to drive swaps.
 import sys, shutil, os
 HERE=os.path.dirname(os.path.abspath(__file__))
 G=os.path.abspath(os.path.join(HERE, '..', '..')); B=os.path.join(HERE, 'bak')
@@ -24,7 +25,7 @@ edit('src/gem-scene.ts', [
       const tex = new THREE.TextureLoader().load(clipBg, () => ((window as any).__bgReady = true));
       tex.colorSpace = THREE.SRGBColorSpace;
       keyScene.background = tex;
-      keyScene.backgroundIntensity = 4;
+      keyScene.backgroundIntensity = 2; // the GAIN given to backdrop.py
       (window as any).__swap = (a: Pos, b: Pos) => this.options.onSwap(a, b);
     }
     this.composer.addPass(new RenderPass(clipBg ? keyScene : this.scenery.scene, this.scenery.camera));"""),
@@ -37,6 +38,10 @@ edit('src/gem-scene.ts', [
     this.inputOn = on;""","""  setInput(on: boolean) {
     this.inputOn = on;
     (window as any).__input = on;"""),
+])
+edit('src/gem-scene.ts', [
+("    const sx = (Math.random() - 0.5) * this.shake;\n    const sy = (Math.random() - 0.5) * this.shake;",
+ "    // No screen shake: in a small clip, against a still backdrop, the\n    // game's shake reads as jitter, not impact.\n    const sx = 0;\n    const sy = 0;"),
 ])
 edit('src/engine/board.ts', [
 ("""  } while (!findHint(b));
