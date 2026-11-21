@@ -36,7 +36,7 @@ python3 cover.py backdrop.jpg board-on-black.png board-on-white.png ../public/co
 
 # The clip
 
-`public/clip.mp4` (960×600, 6.7 s, silent, about 850 KB) is what dingn plays
+`public/clip.mp4` (960×600, 6.9 s, silent, about 850 KB) is what dingn plays
 over the cover: a match of 3, a match of 4 that makes a line blaster, a match
 of 5 that makes a prism, then the prism and the blaster swapped together. It
 is framed exactly like the cover, with the same backdrop and the same ice.
@@ -49,17 +49,22 @@ From `cover-src/clip/`:
 python3 backdrop.py ../backdrop.jpg bg.png 960 600 2   # the backdrop, as the game needs it
 python3 hack.py apply                                  # capture-only changes to the game
 (cd ../.. && npx vite --port 5295 --strictPort) &      # the game, running
-node capture.cjs frames                                # about 250 pictures, 30 a second
+node capture.cjs frames                                # about 250 pictures, 32 ms apart
 python3 hack.py restore                                # put the game back; never commit the hack
-python3 encode.py frames 6 206 ../../public/clip.mp4 27
+python3 encode.py frames 6 222 ../../public/clip.mp4 27
 ```
 
 - `hack.py` gives the game a set board (so the three matches are there to
   make), the backdrop in place of its scenery, the cover's framing, all seven
-  stones, and hooks for `capture.cjs` to make the swaps.
+  stones, and hooks for `capture.cjs` to make the swaps. It also turns the
+  screen shake off: in a small clip, against a still backdrop, the game's
+  shake on every match reads as jitter, not impact.
 - `backdrop.py` undoes the game's tone mapping on the painting in advance, so
   it comes out of the game looking as it does on the cover.
-- `capture.cjs` holds the board and the four swaps. Check a new board with
+- `capture.cjs` holds the board and the four swaps. It steps the clock 32 ms
+  a picture, exactly two of the fake clock's 16 ms animation frames: any
+  other step makes some pictures land later than others, which stutters.
+  `encode.py` plays them back at the matching 31.25 a second. Check a new board with
   the engine first: every swap must make its match, and nothing else may
   match before it.
 - `encode.py` cuts the frames to a loop, before the level's own ending
