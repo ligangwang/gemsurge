@@ -14,6 +14,10 @@ const voices = [
   { name: "Samantha", lang: "en-US" },
   { name: "Li-mu", lang: "zh-TW" },
   { name: "Ting-Ting", lang: "zh-CN" },
+  { name: "Kyoko", lang: "ja-JP" },
+  { name: "Paulina", lang: "es_MX" },
+  { name: "Luciana", lang: "pt-BR" },
+  { name: "Joana", lang: "pt-PT" },
 ];
 function speech() {
   const speak = vi.fn();
@@ -46,4 +50,28 @@ test("mute silences the voice, and a device without speech is fine", () => {
   vi.unstubAllGlobals();
   setMuted(false);
   expect(() => say("Nice", "en")).not.toThrow();
+});
+
+test("each language is spoken in its own voice, or in English where the device has none", () => {
+  const speak = speech();
+  say("¡Increíble!", "es", "Awesome!");
+  say("Incrível!", "pt-BR", "Awesome!");
+  say("最高！", "ja", "Awesome!");
+  // No Korean or Indonesian voice on this device: the English words, in English.
+  say("최고예요!", "ko", "Awesome!");
+  say("Keren!", "id", "Awesome!");
+  const [es, pt, ja, ko, id] = speak.mock.calls.map((c) => c[0] as Line);
+  expect(es).toMatchObject({ text: "Increíble", lang: "es-ES", voice: voices[5] });
+  expect(pt).toMatchObject({ text: "Incrível", lang: "pt-BR", voice: voices[6] });
+  expect(ja).toMatchObject({ text: "最高", lang: "ja-JP", voice: voices[4] });
+  expect(ko).toMatchObject({ text: "Awesome", lang: "en-US", voice: voices[1] });
+  expect(id).toMatchObject({ text: "Awesome", lang: "en-US", voice: voices[1] });
+});
+
+test("before the device lists its voices, the line is still tagged with the player's language", () => {
+  const speak = vi.fn();
+  vi.stubGlobal("SpeechSynthesisUtterance", Line);
+  vi.stubGlobal("speechSynthesis", { getVoices: () => [], cancel: vi.fn(), speak });
+  say("최고예요!", "ko", "Awesome!");
+  expect(speak.mock.calls[0][0]).toMatchObject({ text: "최고예요", lang: "ko-KR", voice: null });
 });

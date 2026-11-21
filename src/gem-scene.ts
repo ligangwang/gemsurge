@@ -2291,6 +2291,7 @@ export class GemScene {
   banner(text: string, level = 1) {
     const el = document.createElement("div");
     el.className = `gem-banner level-${Math.min(level, 6)}`;
+    el.dataset.text = text;
     el.textContent = this.translate(text);
     this.overlay.appendChild(el);
     this.onBanner(text, el.textContent);
@@ -2303,9 +2304,14 @@ export class GemScene {
   }
   private onBanner: (text: string, shown: string) => void = () => {};
 
-  /** How banner words are translated. */
+  /**
+   * How banner words are translated. A new translator (the player switched
+   * language) also rewrites any banner still showing.
+   */
   setBannerTranslator(t: (s: string) => string) {
     this.translate = t;
+    for (const el of this.overlay.querySelectorAll<HTMLElement>(".gem-banner"))
+      if (el.dataset.text) el.textContent = t(el.dataset.text);
   }
   private translate = (s: string) => s;
 

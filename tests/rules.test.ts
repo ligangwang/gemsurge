@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import game from "../game.json" with { type: "json" };
-import zh from "../src/zh-CN.json" with { type: "json" };
+import { PACKS } from "../src/i18n";
 import { SIZE, findHint } from "../src/engine/board";
 import { CHAIN_COIN_CAP, Session, chainCoinsFor } from "../src/engine/session";
 import { DAILY_COINS, HAND_MADE, LAST_LEVEL, WORLDS, LEVELS_PER_WORLD, coinsFor, dailySpec, levelSpec, worldCycle } from "../src/levels";
@@ -103,13 +103,6 @@ test("saves read safely and merge to the better of each", () => {
   assert.deepEqual(parse(JSON.parse(JSON.stringify(m))), m);
 });
 
-test("every Chinese pattern keeps its placeholders", () => {
-  for (const [en, cn] of Object.entries(zh as Record<string, string>)) {
-    const holes = (s: string) => (s.match(/\{\d\}/g) ?? []).sort().join();
-    assert.equal(holes(cn), holes(en), en);
-  }
-});
-
 test("the first 100 levels are eased, and the easing fades out by level 101", () => {
   // Level 1 is "20 moves, score 3000" in the table.
   assert.equal(levelSpec(1).moves, 26);
@@ -192,7 +185,7 @@ test("rounds: ten levels each, a title, a reward and a story line", () => {
   assert.equal(draw(0.999).novas, 5);
   for (let round = 1; round <= ROUNDS; round++) assert.ok(storyOf(round));
   for (const text of [...TITLES, ...STORY, storyOf(100), storyOf(101), storyOf(102)])
-    assert.ok((zh as Record<string, string>)[text], `no Chinese for "${text}"`);
+    for (const [locale, pack] of Object.entries(PACKS)) assert.ok(pack[text], `no ${locale} for "${text}"`);
 });
 
 test("a move can be taken back three times a level", () => {

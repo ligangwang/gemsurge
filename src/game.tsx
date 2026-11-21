@@ -70,7 +70,10 @@ const HINT_AFTER = 7000;
 
 export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: boolean } }) {
   const sdk = useDingn();
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
+  /** The player's language right now, for the scene's callbacks. */
+  const localeNow = useRef(locale);
+  localeNow.current = locale;
   const [saved, setSaved] = useState(initial);
   const [screen, setScreen] = useState<Screen>("menu");
   const [owned, setOwned] = useState<Owned>(NONE);
@@ -208,7 +211,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       return;
     }
     s.setBannerTranslator(t);
-    s.setBannerListener((text, shown) => CHEERS.has(text) && say(shown, sdk.locale));
+    s.setBannerListener((text, shown) => CHEERS.has(text) && say(shown, localeNow.current, text));
     scene.current = s;
     // A board to look at behind the menu.
     const demo = new Session(levelSpec(Math.max(1, top)));
@@ -221,6 +224,13 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // The player switched language: the banners on the board follow, even one
+  // already showing.
+  useEffect(() => {
+    scene.current?.setBannerTranslator(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locale]);
 
   // Opened by a friend's challenge link: go straight to that round, under the
   // friend's rules. A level waits for the player's upgrades, which decide

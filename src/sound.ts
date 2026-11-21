@@ -106,8 +106,20 @@ const note = (step: number, base = 523.25) =>
 // --- A spoken word of encouragement, in a soft, higher voice.
 
 // Voices that sound young and bright come first; any other woman's voice is next best.
-const GIRL_VOICES = /xiaoyi|xiaoxiao|xiaomeng|xiaoshuang|ting-?ting|mei-?jia|sin-?ji|yaoyao|ana\b|jenny|aria|samantha|shelley|sandy|flo\b/i;
+const GIRL_VOICES =
+  /xiaoyi|xiaoxiao|xiaomeng|xiaoshuang|ting-?ting|mei-?jia|sin-?ji|yaoyao|ana\b|jenny|aria|samantha|shelley|sandy|flo\b|paulina|monica|m[oó]nica|luciana|francisca|damayanti|gadis|kyoko|nanami|o-?ren|yuna|sun-?hi/i;
 const SOFT_VOICES = /female|woman|girl|huihui|karen|victoria|zira|moira|tessa|google/i;
+
+/** The speech language for each of the game's languages. */
+const SPEECH_LANG: Record<string, string> = {
+  en: "en-US",
+  "zh-CN": "zh-CN",
+  es: "es-ES",
+  "pt-BR": "pt-BR",
+  id: "id-ID",
+  ja: "ja-JP",
+  ko: "ko-KR",
+};
 
 // Browsers load their voices late, so ask early: the first cheer then has them.
 if (typeof speechSynthesis !== "undefined") {
@@ -119,16 +131,37 @@ if (typeof speechSynthesis !== "undefined") {
   }
 }
 
-/** Says `text` aloud with the device's own speech, when it has one. */
-export function say(text: string, locale: string) {
+/** The device's voices for `lang` ("pt-BR"): that region's first, else any of the language. */
+function voicesFor(lang: string) {
+  const norm = (l: string) => l.toLowerCase().replace(/_/g, "-");
+  const all = speechSynthesis.getVoices();
+  const exact = all.filter((v) => norm(v.lang) === norm(lang));
+  if (exact.length) return { all, voices: exact };
+  const base = norm(lang).split("-")[0];
+  return { all, voices: all.filter((v) => norm(v.lang).split("-")[0] === base) };
+}
+
+/**
+ * Says `text` aloud with the device's own speech, when it has one, in the
+ * player's language. A device with voices but none in that language says
+ * `english` (the words as written) in English instead, so a cheer is never
+ * read out in the wrong accent.
+ */
+export function say(text: string, locale: string, english?: string) {
   if (muted || typeof speechSynthesis === "undefined" || typeof SpeechSynthesisUtterance === "undefined") return;
   try {
-    const lang = locale.startsWith("zh") ? "zh" : "en";
-    const voices = speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith(lang));
-    const line = new SpeechSynthesisUtterance(text.replace(/[!！]/g, ""));
+    let lang = SPEECH_LANG[locale] ?? locale;
+    let found = voicesFor(lang);
+    if (!found.voices.length && found.all.length && english && lang !== SPEECH_LANG.en) {
+      lang = SPEECH_LANG.en;
+      text = english;
+      found = voicesFor(lang);
+    }
+    const { voices } = found;
+    const line = new SpeechSynthesisUtterance(text.replace(/[!！¡]/g, "").trim());
     line.voice =
       voices.find((v) => GIRL_VOICES.test(v.name)) ?? voices.find((v) => SOFT_VOICES.test(v.name)) ?? voices[0] ?? null;
-    line.lang = lang === "zh" ? "zh-CN" : "en-US";
+    line.lang = lang;
     // A bright, girlish voice: clearly higher than the default and a touch quicker.
     line.pitch = 1.8;
     line.rate = 1.1;

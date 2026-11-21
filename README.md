@@ -24,7 +24,8 @@ in rounds of 10, across eight worlds. Play it at <https://dingn.com/play/gemsurg
   to break (1 or 2 layers), within a move limit. 1 to 3 stars by score.
 - **Daily board**: 20 moves, the same board and refills for everyone each UTC
   day.
-- English and Chinese.
+- English, Chinese, Spanish, Brazilian Portuguese, Indonesian, Japanese and
+  Korean, with the language switchable mid-game (packs in `src/locales/`).
 
 ## Coins and upgrades
 
