@@ -140,7 +140,7 @@ function traced(f: (t: number) => [number, number], steps = 720) {
   return pts.map(([x, y]) => [x - cx, y - cy] as [number, number]);
 }
 
-/** A heart, its notch at the top and its point at the bottom. */
+/** The morganite: a heart, its notch at the top and its point at the bottom. */
 const HEART = polar(
   traced((t) => {
     const a = t * Math.PI * 2;
@@ -157,7 +157,7 @@ const HEART = polar(
   }),
 );
 
-/** The morganite, the seventh stone: round. */
+/** The ruby: round. */
 const ROUND = () => 0.4;
 /**
  * The sapphire: a marquise, two arcs meeting in a point at the top and the
@@ -232,7 +232,7 @@ const RADIANT = (() => {
  * Each stone's outline as an SVG path in a box from -0.6 to 0.6, so the goals
  * can show the same shapes as the board.
  */
-export const GEM_OUTLINES = [HEART, RADIANT, TALL, MARQUISE, TRILLION, PEAR, ROUND].map(
+export const GEM_OUTLINES = [ROUND, RADIANT, TALL, MARQUISE, TRILLION, PEAR, HEART].map(
   (radius) => {
     const points = Array.from({ length: 96 }, (_, i) => {
       const a = (i / 96) * Math.PI * 2;
@@ -483,8 +483,8 @@ function tableCut(
  */
 function makeGeometries(): THREE.BufferGeometry[] {
   return [
-    // The ruby heart: a wide table ringed by big triangles.
-    tableCut(HEART, 10, Math.PI / 2, 0.6, 0.55),
+    // The round ruby: a brilliant with a big table and many fine facets.
+    brilliant(ROUND, 8, Math.PI / 2, { fine: 5 }),
     // The diamond: a brilliant with many fine facets, standing on its point.
     brilliant(RADIANT, 8, Math.PI / 2, { fine: 5 }),
     // The emerald cushion, upright, polished smooth as a cabochon.
@@ -496,9 +496,9 @@ function makeGeometries(): THREE.BufferGeometry[] {
     // The yellow pear, which joins from level 11: a brilliant with clear,
     // open facets.
     brilliant(PEAR, 8, Math.PI / 2, { fine: 3 }),
-    // The peach morganite, which joins after level 50: a round brilliant with a
-    // big table and many fine facets round it.
-    brilliant(ROUND, 8, Math.PI / 2, { fine: 5 }),
+    // The pink morganite heart, which joins after level 50: a wide table
+    // ringed by big triangles.
+    tableCut(HEART, 10, Math.PI / 2, 0.6, 0.55),
   ];
 }
 
@@ -528,11 +528,11 @@ const CUTS: Record<
     rim?: number;
   }
 > = {
-  // The ruby heart: wine-red depths, pale triangles on its upper lobes and a
-  // pink line of light round its edge.
+  // The round ruby: wine-red depths, pale flashes and a pink line of light
+  // round its edge.
   0: {
     wedges: 16,
-    culet: [0, -0.12],
+    culet: [0, 0],
     fire: 0.03,
     deep: 0.3,
     bright: 1.9,
@@ -560,11 +560,11 @@ const CUTS: Record<
   4: { wedges: 8, culet: [0, 0], fire: 0.05, deep: 0.5, bright: 1.6, shadow: 0x5a2ca0 },
   // A yellow stone's shadows are warm amber, not a muddy dark yellow.
   5: { wedges: 12, culet: [0, -0.1], fire: 0.06, deep: 0.4, bright: 1.3, shadow: 0xe06a00 },
-  // Morganite is soft peach-pink, lit from within, with warm salmon shadows
-  // and a glowing edge.
+  // The morganite heart is soft peach-pink, lit from within, with warm salmon
+  // shadows and a glowing edge.
   6: {
     wedges: 16,
-    culet: [0, 0],
+    culet: [0, -0.12],
     fire: 0.05,
     deep: 0.55,
     bright: 1.3,
