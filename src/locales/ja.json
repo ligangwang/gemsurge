@@ -193,5 +193,6 @@
   "Swipe the wheel, or hold the button: the harder the push, the longer it spins.": "ルーレットをスワイプするか、ボタンを長押ししよう：強く回すほど長く回るよ。",
   "A lucky draw is waiting for you": "ラッキー抽選が待っているよ",
   "Tap to speed up": "タップで早送り",
-  "{0} moves left turn into blasters": "残り {0} 手がレーザーに変わります"
+  "{0} moves left turn into blasters": "残り {0} 手がレーザーに変わります",
+  "Place {0} of {1}": "{1} 人中 {0} 位"
 }

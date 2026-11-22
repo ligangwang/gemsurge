@@ -47,7 +47,7 @@ vi.mock("../src/gem-scene", () => ({
 }));
 
 let sdk: DingnGame;
-const calls = { save: vi.fn(), earn: vi.fn(), unlock: vi.fn(), spend: vi.fn(), link: vi.fn(), roundEnded: vi.fn() };
+const calls = { save: vi.fn(), earn: vi.fn(), unlock: vi.fn(), spend: vi.fn(), link: vi.fn(), roundEnded: vi.fn(), result: vi.fn() };
 let owned: string[] = [];
 let stored: Map<string, unknown>;
 let account: unknown = null;
@@ -66,6 +66,13 @@ function fakeSdk(signedIn: boolean, locale: Locale = "en") {
   calls.unlock.mockReset().mockResolvedValue({ new: true, coins: 10 });
   calls.link.mockReset().mockResolvedValue("https://dingn.com/play/gemsurge/?c=Xq3v9TzK1bWm");
   calls.roundEnded.mockReset();
+  calls.result.mockReset().mockImplementation(async (score: number) => ({
+    beat: score > (sdk.challenge?.score ?? 0),
+    posted: true,
+    best: score,
+    rank: 2,
+    players: 5,
+  }));
   calls.spend.mockReset().mockImplementation(async (id: string) => {
     owned.push(id);
     return { new: true, coins: 60 };
@@ -101,6 +108,7 @@ function fakeSdk(signedIn: boolean, locale: Locale = "en") {
     },
     challenge: null,
     challengeLink: calls.link,
+    challengeResult: calls.result,
     roundEnded: calls.roundEnded,
     requestSignIn: () => {},
     navigate: () => {},
@@ -416,6 +424,8 @@ test("after a round, a player challenges a friend to beat the score", async () =
   await playOut();
   // Each finished round is reported to dingn once.
   expect(calls.roundEnded).toHaveBeenCalledTimes(1);
+  // No challenge was opened, so there is no result to report.
+  expect(calls.result).not.toHaveBeenCalled();
   const score = session().score;
   const button = await screen.findByRole("button", { name: /Challenge a friend/ });
   await act(async () => fireEvent.click(button));
@@ -435,6 +445,10 @@ test("a friend's challenge opens that daily board and says whether it was beaten
   expect(screen.getByRole("heading", { name: "2026-11-01" })).toBeTruthy();
   await playOut();
   expect(await screen.findByText(/Your friend scored 999,999\./)).toBeTruthy();
+  // dingn is told the score, and its ranking is shown.
+  expect(calls.result).toHaveBeenCalledTimes(1);
+  expect(calls.result).toHaveBeenCalledWith(session().score);
+  expect(screen.getByText("Place 2 of 5")).toBeTruthy();
   // An older day's board is played for the score alone: no coins or badges,
   // and it is not saved as today's (the save on sign-in has no daily board).
   expect(calls.earn).not.toHaveBeenCalled();
@@ -533,4 +547,24 @@ test("the player's own challenge is their score to beat", async () => {
   expect(screen.queryByText(/so it's a fair match/)).toBeNull();
   await playOut();
   expect(await screen.findByText(/^Your score to beat: 999,999\. [\d,]+ more to beat it\.$/)).toBeTruthy();
+});
+
+test("an older dingn without challengeResult still ends a challenge round", async () => {
+  delete (sdk as Partial<DingnGame>).challengeResult;
+  sdk.challenge = { mode: "daily", seed: "2026-11-01", score: 999999, unit: "points", rules: "u0-0-0-0-0-0.n0" };
+  play();
+  await playOut();
+  expect(await screen.findByText(/Your friend scored 999,999\./)).toBeTruthy();
+  expect(screen.queryByText(/Place \d+ of/)).toBeNull();
+});
+
+test("a round away from the friend's challenge reports no result", async () => {
+  sdk.challenge = { mode: "level", seed: "1", score: 100, unit: "points", rules: "u0-0-0-0-0-0.n0" };
+  play();
+  await act(async () => {});
+  fireEvent.click(screen.getAllByRole("button", { name: "Menu" })[0]);
+  fireEvent.click(screen.getByRole("button", { name: /Daily board/ }));
+  await playOut();
+  await vi.waitFor(() => expect(calls.roundEnded).toHaveBeenCalledTimes(1));
+  expect(calls.result).not.toHaveBeenCalled();
 });

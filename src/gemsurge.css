@@ -728,3 +728,5 @@
   color: #e6e9f5;
 }
 .end-rival.beaten { background: rgba(74, 240, 164, 0.14); color: #4af0a4; font-weight: 700; }
+
+.end-rival small { display: block; margin-top: 2px; font-weight: 400; opacity: 0.85; }

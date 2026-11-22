@@ -193,5 +193,6 @@
   "Swipe the wheel, or hold the button: the harder the push, the longer it spins.": "룰렛을 밀거나 버튼을 꾹 누르세요. 세게 밀수록 오래 돌아가요.",
   "A lucky draw is waiting for you": "행운 뽑기가 기다리고 있어요",
   "Tap to speed up": "탭하면 빨라져요",
-  "{0} moves left turn into blasters": "남은 {0}번의 이동이 레이저로 바뀌어요"
+  "{0} moves left turn into blasters": "남은 {0}번의 이동이 레이저로 바뀌어요",
+  "Place {0} of {1}": "{1}명 중 {0}위"
 }

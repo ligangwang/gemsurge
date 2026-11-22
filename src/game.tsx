@@ -57,6 +57,8 @@ type EndInfo = {
   played: Round;
   /** A friend's challenge on this round, if one is being answered. */
   rival: Round | null;
+  /** The player's place among everyone who answered that challenge, once dingn has posted the score. */
+  place: { rank: number; players: number } | null;
 };
 type RoundEnd = {
   round: number;
@@ -432,11 +434,18 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     const rules: Rules = level === 0 ? DAILY_RULES : { owned: sessionOwned.get(s) ?? NONE, novas: s.novas };
     const played: Round = level === 0 ? { kind: "daily", day, score: s.score, rules } : { kind: "level", level, score: s.score, rules };
     const rival = challenge.current && sameRound(challenge.current, played) ? challenge.current : null;
+    // dingn posts the score under the friend's challenge, ranks it and tells
+    // the player how they did. Older dingn builds have no challengeResult.
+    let place: EndInfo["place"] = null;
+    if (rival) {
+      const result = await Promise.resolve(sdk.challengeResult?.(s.score)).catch(() => null);
+      if (result?.posted && result.rank !== null) place = { rank: result.rank, players: result.players };
+    }
     // A friend's challenge on an older daily board, or on a level not reached
     // yet, is played for the score alone: nothing is saved or paid.
     if (scoreOnly(s)) {
       if (!show) return;
-      setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: null, chain: 0, note: "", best: false, novas: 0, round: null, played, rival });
+      setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: null, chain: 0, note: "", best: false, novas: 0, round: null, played, rival, place });
       setScreen("end");
       return;
     }
@@ -518,7 +527,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       round.coins = paidForRound;
     }
     if (!show) return;
-    setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: paid, chain: chainPaid, note, best, novas: charged, round, played, rival });
+    setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: paid, chain: chainPaid, note, best, novas: charged, round, played, rival, place });
     if (round) {
       scene.current?.banner("Round complete!", 6);
       sfx.fanfare();
@@ -1127,6 +1136,7 @@ function EndPanel(props: {
                   end.rival.score.toLocaleString(),
                   (end.rival.score - end.score + 1).toLocaleString(),
                 )}
+            {end.place && <small> {t("Place {0} of {1}", String(end.place.rank), String(end.place.players))}</small>}
           </p>
         )}
         {!won && (
