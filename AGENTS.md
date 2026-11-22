@@ -13,16 +13,23 @@ Notes for AI coding agents working on Gem Surge.
   already has.
 - Save with `sdk.storage` / `sdk.progress`, never `localStorage` or cookies,
   which the sandbox blocks. Keep every URL relative (`base: "./"`).
-- UI strings go through `t()` with translations in `src/zh-CN.json`.
+- UI strings go through `t()` in English; each other language has a pack in
+  `src/locales/<lang>.json` (zh-CN, es, pt-BR, id, ja, ko) mapping the English
+  text to its translation. Add every new string to all the packs (a test
+  checks they have the same keys and placeholders), and keep game.json's
+  `languages`, `title` and `description` in step with the packs. dingn can
+  switch language mid-game (`sdk.onLanguage`), so read the language from
+  `useLocale()`, not from `sdk.locale` once at start.
 - `src/engine/` is the match-3 rules (board, specials, cascades, sessions).
   Keep it free of three.js and the DOM so the tests can run it in Node, and
   keep it deterministic: every random choice goes through the board's seeded
   generator, so the daily board is the same for everyone.
 - `game.json`'s `shop` is generated from `src/upgrades.ts` (a test checks they
   match). When you change prices or tiers, update both.
-- Challenges (`src/challenge.ts`) name a round by `mode` ("daily" or "level"),
-  `seed` (the day or the level) and `rules` (the upgrades, "moves2.bomb1").
-  Links already shared keep working only while these keep their meaning.
 - Gem Surge is an original game: don't copy names, art, levels or sounds from
   other match-3 games. The gems are three.js shapes and the sounds are
-  synthesised, so there are no third-party assets to credit.
+  synthesised. The only third-party assets are the background photos in
+  `public/scenes/` (CC0, from Poly Haven), each listed in
+  `public/scenes/CREDITS.md`, and the painting behind the board on the cover,
+  which the game's owner supplied (`cover-src/`, which also says how the
+  cover is put together).

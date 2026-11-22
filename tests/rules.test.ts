@@ -1,15 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import game from "../game.json" with { type: "json" };
-import zh from "../src/zh-CN.json" with { type: "json" };
-import { SIZE, findHint } from "../src/engine/board";
+import { PACKS } from "../src/i18n";
+import { frostMotifForLevel } from "../src/lantern-lake";
+import { SIZE, findGroups, findHint } from "../src/engine/board";
 import { CHAIN_COIN_CAP, Session, chainCoinsFor } from "../src/engine/session";
 import { DAILY_COINS, HAND_MADE, LAST_LEVEL, WORLDS, LEVELS_PER_WORLD, coinsFor, dailySpec, levelSpec, worldCycle } from "../src/levels";
 import { DAILY, levelBadges, CHAIN_5, CHAIN_8, COMBO, FEVER, PRISM, THREE_STARS, WIPE } from "../src/badges";
 import { boostsFor, nextTier, NONE, ownedFrom, PRICES, shopManifest, upgradeId } from "../src/upgrades";
-import { BEST_KEPT, novas, novaCharge, empty, highest, merge, parse, store } from "../src/save";
-import { ownedFromRules, roundFrom, rulesOf, toChallenge } from "../src/challenge";
-import { DRAW, ROUND, ROUNDS, STORY, TITLES, WHEEL, draw, isMilestone, lastLevelOf, rewardOf, roundOf, sliceFor, storyOf, titleOf, worldOf } from "../src/rounds";
+import { BEST_KEPT, drawsOwed, novas, novaCharge, empty, highest, merge, parse, roundsFinished, store } from "../src/save";
+import { DRAW, JACKPOT, PUSH_MAX, PUSH_MIN, ROUND, ROUNDS, STORY, TITLES, WHEEL, isMilestone, lastLevelOf, restAngle, rewardOf, roundOf, sliceAt, storyOf, titleOf, worldOf } from "../src/rounds";
 
 test("every level has goals it can meet", () => {
   assert.equal(HAND_MADE, 30);
@@ -20,7 +20,9 @@ test("every level has goals it can meet", () => {
     assert.equal(spec.ice.length, SIZE * SIZE);
     assert.ok(spec.goals.length > 0, `level ${n}`);
     for (const g of spec.goals) {
-      if (g.kind === "color") assert.ok(g.color < spec.colors, `level ${n} colour`);
+      // A colour goal asks for a stone the board drops.
+      const stones = spec.palette ?? Array.from({ length: spec.colors }, (_, i) => i);
+      if (g.kind === "color") assert.ok(stones.includes(g.color), `level ${n} colour`);
       if (g.kind === "ice") assert.ok(spec.ice.some((i) => i > 0), `level ${n} ice`);
     }
     const [one, two, three] = spec.stars;
@@ -45,6 +47,49 @@ test("the daily board is the same all day and different the next", () => {
   assert.deepEqual(dailySpec("2026-11-15"), dailySpec("2026-11-15"));
   assert.notEqual(dailySpec("2026-11-15").seed, dailySpec("2026-11-16").seed);
   assert.equal(dailySpec("2026-11-15").allMoves, true);
+});
+
+test("the three Lantern Lake openings work and the puzzles are beatable without upgrades", () => {
+  const motifs = [31, 32, 33].map(frostMotifForLevel);
+  assert.equal(new Set(motifs).size, 3);
+  assert.deepEqual([31, 32, 33].map(frostMotifForLevel), motifs);
+  const solutions = [
+    [[4, 4, 3, 4], [1, 3, 1, 4], [4, 4, 4, 5], [3, 5, 3, 6]],
+    [[3, 3, 4, 3], [1, 3, 2, 3], [5, 0, 5, 1], [5, 0, 6, 0], [4, 2, 5, 2], [3, 2, 4, 2],
+     [6, 1, 7, 1], [4, 3, 5, 3], [3, 4, 4, 4], [2, 5, 2, 6], [1, 5, 1, 6]],
+    [[4, 2, 4, 3], [3, 3, 4, 3], [5, 3, 6, 3], [4, 5, 5, 5], [2, 4, 2, 5], [5, 2, 5, 3],
+     [3, 5, 3, 6], [4, 1, 4, 2], [3, 6, 3, 7], [0, 5, 1, 5], [2, 6, 3, 6]],
+  ];
+  for (const [i, solution] of solutions.entries()) {
+    const level = 31 + i;
+    const spec = levelSpec(level);
+    const session = new Session(spec);
+    assert.equal(spec.opening?.length, SIZE * SIZE);
+    assert.deepEqual(session.board, new Session(levelSpec(level)).board);
+    assert.equal(findGroups(session.board.cells.map((gem, i) => session.board.ice[i] ? null : gem)).length, 0);
+    assert.ok(findHint(session.board));
+    session.board.cells.forEach((gem, cell) => {
+      assert.equal(gem === null, Boolean(spec.holes?.[cell]));
+      if (gem) assert.ok(gem.special === "prism" ? gem.color === -1 : gem.color >= 0 && gem.color < spec.colors);
+    });
+    const turns = solution.map(([x, y, toX, toY]) => {
+      const turn = session.move({ x, y }, { x: toX, y: toY });
+      assert.ok(turn, `level ${level}: swap ${x},${y} to ${toX},${toY}`);
+      return turn;
+    });
+    assert.equal(session.outcome, "won", `level ${level}`);
+    if (level === 31) {
+      assert.equal(turns[0].steps[0].created[0].gem.special, "row");
+      assert.ok(turns[1].steps[0].blasts.some((blast) => blast.kind === "row"));
+      assert.ok(turns[1].steps[0].ice.length >= 4);
+    } else if (level === 32) {
+      assert.equal(turns[0].combo, "bomb+row");
+      assert.ok(turns[0].steps[0].ice.length >= 8);
+    } else {
+      assert.ok(turns[0].steps[0].blasts.some((blast) => blast.kind === "prism" && blast.color === 3));
+      assert.ok(turns[0].steps[0].ice.length >= 9);
+    }
+  }
 });
 
 test("coins pay 1 to 10 for a cleared level", () => {
@@ -102,13 +147,6 @@ test("saves read safely and merge to the better of each", () => {
   assert.deepEqual(parse(JSON.parse(JSON.stringify(m))), m);
 });
 
-test("every Chinese pattern keeps its placeholders", () => {
-  for (const [en, cn] of Object.entries(zh as Record<string, string>)) {
-    const holes = (s: string) => (s.match(/\{\d\}/g) ?? []).sort().join();
-    assert.equal(holes(cn), holes(en), en);
-  }
-});
-
 test("the first 100 levels are eased, and the easing fades out by level 101", () => {
   // Level 1 is "20 moves, score 3000" in the table.
   assert.equal(levelSpec(1).moves, 26);
@@ -118,8 +156,9 @@ test("the first 100 levels are eased, and the easing fades out by level 101", ()
   for (let n = 71; n <= 101; n++) {
     assert.ok(levelSpec(n).moves <= 39, `level ${n} moves`);
   }
-  // Past the eased levels the moves are the generator's own: 16 to 30.
-  for (let n = 101; n <= 130; n++) assert.ok(levelSpec(n).moves <= 30, `level ${n} moves`);
+  // Past the eased levels the moves are the generator's own: 16 to 30, plus
+  // 2 for each colour beyond the design's (seven colours: up to 4 more).
+  for (let n = 101; n <= 130; n++) assert.ok(levelSpec(n).moves <= 34, `level ${n} moves`);
 });
 
 test("every 100 coins a play is worth charge a Supernova", () => {
@@ -186,11 +225,10 @@ test("rounds: ten levels each, a title, a reward and a story line", () => {
   assert.ok(rewardOf(10).coins > rewardOf(9).coins);
   assert.ok(rewardOf(40).novas > rewardOf(4).novas);
   assert.ok(Math.abs(DRAW.reduce((sum, d) => sum + d.chance, 0) - 1) < 1e-9);
-  assert.equal(draw(0).novas, 1);
-  assert.equal(draw(0.999).novas, 5);
+  assert.equal(JACKPOT, 5);
   for (let round = 1; round <= ROUNDS; round++) assert.ok(storyOf(round));
   for (const text of [...TITLES, ...STORY, storyOf(100), storyOf(101), storyOf(102)])
-    assert.ok((zh as Record<string, string>)[text], `no Chinese for "${text}"`);
+    for (const [locale, pack] of Object.entries(PACKS)) assert.ok(pack[text], `no ${locale} for "${text}"`);
 });
 
 test("a move can be taken back three times a level", () => {
@@ -217,15 +255,21 @@ test("generated ice levels each have their own mirrored shape", () => {
   const shapes = new Set<string>();
   let levels = 0;
   for (let n = 31; n <= 400; n++) {
-    const ice = levelSpec(n).ice;
+    const spec = levelSpec(n);
+    if (spec.opening) continue;
+    const { ice } = spec;
     if (!ice.some((c) => c > 0)) continue;
     levels++;
     shapes.add(ice.join(""));
+    // Mirrored both ways, except where the board's shape cut it away
+    // (shapes are mirrored left to right only).
+    const holes = spec.holes ?? [];
     for (let i = 0; i < ice.length; i++) {
       const x = i % 8;
       const y = Math.floor(i / 8);
       assert.equal(ice[i], ice[y * 8 + (7 - x)]);
-      assert.equal(ice[i], ice[(7 - y) * 8 + x]);
+      const flip = (7 - y) * 8 + x;
+      if (!holes[i] && !holes[flip]) assert.equal(ice[i], ice[flip]);
     }
     assert.deepEqual(levelSpec(n).ice, ice, "the same level is always the same shape");
   }
@@ -270,31 +314,92 @@ test("chain reactions earn coins, more for longer chains, up to a cap a play", (
   }
 });
 
-test("the draw's wheel shows the true odds and stops on the prize that was drawn", () => {
-  for (const { novas, chance } of DRAW) {
-    assert.equal(WHEEL.filter((n) => n === novas).length / WHEEL.length, chance);
-    for (const roll of [0, 0.3, 0.6, 0.999]) assert.equal(WHEEL[sliceFor(novas, roll)], novas);
+test("some levels are shaped boards, and a shape never loses a goal", () => {
+  let shaped = 0;
+  for (let n = 1; n <= 2000; n++) {
+    const spec = levelSpec(n);
+    if (!spec.holes) continue;
+    shaped++;
+    assert.equal(spec.holes.length, SIZE * SIZE);
+    const open = spec.holes.filter((h) => !h).length;
+    assert.ok(open >= 40 && open < SIZE * SIZE, `level ${n} keeps most of the board`);
+    spec.holes.forEach((h, i) => h && assert.equal(spec.ice[i], 0, `level ${n}: no ice in a hole`));
+    if (spec.goals.some((g) => g.kind === "ice")) assert.ok(spec.ice.some((c) => c > 0), `level ${n} ice`);
+    for (const g of spec.goals) if (g.kind !== "ice") assert.ok(g.target > 0, `level ${n} target`);
+    assert.deepEqual(levelSpec(n).holes, spec.holes, "the same level is always the same shape");
+    if (n % 50 === 0) {
+      const s = new Session(spec);
+      assert.ok(findHint(s.board), `level ${n} has a move`);
+    }
+  }
+  assert.ok([12, 14, 16, 21, 24, 26].every((n) => levelSpec(n).holes), "hand-made shaped levels");
+  assert.ok(!levelSpec(1).holes && !dailySpec("2026-11-22").holes, "the first levels and the daily board are square");
+  assert.ok(shaped > 800 && shaped < 1700, `${shaped} shaped levels in 2000`);
+});
+
+test("the draw's wheel shows the true odds", () => {
+  for (const { novas, chance } of DRAW) assert.equal(WHEEL.filter((n) => n === novas).length / WHEEL.length, chance);
+});
+
+test("the pin reads the slice the wheel has turned under it", () => {
+  const step = 360 / WHEEL.length;
+  assert.equal(sliceAt(0), 0);
+  // Turning clockwise brings the slices before it under the pin.
+  assert.equal(sliceAt(-step * 3.5), 3);
+  assert.equal(sliceAt(step * 0.5), WHEEL.length - 1);
+  assert.equal(sliceAt(360 * 7 - step * 9.5), 9);
+  assert.equal(sliceAt(-360 * 4 - step * 9.5), 9);
+});
+
+test("however hard the player spins, every prize is as likely as its share of the wheel", () => {
+  // The push is the player's: it decides how far the wheel goes, at least a
+  // turn and at most PUSH_MAX, plus up to a turn of coasting.
+  assert.equal(restAngle(0, 10, 0), PUSH_MIN);
+  assert.equal(restAngle(0, -10, 0), -PUSH_MIN);
+  assert.equal(restAngle(30, 1e6, 0.5), 30 + PUSH_MAX + 180);
+  for (const start of [0, 37.3, -250]) {
+    for (const push of [0, 500, -900, 1333.3, PUSH_MAX]) {
+      const counts = new Map<number, number>();
+      const tries = 20000;
+      for (let i = 0; i < tries; i++) {
+        const prize = WHEEL[sliceAt(restAngle(start, push, (i + 0.5) / tries))];
+        counts.set(prize, (counts.get(prize) ?? 0) + 1);
+      }
+      for (const { novas, chance } of DRAW) assert.ok(Math.abs(counts.get(novas)! / tries - chance) < 0.001, `${novas} at push ${push}`);
+    }
   }
 });
 
-test("a challenge names its round, and the round comes back from it", () => {
-  const owned = { ...NONE, moves: 5, blaster: 3, bomb: 3, prism: 2, fever: 3, undo: 3 };
-  // dingn takes up to 64 letters, digits, dots, dashes or underscores.
-  assert.match(rulesOf(owned)!, /^[A-Za-z0-9._-]{1,64}$/);
-  assert.equal(rulesOf(NONE), undefined);
-  assert.deepEqual(ownedFromRules(rulesOf(owned)), owned);
-  assert.deepEqual(ownedFromRules(undefined), NONE);
-  for (const bad of ["moves6", "moves0", "wings1", "moves1.moves2", "moves", "MOVES1", "moves1."]) assert.equal(ownedFromRules(bad), null, bad);
+test("a lucky draw is owed for each round finished, and old saves have had theirs", () => {
+  const saved = empty();
+  for (let i = 0; i < 30; i++) saved.stars[i] = 2;
+  assert.equal(roundsFinished(saved), 3);
+  assert.equal(drawsOwed(saved), 3);
+  assert.equal(drawsOwed({ ...saved, drawsDone: 2 }), 1);
+  // A save from before the wheel was the player's drew at once.
+  assert.equal(parse({ stars: "2".repeat(30) }).drawsDone, 3);
+  assert.equal(drawsOwed(parse({ stars: "2".repeat(30) })), 0);
+  assert.equal(parse({ stars: "2".repeat(30), drawsDone: 1 }).drawsDone, 1);
+  // Merging keeps the most draws spun, so a draw is never paid twice.
+  assert.equal(merge({ ...saved, drawsDone: 3 }, { ...saved, drawsDone: 1 }).drawsDone, 3);
+});
 
-  const level = { mode: "level" as const, level: 123, owned: { ...NONE, bomb: 2 } };
-  assert.deepEqual(toChallenge(level, 4200), { mode: "level", seed: "123", score: 4200, unit: "points", rules: "bomb2" });
-  assert.deepEqual(roundFrom(toChallenge(level, 4200)), level);
-  assert.deepEqual(toChallenge({ mode: "level", level: 7, owned: NONE }, 1), { mode: "level", seed: "7", score: 1, unit: "points" });
-  const daily = { mode: "daily" as const, day: "2026-11-22" };
-  assert.deepEqual(toChallenge(daily, 9000), { mode: "daily", seed: "2026-11-22", score: 9000, unit: "points" });
-  assert.deepEqual(roundFrom(toChallenge(daily, 9000)), daily);
-
-  assert.equal(roundFrom(null), null);
-  for (const [mode, seed] of [["daily", "today"], ["daily", "2026-13-45"], ["daily", undefined], ["level", "0"], ["level", String(LAST_LEVEL + 1)], ["level", "1.5"], ["endless", "1"]] as const)
-    assert.equal(roundFrom({ mode, seed, score: 1, unit: "points" }), null, `${mode} ${seed}`);
+test("levels have 5 colours to 50, 6 with the morganite to 100, and all 7 after", () => {
+  for (let n = 1; n <= 300; n++) {
+    const spec = levelSpec(n);
+    const stones = spec.palette ?? Array.from({ length: spec.colors }, (_, i) => i);
+    const want = n <= 50 ? [0, 1, 2, 3, 4] : n <= 100 ? [0, 1, 2, 3, 4, 6] : [0, 1, 2, 3, 4, 5, 6];
+    assert.deepEqual([...stones], want, `level ${n}`);
+    // The morganite falls on the board from level 51.
+    if (n >= 51 && n <= 120)
+      assert.ok(
+        new Session(spec).board.cells.some((g) => g?.color === 6),
+        `level ${n} board`,
+      );
+  }
+  // Up to level 50 the boards are drawn as before stones could be listed.
+  assert.equal(levelSpec(20).palette, undefined);
+  // A level designed for six colours gets two fewer moves with five, and one
+  // designed for five two more for each colour it gains.
+  assert.equal(levelSpec(11).colors, 5);
 });

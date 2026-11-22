@@ -8,7 +8,7 @@
 //   const dingn = await connect();
 //   dingn.locale;                         // the player's language, one your game.json lists ("en" if none fits)
 //   dingn.onLanguage((locale) => …);      // the player switched language
-//   dingn.player;                         // { signedIn, name, avatar, tester }
+//   dingn.player;                         // { signedIn, name, avatar }
 //   dingn.onPlayer((player) => …);        // sign-in or sign-out
 //   await dingn.storage.set("best", 12);  // this device only
 //   await dingn.progress.save({ level }); // follows a signed-in player
@@ -22,7 +22,6 @@
 //   dingn.ready();                        // hide the website's loading screen
 //   dingn.challenge;                      // the friend's challenge this page opened, or null
 //   await dingn.challengeLink({ mode: "daily", seed: "2026-11-16", score: 10, unit: "points" });
-//   if (dingn.challenge) await dingn.challengeResult(12); // posts the result under the challenge
 //   dingn.roundEnded();                   // a round was played to the end
 //
 // Opened on its own (not inside dingn), connect() still works in a local
@@ -138,7 +137,6 @@ function connectToHost(host, timeout) {
       navigate: (path) => notify("navigate", { path }),
       ready: () => notify("ready"),
       challengeLink: (challenge) => request("challenge.link", challenge),
-      challengeResult: (score) => request("challenge.result", { score }),
       roundEnded: () => notify("roundEnded"),
     };
     return game;
@@ -158,7 +156,7 @@ function standalone() {
     gameId: "",
     version: "",
     locale: lang.toLowerCase().startsWith("zh") ? "zh-CN" : "en",
-    player: { signedIn: false, name: "", avatar: "", tester: false },
+    player: { signedIn: false, name: "", avatar: "" },
     embedded: false,
     challenge: null,
     onPlayer: () => () => {},
@@ -185,12 +183,6 @@ function standalone() {
       Promise.reject(
         Object.assign(new Error("Challenge links work on dingn."), {
           code: "unavailable",
-        }),
-      ),
-    challengeResult: () =>
-      Promise.reject(
-        Object.assign(new Error("This page was not opened from a challenge."), {
-          code: "no_challenge",
         }),
       ),
     roundEnded() {},

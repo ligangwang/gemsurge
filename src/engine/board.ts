@@ -15,20 +15,37 @@
 import { below, next, shuffleInPlace, type Rng } from "./random";
 
 export const SIZE = 8;
-export const MAX_COLORS = 6;
+export const MAX_COLORS = 7;
 
 export type Special = "row" | "col" | "bomb" | "prism";
 /** A gem. A prism has colour -1. */
 export type Gem = { id: number; color: number; special?: Special };
+export type OpeningGem = Pick<Gem, "color" | "special">;
 export type Pos = { x: number; y: number };
 
 export type Board = {
-  /** SIZE × SIZE cells, row by row. Every cell holds a gem between moves. */
+  /**
+   * SIZE × SIZE cells, row by row. Between moves every cell holds a gem,
+   * except the holes, which never do.
+   */
   cells: (Gem | null)[];
-  /** Ice layers under each cell (0-2). Clearing a gem there cracks one. */
+  /**
+   * Cells cut out of the board's shape (1 is a hole), SIZE × SIZE. Gems fall
+   * past holes and new ones never drop into them. Missing means no holes.
+   */
+  holes?: number[];
+  /** Ice layers at each cell (0–2). */
   ice: number[];
-  /** How many colours fall (3-6). */
+  /** Ice covers lock the gems underneath until their last layer cracks. */
+  iceCover?: boolean;
+  /** How many colours fall (3-7). */
   colors: number;
+  /**
+   * Which stones those colours are, when not simply the first `colors`
+   * (0, 1, 2, …): a level after 50 with six colours has the morganite (6)
+   * in place of stone 5.
+   */
+  palette?: readonly number[];
   rng: Rng;
   nextId: number;
 };
@@ -87,9 +104,23 @@ export const inside = (x: number, y: number) =>
 export const adjacent = (a: Pos, b: Pos) =>
   Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1;
 
+/** Whether cell i is cut out of the board. */
+export const isHole = (b: Pick<Board, "holes">, i: number) => !!b.holes?.[i];
+
+/** A covered gem stays in place until the ice is gone. */
+const isCovered = (b: Board, i: number) => !!b.iceCover && b.ice[i] > 0;
+
+const playableCells = (b: Board) => b.iceCover ? b.cells.map((g, i) => isCovered(b, i) ? null : g) : b.cells;
+
 export const SCORE = {
   gem: 10,
   made: { row: 40, col: 40, bomb: 80, prism: 150 } as Record<Special, number>,
+};
+
+/** A falling gem's stone: one of the board's colours (its palette's, if it has one). */
+const drawColor = (b: Board) => {
+  const n = below(b.rng, b.colors);
+  return b.palette ? b.palette[n] : n;
 };
 
 const newGem = (b: Board, color: number, special?: Special): Gem =>
@@ -98,37 +129,56 @@ const newGem = (b: Board, color: number, special?: Special): Gem =>
 export const cloneBoard = (b: Board): Board => ({
   cells: b.cells.map((g) => (g ? { ...g } : null)),
   ice: [...b.ice],
+  ...(b.iceCover ? { iceCover: true } : {}),
+  ...(b.holes ? { holes: [...b.holes] } : {}),
   colors: b.colors,
+  ...(b.palette ? { palette: b.palette } : {}),
   rng: { ...b.rng },
   nextId: b.nextId,
 });
 
-/** A full board with no matches and at least one swap. */
+/** A full board with no matches and at least one swap. `holes` cuts its shape. */
 export function createBoard(
   seed: number,
-  colors: number,
+  colors: number | readonly number[],
   ice: number[] = [],
+  holes: number[] = [],
+  opening?: readonly (OpeningGem | null)[],
+  iceCover = false,
 ): Board {
+  const palette = typeof colors === "number" ? undefined : colors;
+  const cut = holes.some(Boolean);
   const b: Board = {
     cells: [],
-    ice: Array.from({ length: SIZE * SIZE }, (_, i) => ice[i] ?? 0),
-    colors: Math.min(MAX_COLORS, Math.max(3, colors)),
+    ice: Array.from({ length: SIZE * SIZE }, (_, i) => (holes[i] ? 0 : (ice[i] ?? 0))),
+    ...(iceCover ? { iceCover: true } : {}),
+    ...(cut ? { holes: Array.from({ length: SIZE * SIZE }, (_, i) => (holes[i] ? 1 : 0)) } : {}),
+    colors: Math.min(MAX_COLORS, Math.max(3, palette?.length ?? (colors as number))),
+    ...(palette ? { palette } : {}),
     rng: { seed },
     nextId: 1,
   };
+  if (opening) {
+    b.cells = opening.map((gem) => gem && newGem(b, gem.color, gem.special));
+    return b;
+  }
   do {
     b.cells = [];
     for (let i = 0; i < SIZE * SIZE; i++) {
       const { x, y } = pos(i);
+      if (isHole(b, i)) {
+        b.cells.push(null);
+        continue;
+      }
       let color: number;
-      do color = below(b.rng, b.colors);
+      do color = drawColor(b);
       while (
         (x >= 2 &&
-          b.cells[i - 1]!.color === color &&
-          b.cells[i - 2]!.color === color) ||
+          colorAt(b.cells, i - 1) === color &&
+          colorAt(b.cells, i - 2) === color) ||
         (y >= 2 &&
-          b.cells[i - SIZE]!.color === color &&
-          b.cells[i - 2 * SIZE]!.color === color)
+          colorAt(b.cells, i - SIZE) === color &&
+          colorAt(b.cells, i - 2 * SIZE) === color)
       );
       b.cells.push(newGem(b, color));
     }
@@ -140,7 +190,7 @@ export function createBoard(
 export function placeSpecials(b: Board, specials: Special[]) {
   const free = shuffleInPlace(
     b.rng,
-    b.cells.map((_, i) => i).filter((i) => !b.cells[i]!.special),
+    playableCells(b).flatMap((g, i) => g && !g.special ? [i] : []),
   );
   for (const s of specials) {
     const i = free.pop();
@@ -275,7 +325,7 @@ function blastCells(blast: Blast): number[] {
 function commonestColor(b: Board, skip: Set<number>): number {
   const counts = new Array(MAX_COLORS).fill(0);
   b.cells.forEach((g, i) => {
-    if (g && g.color >= 0 && !skip.has(i)) counts[g.color]++;
+    if (g && g.color >= 0 && !skip.has(i) && !isCovered(b, i)) counts[g.color]++;
   });
   let best = 0;
   for (let c = 1; c < MAX_COLORS; c++) if (counts[c] > counts[best]) best = c;
@@ -283,7 +333,7 @@ function commonestColor(b: Board, skip: Set<number>): number {
 }
 
 const colorTargets = (b: Board, color: number): Pos[] =>
-  b.cells.flatMap((g, i) => (g && g.color === color ? [pos(i)] : []));
+  playableCells(b).flatMap((g, i) => (g && g.color === color ? [pos(i)] : []));
 
 function blastOf(b: Board, gem: Gem, at: Pos, clearing: Set<number>): Blast {
   switch (gem.special) {
@@ -324,7 +374,7 @@ const emptySeed = (): Seed => ({
 
 /** The matches on the board as a seed, making their specials. */
 function matchSeed(b: Board, preferred: number[]): Seed | null {
-  const groups = findGroups(b.cells);
+  const groups = findGroups(playableCells(b));
   if (!groups.length) return null;
   const seed = emptySeed();
   for (const group of groups) {
@@ -354,6 +404,7 @@ function runStep(b: Board, seed: Seed, chain: number): Step {
   const created = new Set(seed.created.map((c) => idx(c.x, c.y)));
   const spent = new Set(seed.spent);
   const clearing = new Set<number>();
+  const coveredHits = new Set<number>();
   const queue = [...seed.clear];
   const blasts: Blast[] = [];
   for (const blast of seed.blasts) {
@@ -363,6 +414,10 @@ function runStep(b: Board, seed: Seed, chain: number): Step {
   while (queue.length) {
     const i = queue.shift()!;
     if (clearing.has(i) || created.has(i)) continue;
+    if (isCovered(b, i)) {
+      coveredHits.add(i);
+      continue;
+    }
     const gem = b.cells[i];
     if (!gem) continue;
     clearing.add(i);
@@ -379,7 +434,18 @@ function runStep(b: Board, seed: Seed, chain: number): Step {
     ...b.cells[i]!,
   }));
   const ice: Step["ice"] = [];
-  for (const i of new Set([...clearing, ...seed.hit])) {
+  const iceHits = new Set([...clearing, ...seed.hit, ...coveredHits]);
+  if (b.iceCover) {
+    for (const i of [...clearing, ...seed.hit]) {
+      const { x, y } = pos(i);
+      for (const [dx, dy] of [[0, -1], [-1, 0], [1, 0], [0, 1]]) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (inside(nx, ny)) iceHits.add(idx(nx, ny));
+      }
+    }
+  }
+  for (const i of iceHits) {
     if (b.ice[i] > 0) {
       b.ice[i]--;
       ice.push({ ...pos(i), left: b.ice[i] });
@@ -408,22 +474,28 @@ function runStep(b: Board, seed: Seed, chain: number): Step {
   };
 }
 
-/** Gems fall into the gaps and new ones drop in from the top. */
+/**
+ * Gems fall into the gaps and new ones drop in from the top. A gem falls past
+ * holes and covers to the lowest open cell of its column.
+ */
 function fall(b: Board): number[] {
   const spawned: number[] = [];
   for (let x = 0; x < SIZE; x++) {
-    let write = SIZE - 1;
+    // The column's open cells, bottom first.
+    const open: number[] = [];
     for (let y = SIZE - 1; y >= 0; y--) {
-      const g = b.cells[idx(x, y)];
-      if (!g) continue;
-      b.cells[idx(x, y)] = null;
-      b.cells[idx(x, write--)] = g;
+      const i = idx(x, y);
+      if (!isHole(b, i) && !isCovered(b, i)) open.push(i);
     }
-    for (let y = write; y >= 0; y--) {
-      const g = newGem(b, below(b.rng, b.colors));
-      b.cells[idx(x, y)] = g;
-      spawned.push(g.id);
-    }
+    const gems = open.map((i) => b.cells[i]).filter((g): g is Gem => !!g);
+    open.forEach((i, k) => {
+      if (k < gems.length) b.cells[i] = gems[k];
+      else {
+        const g = newGem(b, drawColor(b));
+        b.cells[i] = g;
+        spawned.push(g.id);
+      }
+    });
   }
   return spawned;
 }
@@ -471,12 +543,13 @@ const isLine = (s?: Special) => s === "row" || s === "col";
 /** Whether swapping a and b does anything. */
 export function canSwap(b: Board, a: Pos, c: Pos): boolean {
   if (!inside(a.x, a.y) || !inside(c.x, c.y) || !adjacent(a, c)) return false;
-  const ga = b.cells[idx(a.x, a.y)];
-  const gc = b.cells[idx(c.x, c.y)];
+  const cells = playableCells(b);
+  const ga = cells[idx(a.x, a.y)];
+  const gc = cells[idx(c.x, c.y)];
   if (!ga || !gc) return false;
   if (ga.special === "prism" || gc.special === "prism") return true;
   if (ga.special && gc.special) return true;
-  return matchesAfterSwap(b.cells, idx(a.x, a.y), idx(c.x, c.y)) > 0;
+  return matchesAfterSwap(cells, idx(a.x, a.y), idx(c.x, c.y)) > 0;
 }
 
 /** How many gems the swap of i and j lines up (0 for none). */
@@ -510,6 +583,7 @@ function matchesAfterSwap(cells: (Gem | null)[], i: number, j: number) {
 
 /** The best swap on the board (most gems, specials first), or null for none. */
 export function findHint(b: Board): [Pos, Pos] | null {
+  const cells = playableCells(b);
   let best: [Pos, Pos] | null = null;
   let bestValue = 0;
   for (let i = 0; i < SIZE * SIZE; i++) {
@@ -520,10 +594,10 @@ export function findHint(b: Board): [Pos, Pos] | null {
     ]) {
       if (!inside(c.x, c.y)) continue;
       const j = idx(c.x, c.y);
-      const ga = b.cells[i];
-      const gc = b.cells[j];
+      const ga = cells[i];
+      const gc = cells[j];
       if (!ga || !gc) continue;
-      let value = matchesAfterSwap(b.cells, i, j);
+      let value = matchesAfterSwap(cells, i, j);
       if (ga.special === "prism" || gc.special === "prism") value = 20;
       else if (ga.special && gc.special) value = 15;
       else if (value && (ga.special || gc.special)) value += 4;
@@ -624,7 +698,7 @@ export function surge(b: Board, count: number): MoveResult {
   const seed = emptySeed();
   const plain = shuffleInPlace(
     b.rng,
-    b.cells.map((_, i) => i).filter((i) => !b.cells[i]!.special),
+    playableCells(b).flatMap((g, i) => g && !g.special ? [i] : []),
   );
   for (const i of plain.slice(0, count)) {
     const g = b.cells[i]!;
@@ -632,7 +706,7 @@ export function surge(b: Board, count: number): MoveResult {
     b.cells[i] = gem;
     seed.converted.push({ ...pos(i), gem });
   }
-  b.cells.forEach((g, i) => g?.special && seed.clear.push(i));
+  playableCells(b).forEach((g, i) => g?.special && seed.clear.push(i));
   return settle(b, seed.clear.length ? seed : null, null);
 }
 
@@ -645,15 +719,20 @@ export function supernova(b: Board): MoveResult {
 
 /** Rearranges the gems so there is no match and at least one swap. */
 export function shuffle(b: Board) {
-  const gems = b.cells.filter((g): g is Gem => !!g);
+  const gems = playableCells(b).filter((g): g is Gem => !!g);
+  const open = b.cells.map((_, i) => i).filter((i) => !isHole(b, i) && !isCovered(b, i));
+  const lay = () => {
+    open.forEach((i, k) => (b.cells[i] = gems[k] ?? null));
+  };
   for (let tries = 0; tries < 200; tries++) {
     shuffleInPlace(b.rng, gems);
-    b.cells = [...gems];
-    if (!findGroups(b.cells).length && findHint(b)) return;
+    lay();
+    if (!findGroups(playableCells(b)).length && findHint(b)) return;
   }
   // Very unlikely: recolour from scratch, keeping ids.
-  const fresh = createBoard(b.rng.seed, b.colors, b.ice);
-  b.cells = fresh.cells.map((g, i) => ({ ...g!, id: gems[i]?.id ?? b.nextId++ }));
+  const holes = b.iceCover ? b.cells.map((_, i) => Number(isHole(b, i) || isCovered(b, i))) : b.holes;
+  const fresh = createBoard(b.rng.seed, b.palette ?? b.colors, b.ice, holes);
+  open.forEach((i, k) => (b.cells[i] = { ...fresh.cells[i]!, id: gems[k]?.id ?? b.nextId++ }));
   b.rng = fresh.rng;
 }
 

@@ -2,6 +2,7 @@
 import { SIZE } from "./engine/board";
 import { below, hashSeed, next, shuffleInPlace } from "./engine/random";
 import type { Goal, LevelSpec } from "./engine/session";
+import { lanternLakePuzzle } from "./lantern-lake";
 
 export type World = { id: string; name: string };
 /**
@@ -10,7 +11,7 @@ export type World = { id: string; name: string };
  * time (see `worldCycle`).
  */
 export const WORLDS: World[] = [
-  { id: "neon", name: "Neon City" },
+  { id: "neon", name: "Crystal Forest" },
   { id: "sea", name: "Deep Sea" },
   { id: "space", name: "Outer Space" },
   { id: "lake", name: "Lantern Lake" },
@@ -26,7 +27,7 @@ export const worldNumber = (level: number) => Math.floor((Math.max(1, level) - 1
 /** How many times the worlds have come round by this level: 0 for the first 80 levels. */
 export const worldCycle = (level: number) => Math.floor(worldNumber(level) / WORLDS.length);
 
-export const COLOR_NAMES = ["Ruby", "Topaz", "Emerald", "Sapphire", "Amethyst", "Diamond"];
+export const COLOR_NAMES = ["Ruby", "Diamond", "Emerald", "Sapphire", "Amethyst", "Topaz", "Morganite"];
 
 const ICE: Record<string, string[]> = {
   center: ["........", "........", "..1111..", "..1111..", "..1111..", "..1111..", "........", "........"],
@@ -39,6 +40,25 @@ const ICE: Record<string, string[]> = {
   checks: ["1.1.1.1.", ".1.1.1.1", "1.1.1.1.", ".1.1.1.1", "1.1.1.1.", ".1.1.1.1", "1.1.1.1.", ".1.1.1.1"],
 };
 
+/**
+ * Board shapes: "#" is a cell, "." a hole. Each is mirrored left to right.
+ * Gems fall past the holes, so a shape changes how a board plays as well as
+ * how it looks.
+ */
+export const SHAPES: Record<string, string[]> = {
+  octagon: ["..####..", ".######.", "########", "########", "########", "########", ".######.", "..####.."],
+  heart: [".##..##.", "########", "########", "########", ".######.", ".######.", "..####..", "...##..."],
+  terrace: ["..####..", "..####..", "########", "########", "########", "########", "########", "########"],
+  hourglass: ["########", "########", ".######.", "..####..", "..####..", ".######.", "########", "########"],
+  pillars: ["###..###", "###..###", "########", "########", "########", "########", "###..###", "###..###"],
+  cross: ["..####..", "..####..", "########", "########", "########", "########", "..####..", "..####.."],
+};
+
+const shapeHoles = (name?: string) =>
+  name
+    ? SHAPES[name].join("").split("").map((c) => (c === "." ? 1 : 0))
+    : new Array(SIZE * SIZE).fill(0);
+
 const iceCells = (name?: string) =>
   name
     ? ICE[name].join("").split("").map((c) => (c === "." ? 0 : Number(c)))
@@ -47,10 +67,10 @@ const iceCells = (name?: string) =>
 /**
  * Each level: moves, colours, and its goals in a short form: "s3000" is a
  * score, "c0:25" collects 25 gems of colour 0, "i:center" breaks the ice laid
- * out as `center`.
+ * out as `center`, and "b:heart" cuts the board into one of the SHAPES.
  */
 const TABLE: [number, number, string][] = [
-  // Neon City
+  // Crystal Forest
   [20, 5, "s3000"],
   [20, 5, "c0:30"],
   [18, 5, "i:center"],
@@ -63,29 +83,29 @@ const TABLE: [number, number, string][] = [
   [24, 5, "i:cross c0:20"],
   // Deep Sea
   [24, 6, "s2200"],
-  [24, 6, "c3:22"],
+  [24, 6, "c3:22 b:octagon"],
   [25, 5, "i:floor"],
-  [25, 6, "c0:16 c2:16"],
+  [25, 6, "c0:16 c2:16 b:heart"],
   [28, 5, "i:diamond"],
-  [26, 6, "s2400"],
+  [26, 6, "s2400 b:terrace"],
   [26, 6, "c1:16 c4:16 c5:16"],
   [28, 5, "i:frame"],
   [24, 6, "i:center c3:18"],
   [28, 5, "i:checks"],
   // Outer Space
-  [22, 6, "s2200"],
+  [22, 6, "s2200 b:hourglass"],
   [22, 6, "c5:22"],
   [28, 5, "i:diamond c1:20"],
-  [22, 6, "c0:18 c3:18"],
+  [22, 6, "c0:18 c3:18 b:pillars"],
   [28, 5, "i:frame c2:24"],
-  [24, 6, "s2500"],
+  [24, 6, "s2500 b:cross"],
   [28, 5, "i:checks c4:24"],
   [24, 6, "c1:16 c2:16 c3:16"],
   [28, 5, "i:cross s6000"],
   [30, 5, "i:frame c0:24 c4:24"],
 ];
 
-/** The first levels are laid out by hand in TABLE; the rest are generated from them. */
+/** The original level templates. Later levels are generated from this table. */
 export const HAND_MADE = TABLE.length;
 export const LAST_LEVEL = 10000;
 /** Generated levels get harder up to this level, then hold steady. */
@@ -148,10 +168,15 @@ function variedIce(level: number, pattern: number[]): number[] {
   return ice;
 }
 
-function parseGoals(text: string): { goals: Goal[]; ice?: string } {
+function parseGoals(text: string): { goals: Goal[]; ice?: string; shape?: string } {
   const goals: Goal[] = [];
   let ice: string | undefined;
+  let shape: string | undefined;
   for (const part of text.split(" ")) {
+    if (part[0] === "b") {
+      shape = part.slice(2);
+      continue;
+    }
     if (part[0] === "s") goals.push({ kind: "score", target: Number(part.slice(1)) });
     else if (part[0] === "c") {
       const [color, target] = part.slice(1).split(":").map(Number);
@@ -161,7 +186,23 @@ function parseGoals(text: string): { goals: Goal[]; ice?: string } {
       goals.unshift({ kind: "ice" });
     }
   }
-  return { goals, ice };
+  return { goals, ice, shape };
+}
+
+/**
+ * A generated level's shape: most get one of the SHAPES, picked by the level
+ * number, so the same level always has the same shape. A board keeps at least
+ * half its ice.
+ */
+function generatedShape(level: number, ice: number[], from?: string): string | undefined {
+  const rng = { seed: hashSeed(`gemsurge-shape-${level}`) };
+  const names = Object.keys(SHAPES);
+  const pick = next(rng) < 0.6 ? names[below(rng, names.length)] : from;
+  if (!pick) return undefined;
+  const holes = shapeHoles(pick);
+  const total = ice.filter((n) => n > 0).length;
+  const kept = ice.filter((n, i) => n > 0 && !holes[i]).length;
+  return kept * 2 >= total ? pick : undefined;
 }
 
 /** The first levels are gentler than their tables say, to ease a new player in. */
@@ -173,37 +214,109 @@ export const EASY_LEVELS = 100;
  */
 const ease = (n: number) => Math.min(1, Math.max(0, (EASY_LEVELS + 1 - n) / 30));
 
-/** Rough points a move scores with 5 or 6 colours, used to set the star scores. */
-const PER_MOVE: Record<number, number> = { 5: 200, 6: 110 };
+/** Rough points a move scores with 5, 6 or 7 colours, used to set the star scores. */
+const PER_MOVE: Record<number, number> = { 5: 200, 6: 110, 7: 70 };
+
+/**
+ * How many colours a level has, by its number: five up to level 50, six from
+ * 51 (the pink morganite, stone 6, joins the five), and all seven from 101
+ * (stone 5 joins too). Each new colour makes matches harder to find, so a
+ * level gets two more moves for each colour beyond what its design (TABLE)
+ * had, and two fewer for each one less.
+ */
+export const SIX_COLORS_LEVEL = 51;
+export const SEVEN_COLORS_LEVEL = 101;
+/** The morganite joins with the sixth colour. */
+export const SEVENTH_COLOR_LEVEL = SIX_COLORS_LEVEL;
+const FIVE = [0, 1, 2, 3, 4] as const;
+const FIVE_AND_MORGANITE = [0, 1, 2, 3, 4, 6] as const;
+const SEVEN = [0, 1, 2, 3, 4, 5, 6] as const;
+/** The stones a level's gems are. */
+export const stonesFor = (level: number): readonly number[] =>
+  level >= SEVEN_COLORS_LEVEL ? SEVEN : level >= SIX_COLORS_LEVEL ? FIVE_AND_MORGANITE : FIVE;
+
+/**
+ * Goals asking for a stone the level doesn't have (its design had more
+ * colours) ask for one it has instead, one no other goal asks for.
+ */
+function fitGoals(text: string, stones: readonly number[]) {
+  const parts = text.split(" ");
+  const asked = new Set(parts.filter((p) => p[0] === "c").map((p) => Number(p.slice(1).split(":")[0])));
+  return parts
+    .map((part) => {
+      if (part[0] !== "c") return part;
+      const [color, target] = part.slice(1).split(":");
+      if (stones.includes(Number(color))) return part;
+      const free = stones.find((s) => !asked.has(s)) ?? stones[0];
+      asked.add(free);
+      return `c${free}:${target}`;
+    })
+    .join(" ");
+}
 
 export function levelSpec(level: number): LevelSpec {
   const n = Math.min(Math.max(1, level), LAST_LEVEL);
-  const [tableMoves, colors, text] = n <= HAND_MADE ? TABLE[n - 1] : generated(n);
-  const { goals, ice } = parseGoals(text);
+  const world = worldNumber(n) % WORLDS.length;
+  const seed = hashSeed(`gemsurge-level-${n}`);
+  const puzzle = lanternLakePuzzle(n);
+  if (puzzle) return { ...puzzle, level: n, world, colors: stonesFor(n).length, seed };
+
+  const [tableMoves, tableColors, tableText] = n <= HAND_MADE ? TABLE[n - 1] : generated(n);
+  const stones = stonesFor(n);
+  const colors = stones.length;
+  // From the morganite on, one colour goal in three asks for it.
+  const text = fitGoals(n >= SIX_COLORS_LEVEL ? withSeventh(tableText, n) : tableText, stones);
+  const { goals, ice, shape: tableShape } = parseGoals(text);
+  const iceLayout = ice && n > HAND_MADE ? variedIce(n, iceCells(ice)) : iceCells(ice);
+  const shape = n > HAND_MADE ? generatedShape(n, iceLayout, tableShape) : tableShape;
+  const holes = shapeHoles(shape);
+  // A smaller board clears fewer gems a move, so its targets shrink with it.
+  const area = holes.filter((h) => !h).length / (SIZE * SIZE);
   const easy = ease(n);
-  const moves = Math.round(tableMoves * (1 + 0.3 * easy));
+  const moves = Math.round((tableMoves + 2 * (colors - tableColors)) * (1 + 0.3 * easy));
   for (const goal of goals) {
-    if (goal.kind === "score") goal.target = Math.round((goal.target * (1 - 0.2 * easy)) / 100) * 100;
-    else if (goal.kind === "color") goal.target = Math.round(goal.target * (1 - 0.2 * easy));
+    if (goal.kind === "score") goal.target = Math.round((goal.target * area * (1 - 0.2 * easy)) / 100) * 100;
+    else if (goal.kind === "color") goal.target = Math.round(goal.target * area * (1 - 0.2 * easy));
   }
-  const per = PER_MOVE[colors] ?? 110;
+  const per = (PER_MOVE[colors] ?? 110) * area;
   const scoreGoal = goals.find((g) => g.kind === "score");
   const base = scoreGoal?.kind === "score" ? scoreGoal.target : 0;
   const two = round(Math.max(base * 1.4, per * moves * 0.9));
   const three = round(Math.max(base * 2, per * moves * 1.5));
   return {
     level: n,
-    world: worldNumber(n) % WORLDS.length,
+    world,
     moves,
     colors,
+    // Five and seven colours are the first five or all seven stones; six
+    // are the five and the morganite.
+    ...(colors === 6 ? { palette: stones } : {}),
     goals,
-    ice: ice && n > HAND_MADE ? variedIce(n, iceCells(ice)) : iceCells(ice),
+    ice: iceLayout.map((layers, i) => (holes[i] ? 0 : layers)),
+    ...(shape ? { holes } : {}),
     stars: [base, two, three],
-    seed: hashSeed(`gemsurge-level-${n}`),
+    seed,
   };
 }
 
 const round = (n: number) => Math.round(n / 500) * 500;
+
+/**
+ * A level's goals once the morganite has joined: one colour goal in three,
+ * chosen by the level number, asks for the morganite instead.
+ */
+function withSeventh(text: string, n: number) {
+  if (hashSeed(`gemsurge-seventh-${n}`) % 3 !== 0) return text;
+  let swapped = false;
+  return text
+    .split(" ")
+    .map((part) => {
+      if (swapped || part[0] !== "c") return part;
+      swapped = true;
+      return `c6:${part.split(":")[1]}`;
+    })
+    .join(" ");
+}
 
 /** Today's UTC day, as 2026-11-15. */
 export const utcDay = (now = new Date()) => now.toISOString().slice(0, 10);

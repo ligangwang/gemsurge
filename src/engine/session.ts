@@ -10,6 +10,7 @@ import {
   swap,
   type Board,
   type MoveResult,
+  type OpeningGem,
   type Pos,
   type Special,
 } from "./board";
@@ -26,9 +27,17 @@ export type LevelSpec = {
   world: number;
   moves: number;
   colors: number;
+  /** Which stones the colours are, when not the first `colors` (see Board). */
+  palette?: readonly number[];
   goals: Goal[];
   /** Ice layers per cell, SIZE × SIZE, row by row. */
   ice: number[];
+  /** Ice forms opaque covers that crack from adjacent matches and blasts. */
+  iceCover?: boolean;
+  /** The board's shape: 1 for a hole, SIZE × SIZE. Missing is a full square. */
+  holes?: number[];
+  /** A hand-placed opening, row by row, with nulls for holes. */
+  opening?: readonly (OpeningGem | null)[];
   /** Scores for 1, 2 and 3 stars. Meeting the goals always gives 1. */
   stars: [number, number, number];
   seed: number;
@@ -98,7 +107,7 @@ export class Session {
     readonly spec: LevelSpec,
     readonly boosts: Boosts = NO_BOOSTS,
   ) {
-    this.board = createBoard(spec.seed, spec.colors, spec.ice);
+    this.board = createBoard(spec.seed, spec.palette ?? spec.colors, spec.ice, spec.holes, spec.opening, spec.iceCover);
     placeSpecials(this.board, boosts.specials);
     this.movesLeft = spec.moves + boosts.moves;
     this.undosLeft = undosFor(spec.level, boosts.undos ?? 0);

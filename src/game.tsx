@@ -3,11 +3,11 @@
 // behind them all.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findHint, type Pos } from "./engine/board";
-import { FEVER_MOVES, FREE_UNDO_LEVELS, Session, type Goal, type Turn } from "./engine/session";
-import { AnimationCancelled, CHEERS, GEM_OUTLINES, GemScene, STONE_CSS } from "./gem-scene";
+import { FEVER_MOVES, FREE_UNDO_LEVELS, SURGE_MAX, Session, type Goal, type Turn } from "./engine/session";
+import { version } from "../game.json";
+import { AnimationCancelled, CHEERS, GEM_OUTLINES, GemScene, STONE_CSS, type Collected } from "./gem-scene";
 import { useDingn, useLocale } from "./dingn";
-import type { ChallengeOutcome } from "../sdk/dingn-sdk.js";
-import { roundFrom, toChallenge, type ChallengeRound } from "./challenge";
+import { frostMotifForLevel } from "./lantern-lake";
 import {
   COLOR_NAMES,
   DAILY_COINS,
@@ -22,7 +22,7 @@ import {
   worldCycle,
 } from "./levels";
 import { badges, endBadges, playBadges } from "./badges";
-import { highest, loadSaved, merge, novaCharge, novas, store, type Saved } from "./save";
+import { drawsOwed, highest, loadSaved, merge, novaCharge, novas, store, type Saved } from "./save";
 import {
   NONE,
   PRICES,
@@ -35,7 +35,8 @@ import {
   type UpgradeKind,
 } from "./upgrades";
 import { say, setMuted, sfx } from "./sound";
-import { DRAW, ROUND, WHEEL, draw, isMilestone, lastLevelOf, rewardOf, roundOf, sliceFor, storyOf, titleOf, worldOf } from "./rounds";
+import { beyond, challengeFor, DAILY_RULES, readChallenge, sameRound, shareLink, type Round, type Rules } from "./challenge";
+import { JACKPOT, ROUND, WHEEL, isMilestone, lastLevelOf, restAngle, rewardOf, roundOf, sliceAt, storyOf, titleOf, worldOf } from "./rounds";
 
 type Screen = "menu" | "play" | "end" | "shop";
 type EndInfo = {
@@ -52,30 +53,15 @@ type EndInfo = {
   novas: number;
   /** Set when this win finished a round for the first time. */
   round: RoundEnd | null;
-  /** Set when this play answered the challenge the page was opened from. */
-  challenge: ChallengeEnd | null;
-};
-type ChallengeEnd = {
-  /** The score to beat, and whether it was the player's own. */
-  target: number;
-  mine: boolean;
-  beat: boolean;
-  /** What dingn made of the result, or null when it couldn't be told. */
-  outcome: ChallengeOutcome | null;
-};
-/** What a play is of, and how it counts. */
-type PlayInfo = {
-  round: ChallengeRound;
-  /** A play of the challenge the page was opened from: dingn is told its score. */
-  challenged: boolean;
-  /** A play that saves nothing and pays nothing: a challenge on a board that isn't the player's own next one. */
-  practice: boolean;
+  /** The round just played and its score, for a challenge link. */
+  played: Round;
+  /** A friend's challenge on this round, if one is being answered. */
+  rival: Round | null;
 };
 type RoundEnd = {
   round: number;
-  /** Supernovas from the round's reward and from the lucky draw. */
+  /** Supernovas from the round's reward; the lucky draw adds more once spun. */
   novas: number;
-  luck: { index: number; novas: number };
   /** dingn coins paid for the round, or null when signed out. */
   coins: number | null;
 };
@@ -84,25 +70,65 @@ const HINT_AFTER = 7000;
 
 export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: boolean } }) {
   const sdk = useDingn();
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
+  /** The player's language right now, for the scene's callbacks. */
+  const localeNow = useRef(locale);
+  localeNow.current = locale;
   const [saved, setSaved] = useState(initial);
   const [screen, setScreen] = useState<Screen>("menu");
+  // A lucky draw left unspun (the game was closed first) waits on the menu;
+  // this keeps it open to show what it won.
+  const [owedOpen, setOwedOpen] = useState(false);
+  // Counts the owed draws shown, so the next one starts with a fresh wheel.
+  const [owedShown, setOwedShown] = useState(0);
   const [owned, setOwned] = useState<Owned>(NONE);
   const [muted, setMute] = useState(prefs.muted);
   const [webgl, setWebgl] = useState(true);
   const [, setTick] = useState(0);
   const [shown, setShown] = useState(0);
+  /**
+   * During a move, how much of each goal the HUD shows: what has landed so
+   * far, so a goal fills as its pieces arrive. Null shows the real progress.
+   */
+  const [goalsShown, setGoalsShown] = useState<number[] | null>(null);
+  const goalsShownNow = useRef<number[] | null>(null);
+  const showGoals = (value: number[] | null) => {
+    goalsShownNow.current = value;
+    setGoalsShown(value);
+  };
+  const goalsDone = useRef<number[]>([]);
+  /**
+   * Whether the move has finished playing. Its last pieces can still be in
+   * the air, so the HUD keeps counting them in until they have all landed.
+   */
+  const turnOver = useRef(true);
+  const endTurnGoals = () => {
+    turnOver.current = true;
+    if (flying === 0) showGoals(null);
+  };
+  /** A piece has landed on its goal: count it, with a sound. */
+  const landed = (key: string) => {
+    if (key === "ice") sfx.collectIce();
+    else sfx.collect();
+    const goals = session.current?.progress() ?? [];
+    const i = goals.findIndex((g) => goalKey(g.goal) === key);
+    const now = goalsShownNow.current;
+    if (!now || i < 0) return;
+    const next = [...now];
+    next[i] = Math.min(next[i] + 1, goalsDone.current[i] ?? next[i]);
+    if (now[i] < goals[i].target && next[i] >= goals[i].target) sfx.goalDone();
+    showGoals(next);
+    if (turnOver.current && flying === 0) showGoals(null);
+  };
   const [end, setEnd] = useState<EndInfo | null>(null);
   const [buying, setBuying] = useState<string | null>(null);
+  // Kept in English and translated when shown, so it follows a language switch.
   const [shopNote, setShopNote] = useState("");
   const host = useRef<HTMLDivElement>(null);
   const scene = useRef<GemScene | null>(null);
   const session = useRef<Session | null>(null);
   const busy = useRef(false);
   const [rewarded] = useState(() => new WeakSet<Session>());
-  const [plays] = useState(() => new WeakMap<Session, PlayInfo>());
-  // The round of the challenge link that opened the game, if one did.
-  const dared = useMemo(() => roundFrom(sdk.challenge), [sdk.challenge]);
   const hintTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const savedRef = useRef(saved);
   savedRef.current = saved;
@@ -111,6 +137,33 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   const top = highest(saved);
   const today = utcDay();
   const dailyDone = saved.daily?.day === today;
+  /** A friend's challenge the page opened with, until a different round is played. */
+  const challenge = useRef<Round | null>(readChallenge(sdk.challenge));
+  /** Each session's daily-board day, kept with the session so a late reward reads its own. */
+  const [sessionDay] = useState(() => new WeakMap<Session, string>());
+  /** The upgrade tiers each session was started with. */
+  const [sessionOwned] = useState(() => new WeakMap<Session, Owned>());
+  /**
+   * A friend's challenge's rules, for the sessions played under them: the
+   * friend's upgrades instead of the player's own, and the Supernovas the
+   * friend set off (free, instead of the player's own) and no more.
+   */
+  const [sessionRules] = useState(() => new WeakMap<Session, Rules>());
+  /**
+   * Whether a session is played for the score alone, paying and saving
+   * nothing: a friend's challenge on an older daily board, on a level the
+   * player has not reached, or with rules that give more than the player owns.
+   */
+  const scoreOnly = (s: Session) => {
+    const rules = sessionRules.get(s);
+    if (rules && beyond(rules, owned)) return true;
+    return s.spec.level === 0
+      ? (sessionDay.get(s) ?? today) !== utcDay()
+      : s.spec.level > highest(savedRef.current) + 1;
+  };
+  /** Set once the player's upgrades are known, to compare a challenge's with them. */
+  const [ownedLoaded, setOwnedLoaded] = useState(false);
+  const challengeStarted = useRef(false);
 
   useEffect(() => setMuted(muted), [muted]);
 
@@ -119,7 +172,11 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   useEffect(() => {
     let live = true;
     badges.reset();
-    loadOwned(sdk).then((o) => live && setOwned(o));
+    loadOwned(sdk).then((o) => {
+      if (!live) return;
+      setOwned(o);
+      setOwnedLoaded(true);
+    });
     if (signedIn)
       loadSaved(sdk).then((account) => {
         if (!live) return;
@@ -152,6 +209,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       s = new GemScene(host.current, {
         onSwap: (a, b) => onSwap.current(a, b),
         onPoke: () => armHint(),
+        onCollect: (what, at) => flyToGoal(what, at, landed),
       });
     } catch (err) {
       console.warn("Gem Surge: no WebGL", err);
@@ -159,11 +217,11 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       return;
     }
     s.setBannerTranslator(t);
-    s.setBannerListener((text, shown) => CHEERS.has(text) && say(shown, sdk.locale));
+    s.setBannerListener((text, shown) => CHEERS.has(text) && say(shown, localeNow.current, text));
     scene.current = s;
     // A board to look at behind the menu.
     const demo = new Session(levelSpec(Math.max(1, top)));
-    s.setBoard(demo.board.cells, [], demo.spec.world, worldCycle(demo.spec.level));
+    s.setBoard(demo.board.cells, [], demo.spec.world, worldCycle(demo.spec.level), demo.board.holes);
     s.setInput(false);
     return () => {
       s.dispose();
@@ -173,39 +231,58 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The player switched language: the banners on the board follow, even one
+  // already showing.
+  useEffect(() => {
+    scene.current?.setBannerTranslator(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locale]);
+
+  // Opened by a friend's challenge link: go straight to that round, under the
+  // friend's rules. A level waits for the player's upgrades, which decide
+  // whether the round can pay (scoreOnly).
+  useEffect(() => {
+    const c = challenge.current;
+    const preview = import.meta.env.DEV ? Number(new URLSearchParams(window.location.search).get("level")) : 0;
+    if (challengeStarted.current || !scene.current) return;
+    if (!c && (!Number.isInteger(preview) || preview < 1 || preview > LAST_LEVEL)) return;
+    if (c?.kind !== "daily" && !ownedLoaded) return;
+    challengeStarted.current = true;
+    if (c?.kind === "daily") start(0, c.day);
+    else start(c?.level ?? preview);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownedLoaded]);
+
   const unlock = (ids: string[]) => {
     badges.unlock(sdk, ids).catch(() => {});
   };
 
-  const start = (level: number) => begin(level === 0 ? { mode: "daily", day: today } : { mode: "level", level, owned });
-
-  /** Starts a round; `challenged` when it is the one the challenge link asks for. */
-  function begin(round: ChallengeRound, challenged = false) {
-    const daily = round.mode === "daily";
-    const level = daily ? 0 : round.level;
-    const spec = daily ? dailySpec(round.day) : levelSpec(level);
-    const s = new Session(spec, boostsFor(daily ? NONE : round.owned));
-    // Today's daily board is the same play wherever it was started from.
-    if (daily && dared?.mode === "daily" && dared.day === round.day) challenged = true;
-    // A friend's level is played with their upgrades, and a past day's board
-    // is not today's: those are for the challenge only.
-    plays.set(s, { round, challenged, practice: challenged && (!daily || round.day !== today) });
+  function start(level: number, day = today) {
+    // Playing a different round leaves the friend's challenge behind.
+    const c = challenge.current;
+    const round: Round =
+      level === 0 ? { kind: "daily", day, score: 0, rules: DAILY_RULES } : { kind: "level", level, score: 0, rules: DAILY_RULES };
+    if (c && !sameRound(c, round)) challenge.current = null;
+    // The friend's challenge is played under the friend's rules.
+    const rules = challenge.current?.rules ?? null;
+    const tiers = level === 0 ? NONE : (rules?.owned ?? owned);
+    const spec = level === 0 ? dailySpec(day) : levelSpec(level);
+    const s = new Session(spec, boostsFor(tiers));
+    sessionDay.set(s, level === 0 ? day : today);
+    sessionOwned.set(s, tiers);
+    if (rules) sessionRules.set(s, rules);
     session.current = s;
+    scene.current?.offerSpeedUp(false);
     setShown(0);
     setEnd(null);
     setScreen("play");
     rerender();
-    scene.current?.setBoard(s.board.cells, s.board.ice, spec.world, worldCycle(spec.level));
+    scene.current?.setBoard(s.board.cells, s.board.ice, spec.world, worldCycle(spec.level), s.board.holes, spec.iceCover ? frostMotifForLevel(level) : undefined);
     scene.current?.setInput(true);
-    scene.current?.banner(level === 0 ? "Daily board" : `Level ${level}`, 2);
+    if (spec.iceCover) scene.current?.banner("Match beside ice to break it", 2, undefined, true);
+    else scene.current?.banner(level === 0 ? "Daily board" : `Level ${level}`, 2);
     armHint();
   }
-
-  // A challenge link goes straight to its round: dingn has shown the score to beat.
-  useEffect(() => {
-    if (dared && scene.current) begin(dared, true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // A handle for the browser checks while developing.
   if (import.meta.env.DEV)
@@ -217,14 +294,19 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
 
   onSwap.current = (a, b) => play([a, b]);
 
+  /** The Supernovas a session can still set off. */
+  function novasLeft(s: Session) {
+    const rules = sessionRules.get(s);
+    return rules ? Math.max(0, rules.novas - s.novas) : novas(savedRef.current);
+  }
+
   /** Plays a swap, or a Supernova when there is no `pair`. */
   async function play(pair: [Pos, Pos] | null) {
     const s = session.current;
     const sc = scene.current;
     if (!s || !sc || busy.current || screen !== "play") return;
-    const info = plays.get(s);
-    // A challenge is played without Supernovas, so everyone has the same chance.
-    if (!pair && (s.outcome || !s.spec.level || info?.challenged || novas(savedRef.current) < 1)) return;
+    const rules = sessionRules.get(s);
+    if (!pair && (s.outcome || !s.spec.level || novasLeft(s) < 1)) return;
     busy.current = true;
     sc.setInput(false);
     clearTimeout(hintTimer.current);
@@ -232,18 +314,26 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     try {
       const before = s.score;
       const chainBefore = s.chainCoins;
+      const goalsBefore = s.progress().map((g) => g.have);
       const turn = pair ? s.move(pair[0], pair[1]) : s.nova();
       if (!turn) {
         if (pair) await sc.playInvalid(pair[0], pair[1]);
         return;
       }
       if (!pair) {
-        const next = { ...savedRef.current, novasUsed: savedRef.current.novasUsed + 1 };
-        savedRef.current = next;
-        setSaved(next);
-        store(sdk, next).catch(() => {});
+        // A challenge's Supernovas are the friend's, so the player's own stay.
+        if (!rules) {
+          const next = { ...savedRef.current, novasUsed: savedRef.current.novasUsed + 1 };
+          savedRef.current = next;
+          setSaved(next);
+          store(sdk, next).catch(() => {});
+        }
         sc.banner("Supernova!", 6);
       }
+      // The goals fill as their pieces land, not all at once.
+      goalsDone.current = s.progress().map((g) => g.have);
+      turnOver.current = false;
+      showGoals(goalsBefore);
       rerender();
       let running = before;
       await sc.playTurn(turn, pair, {
@@ -253,14 +343,16 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
         },
       });
       setShown(s.score);
+      endTurnGoals();
       if (turn.feverStarted) {
         sc.banner("Fever!", 6);
         sfx.fever();
       }
       sc.setFever(s.fever);
-      if (!info?.practice) unlock(playBadges(s));
+      // A round played for the score alone earns no badges either.
+      if (!scoreOnly(s)) unlock(playBadges(s));
       // A chain reaction earns coins, paid with the level's own when it ends.
-      if (s.spec.level > 0 && !info?.practice && s.chainCoins > chainBefore) sc.banner(`+${s.chainCoins - chainBefore} 🪙`, 3);
+      if (s.spec.level > 0 && s.chainCoins > chainBefore) sc.banner(`+${s.chainCoins - chainBefore} 🪙`, 3);
       // A nudge when the moves are running low.
       if (pair && !s.outcome && s.movesLeft === 5) sc.banner("Keep going!", 2);
       rerender();
@@ -271,6 +363,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       if (s.outcome) await reward(s, false);
     } finally {
       busy.current = false;
+      endTurnGoals();
       if (session.current === s && !s.outcome) {
         sc.setInput(true);
         armHint();
@@ -283,7 +376,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     const s = session.current;
     const sc = scene.current;
     if (!s || !sc || busy.current || screen !== "play" || !s.undo()) return;
-    sc.setBoard(s.board.cells, s.board.ice, s.spec.world, worldCycle(s.spec.level));
+    sc.setBoard(s.board.cells, s.board.ice, s.spec.world, worldCycle(s.spec.level), s.board.holes, s.spec.iceCover ? frostMotifForLevel(s.spec.level) : undefined);
     sc.setFever(s.fever);
     sc.setInput(true);
     setShown(s.score);
@@ -296,21 +389,30 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     const sc = scene.current!;
     sc.setFever(false);
     if (s.outcome === "won") {
-      sc.banner(s.movesLeft > 0 ? "Surge!" : "Clear!", 6);
       sfx.win();
-      const surge = s.finish();
-      if (surge) {
-        const from = s.score - surge.points;
-        let running = from;
-        await sc.playTurn(surge, null, {
-          onStep: (_, p) => {
-            running += p;
-            setShown(running);
-          },
-        });
+      const left = Math.min(s.movesLeft, SURGE_MAX);
+      // The end can take a while, so a tap plays it faster.
+      sc.offerSpeedUp(true);
+      try {
+        if (left > 0) await sc.splash("Surge!", t("{0} moves left turn into blasters", String(left)));
+        else sc.banner("Clear!", 6);
+        const surge = s.finish();
+        if (surge) {
+          const from = s.score - surge.points;
+          let running = from;
+          await sc.playTurn(surge, null, {
+            huge: true,
+            onStep: (_, p) => {
+              running += p;
+              setShown(running);
+            },
+          });
+        }
+        setShown(s.score);
+        await sc.celebrate();
+      } finally {
+        sc.offerSpeedUp(false);
       }
-      setShown(s.score);
-      await sc.celebrate();
     } else {
       sfx.lose();
       sc.banner("Out of moves", 1);
@@ -321,23 +423,21 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   async function reward(s: Session, show = true) {
     if (rewarded.has(s)) return;
     rewarded.add(s);
+    sdk.roundEnded?.();
     const won = s.outcome === "won";
     const level = s.spec.level;
     const stars = s.stars;
-    const info = plays.get(s);
-    sdk.roundEnded();
-    // dingn ranks the score under the challenge and tells the player how they did.
-    let challenge: ChallengeEnd | null = null;
-    if (info?.challenged && sdk.challenge) {
-      const target = sdk.challenge.score;
-      const outcome = await sdk.challengeResult(s.score).catch(() => null);
-      challenge = { target, mine: !!sdk.challenge.mine, beat: outcome ? outcome.beat : s.score > target, outcome };
-    }
-    if (info?.practice) {
+    const day = sessionDay.get(s) ?? today;
+    // The rules it was played under go with a challenge made from it.
+    const rules: Rules = level === 0 ? DAILY_RULES : { owned: sessionOwned.get(s) ?? NONE, novas: s.novas };
+    const played: Round = level === 0 ? { kind: "daily", day, score: s.score, rules } : { kind: "level", level, score: s.score, rules };
+    const rival = challenge.current && sameRound(challenge.current, played) ? challenge.current : null;
+    // A friend's challenge on an older daily board, or on a level not reached
+    // yet, is played for the score alone: nothing is saved or paid.
+    if (scoreOnly(s)) {
       if (!show) return;
-      setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: null, chain: 0, note: "A challenge round pays no coins and doesn't change your levels.", best: false, novas: 0, round: null, challenge });
+      setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: null, chain: 0, note: "", best: false, novas: 0, round: null, played, rival });
       setScreen("end");
-      stars && [1, 2, 3].slice(0, stars).forEach((n, i) => setTimeout(() => sfx.star(n), 300 + i * 250));
       return;
     }
     const next: Saved = {
@@ -356,9 +456,9 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       // The first win on a round's last level finishes the round.
       if (won && level % ROUND === 0 && !next.stars[level - 1]) {
         const prize = rewardOf(roundOf(level));
-        const luck = draw(Math.random());
-        next.novasWon += prize.novas + luck.novas;
-        round = { round: roundOf(level), novas: prize.novas, luck, coins: null };
+        // The lucky draw is owed now and paid when the player spins it.
+        next.novasWon += prize.novas;
+        round = { round: roundOf(level), novas: prize.novas, coins: null };
       }
       best = s.score > next.best[level - 1];
       next.stars[level - 1] = Math.max(next.stars[level - 1], stars);
@@ -418,7 +518,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       round.coins = paidForRound;
     }
     if (!show) return;
-    setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: paid, chain: chainPaid, note, best, novas: charged, round, challenge });
+    setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: paid, chain: chainPaid, note, best, novas: charged, round, played, rival });
     if (round) {
       scene.current?.banner("Round complete!", 6);
       sfx.fanfare();
@@ -428,8 +528,22 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     stars && [1, 2, 3].slice(0, stars).forEach((n, i) => setTimeout(() => sfx.star(n), 300 + i * 250));
   }
 
+  /** A lucky draw came to rest on `won` Supernovas: pay them and mark it spun. */
+  function drawn(won: number) {
+    const now = savedRef.current;
+    if (drawsOwed(now) <= 0) return;
+    const next = { ...now, novasWon: now.novasWon + won, drawsDone: now.drawsDone + 1 };
+    savedRef.current = next;
+    setSaved(next);
+    store(sdk, next).catch(() => {});
+  }
+
   function toMenu() {
+    // Back to normal play: the friend's challenge, and the upgrades and
+    // Supernovas it lent, end here. "Try again" on the end screen keeps them.
+    challenge.current = null;
     session.current = null;
+    scene.current?.offerSpeedUp(false);
     clearTimeout(hintTimer.current);
     scene.current?.setInput(false);
     scene.current?.setFever(false);
@@ -450,10 +564,10 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     setBuying(null);
     if (r === "bought") {
       setOwned(await loadOwned(sdk));
-      setShopNote(t("Upgrade bought! It works from your next level."));
+      setShopNote("Upgrade bought! It works from your next level.");
       sfx.win();
-    } else if (r === "poor") setShopNote(t("Not enough coins yet. Clear levels and the daily board to earn more."));
-    else if (r === "failed") setShopNote(t("That didn't go through. Try again in a moment."));
+    } else if (r === "poor") setShopNote("Not enough coins yet. Clear levels and the daily board to earn more.");
+    else if (r === "failed") setShopNote("That didn't go through. Try again in a moment.");
   }
 
   function toggleMute() {
@@ -473,7 +587,6 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   }, [screen]);
 
   const s = session.current;
-  const info = s ? plays.get(s) : undefined;
   const nextLevel = Math.min(top + 1, LAST_LEVEL);
   const totalStars = saved.stars.reduce((a, b) => a + b, 0);
 
@@ -494,8 +607,6 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
           dailyDone={dailyDone}
           signedIn={signedIn}
           onPlay={start}
-          challenge={dared && sdk.challenge ? sdk.challenge.score : null}
-          onChallenge={() => dared && begin(dared, true)}
           onShop={() => setScreen("shop")}
           muted={muted}
           onMute={toggleMute}
@@ -506,15 +617,15 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       {webgl && (screen === "play" || screen === "end") && s && (
         <Hud
           session={s}
+          day={sessionDay.get(s) ?? today}
           shown={shown}
+          goalsShown={goalsShown}
           muted={muted}
           onMute={toggleMute}
           onMenu={toMenu}
-          owned={info?.round.mode === "level" ? info.round.owned : owned}
-          day={info?.round.mode === "daily" ? info.round.day : today}
-          target={info?.challenged && sdk.challenge ? sdk.challenge.score : null}
-          practice={!!info?.practice}
-          novas={novas(saved)}
+          owned={sessionOwned.get(s) ?? owned}
+          lent={sessionRules.has(s) ? (challenge.current?.mine ? "own" : "friend") : null}
+          novas={novasLeft(s)}
           charge={novaCharge(saved)}
           onNova={() => play(null)}
           onUndo={undo}
@@ -522,10 +633,23 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
         />
       )}
 
+      {webgl && screen === "menu" && (drawsOwed(saved) > 0 || owedOpen) && (
+        <OwedDraw
+          key={owedShown}
+          onDrawn={drawn}
+          onOpen={() => setOwedOpen(true)}
+          onClose={() => {
+            setOwedOpen(false);
+            setOwedShown((n) => n + 1);
+          }}
+        />
+      )}
+
       {screen === "end" && end && s && end.round && (
         <RoundPanel
           end={end}
           round={end.round}
+          onDrawn={drawn}
           onNext={() => start(Math.min(s.spec.level + 1, LAST_LEVEL))}
           onMenu={toMenu}
           last={s.spec.level >= LAST_LEVEL}
@@ -538,15 +662,13 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
           session={s}
           signedIn={signedIn}
           onNext={() => start(Math.min(s.spec.level + 1, LAST_LEVEL))}
-          onRetry={() => (info ? begin(info.round, info.challenged) : start(s.spec.level))}
-          round={info?.round ?? null}
-          practice={!!info?.practice}
+          onRetry={() => start(s.spec.level, sessionDay.get(s) ?? today)}
           onMenu={toMenu}
           onShop={() => {
             toMenu();
             setScreen("shop");
           }}
-          dailyBest={!info?.practice && saved.daily?.day === today ? saved.daily.score : 0}
+          dailyBest={saved.daily?.day === today ? saved.daily.score : 0}
         />
       )}
 
@@ -555,7 +677,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
           owned={owned}
           signedIn={signedIn}
           buying={buying}
-          note={shopNote}
+          note={shopNote && t(shopNote)}
           onBuy={purchase}
           onClose={() => {
             setShopNote("");
@@ -578,9 +700,6 @@ function Menu(props: {
   signedIn: boolean;
   nextLevel: number;
   muted: boolean;
-  /** The score of the challenge the page was opened from. */
-  challenge: number | null;
-  onChallenge: () => void;
   onPlay: (level: number) => void;
   onShop: () => void;
   onMute: () => void;
@@ -610,11 +729,6 @@ function Menu(props: {
           <button className="button big" onClick={() => props.onPlay(props.nextLevel)}>
             {props.top === 0 ? t("Play") : t("Play level {0}", String(props.nextLevel))}
           </button>
-          {props.challenge !== null && (
-            <button className="secondary-button" onClick={props.onChallenge}>
-              {t("Challenge: beat {0}", props.challenge.toLocaleString())}
-            </button>
-          )}
           <button className="secondary-button" onClick={() => props.onPlay(0)}>
             {t("Daily board")}
             {props.dailyDone && <span className="tick"> ✓</span>}
@@ -704,11 +818,73 @@ function Menu(props: {
           );
         })}
       </section>
+      {/* The version, small in a corner, for telling which build a player has. */}
+      <p className="gem-version">v{version}</p>
     </div>
   );
 }
 
 // --------------------------------------------------------------------- HUD
+
+/** How a goal is named in the HUD, to match what is cleared to its goal. */
+const goalKey = (goal: Goal) => (goal.kind === "color" ? `color-${goal.color}` : goal.kind);
+
+/** How many pieces are flying to the goals now: past this, the rest just count. */
+let flying = 0;
+const MAX_FLYING = 24;
+
+/**
+ * Flies a cleared gem, or a chip of ice, from where it was on the board to
+ * its goal in the HUD, and bumps the goal's count as it lands.
+ */
+function flyToGoal(
+  what: Collected,
+  at: { x: number; y: number },
+  onLand: (key: string) => void,
+) {
+  const key = "ice" in what ? "ice" : `color-${what.color}`;
+  const goal = document.querySelector<HTMLElement>(`.goal[data-goal="${key}"]:not(.done)`);
+  const icon = goal?.querySelector<HTMLElement>(".goal-gem, .goal-ice");
+  const count = goal?.querySelector<HTMLElement>(".goal-count");
+  if (!icon || !count) return;
+  const bump = () => {
+    onLand(key);
+    count.classList.remove("bump");
+    void count.offsetWidth; // restart the animation
+    count.classList.add("bump");
+  };
+  const to = icon.getBoundingClientRect();
+  const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  if (still || flying >= MAX_FLYING || !to.width || !icon.animate) return bump();
+  const piece = icon.cloneNode(true) as HTMLElement;
+  piece.classList.add("goal-fly");
+  piece.style.left = `${at.x}px`;
+  piece.style.top = `${at.y}px`;
+  document.body.appendChild(piece);
+  flying++;
+  const dx = to.left + to.width / 2 - at.x;
+  const dy = to.top + to.height / 2 - at.y;
+  // Up and away first, then a quickening swoop onto the goal.
+  const flight = piece.animate(
+    [
+      { transform: "translate(-50%, -50%) scale(1.6)", opacity: 1 },
+      {
+        transform: `translate(calc(-50% + ${dx * 0.25}px), calc(-50% + ${dy * 0.25 - 50}px)) scale(1.3)`,
+        opacity: 1,
+        offset: 0.35,
+      },
+      { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(0.8)`, opacity: 0.9 },
+    ],
+    { duration: 620 + Math.random() * 180, easing: "cubic-bezier(0.45, 0, 0.75, 1)" },
+  );
+  const land = () => {
+    piece.remove();
+    flying--;
+    bump();
+  };
+  flight.onfinish = land;
+  flight.oncancel = land;
+}
 
 function GoalIcon({ goal }: { goal: Goal }) {
   // The same outline and colour as the stone on the board.
@@ -731,15 +907,15 @@ function goalLabel(goal: Goal, t: (s: string, ...a: string[]) => string) {
 
 function Hud(props: {
   session: Session;
+  /** The daily board's day (an older one when answering a friend's challenge). */
+  day: string;
   shown: number;
+  /** How much of each goal to show during a move, or null for the real progress. */
+  goalsShown: number[] | null;
   muted: boolean;
   owned: Owned;
-  /** The day of a daily board. */
-  day: string;
-  /** The challenge's score to beat, on a play of it. */
-  target: number | null;
-  /** A challenge round that pays and saves nothing. */
-  practice: boolean;
+  /** Played under a friend's challenge's rules. */
+  lent: "friend" | "own" | null;
   onMute: () => void;
   onMenu: () => void;
   /** Supernovas ready, and coins towards the next one. */
@@ -803,23 +979,27 @@ function Hud(props: {
           )}
         </div>
       </div>
-      {props.target !== null && (
-        <p className={`hud-target${props.shown > props.target ? " beat" : ""}`}>
-          {t("Score to beat: {0}", props.target.toLocaleString())}
-        </p>
-      )}
       <div className="hud-goals">
         <p className="eyebrow">{t("Goals")}</p>
-        {s.progress().map((g, i) => (
-          <div key={i} className={`goal${g.done ? " done" : ""}`}>
+        {s.progress().map((real, i) => {
+          // A score goal follows the score; the others what has landed.
+          const have = real.goal.kind === "score" ? real.have : (props.goalsShown?.[i] ?? real.have);
+          const g = { ...real, have, done: have >= real.target };
+          return (
+          <div
+            key={i}
+            className={`goal${g.done ? " done" : ""}`}
+            data-goal={goalKey(g.goal)}
+          >
             <GoalIcon goal={g.goal} />
             <span className="goal-label">{goalLabel(g.goal, t)}</span>
             <span className="goal-count">
               {g.done ? "✓" : `${g.have.toLocaleString()} / ${g.target.toLocaleString()}`}
             </span>
           </div>
-        ))}
-        {spec.level > 0 && !props.practice && lastLevelOf(roundOf(spec.level)) - spec.level <= 1 && (
+          );
+        })}
+        {spec.level > 0 && lastLevelOf(roundOf(spec.level)) - spec.level <= 1 && (
           <p className="goal-note round-note">
             {t("Finish level {0} to win:", String(lastLevelOf(roundOf(spec.level))))} <RoundPrize round={roundOf(spec.level)} />
           </p>
@@ -833,25 +1013,42 @@ function Hud(props: {
         </div>
       </div>
       {spec.level > 0 && (
-        <button className="secondary-button hud-undo" disabled={!props.canNova || !s.canUndo} onClick={props.onUndo}>
-          ↶ {t("Undo")} ×{s.undosLeft}
+        <button
+          className="secondary-button hud-undo"
+          disabled={!props.canNova || !s.canUndo}
+          onClick={props.onUndo}
+          aria-label={`${t("Undo")} ×${s.undosLeft}`}
+        >
+          ↶ <span className="hud-word">{t("Undo")}</span> ×{s.undosLeft}
         </button>
       )}
-      {spec.level > FREE_UNDO_LEVELS && !props.owned.undo && (
+      {props.lent && spec.level > 0 && (
+        <p className="hud-note">
+          {props.lent === "own"
+            ? t("Your upgrades and Supernovas from that round.")
+            : t("Your friend's upgrades and Supernovas, so it's a fair match.")}
+        </p>
+      )}
+      {spec.level > FREE_UNDO_LEVELS && !props.owned.undo && !props.lent && (
         <p className="hud-note">{t("Buy Undo in Upgrades to use it after level 100.")}</p>
       )}
-      {spec.level > 0 && !props.practice && s.chainCoins > 0 && (
+      {spec.level > 0 && s.chainCoins > 0 && (
         <p className="hud-note hud-chain">
           <span className="coin" aria-hidden /> {t("Chain reactions: +{0} coins", String(s.chainCoins))}
         </p>
       )}
-      {spec.level > 0 && props.target === null && (
+      {spec.level > 0 && (
         <div className="hud-nova">
-          <button className="button nova" disabled={!props.canNova || props.novas < 1} onClick={props.onNova}>
+          <button
+            className="button nova"
+            disabled={!props.canNova || props.novas < 1}
+            onClick={props.onNova}
+            aria-label={`${t("Supernova")} ×${props.novas}`}
+          >
             <span className="nova-star" aria-hidden>
               ✹
             </span>
-            {t("Supernova")} ×{props.novas}
+            <span className="hud-word">{t("Supernova")}</span> ×{props.novas}
           </button>
           <div className="nova-bar" aria-hidden>
             <div className="fill" style={{ width: `${(props.charge / NOVA_COST) * 100}%` }} />
@@ -888,9 +1085,6 @@ function EndPanel(props: {
   session: Session;
   signedIn: boolean;
   dailyBest: number;
-  /** The round this play was of, to dare a friend with. */
-  round: ChallengeRound | null;
-  practice: boolean;
   onNext: () => void;
   onRetry: () => void;
   onMenu: () => void;
@@ -901,26 +1095,6 @@ function EndPanel(props: {
   const { end, session: s } = props;
   const daily = s.spec.level === 0;
   const won = end.outcome === "won";
-  const ch = end.challenge;
-  // A link that dares a friend to beat this score. A play that used a
-  // Supernova can't be matched, so it makes none.
-  const [link, setLink] = useState("");
-  const [shareNote, setShareNote] = useState("");
-  const [sharing, setSharing] = useState(false);
-  const canShare = sdk.embedded && !!props.round && end.score > 0 && s.novas === 0;
-  const share = async () => {
-    if (!props.round || sharing) return;
-    setSharing(true);
-    setShareNote("");
-    try {
-      const url = link || (await sdk.challengeLink(toChallenge(props.round, end.score)));
-      setLink(url);
-      setShareNote(t(await shareLink(url, t("Can you beat my {0} points in Gem Surge?", end.score.toLocaleString()))));
-    } catch {
-      setShareNote(t("The challenge link couldn't be made just now."));
-    }
-    setSharing(false);
-  };
   return (
     <div className="gem-end" role="dialog" aria-label={won ? t("Level complete") : t("Out of moves")}>
       <div className="gem-panel">
@@ -939,19 +1113,22 @@ function EndPanel(props: {
           {end.score.toLocaleString()}
           {end.best && end.score > 0 && <span className="best">{t("New best!")}</span>}
         </p>
-        {ch && (
-          <p className={`end-challenge${ch.beat ? " beat" : ""}`} role="status">
-            {ch.beat
-              ? ch.mine
-                ? t("You beat your own score of {0}!", ch.target.toLocaleString())
-                : t("Challenge beaten! The score to beat was {0}.", ch.target.toLocaleString())
-              : t("Score to beat: {0}", ch.target.toLocaleString())}
-            {ch.outcome?.posted && ch.outcome.rank !== null && (
-              <small> {t("Place {0} of {1}", String(ch.outcome.rank), String(ch.outcome.players))}</small>
-            )}
+        {daily && props.dailyBest > 0 && end.played.kind === "daily" && end.played.day === utcDay() && (
+          <p className="end-sub">{t("Your best today: {0}", props.dailyBest.toLocaleString())}</p>
+        )}
+        {end.rival && (
+          <p className={`end-rival${end.score > end.rival.score ? " beaten" : ""}`}>
+            {end.score > end.rival.score
+              ? end.rival.mine
+                ? t("You beat your own {0}!", end.rival.score.toLocaleString())
+                : t("You beat your friend's {0}!", end.rival.score.toLocaleString())
+              : t(
+                  end.rival.mine ? "Your score to beat: {0}. {1} more to beat it." : "Your friend scored {0}. {1} more to beat it.",
+                  end.rival.score.toLocaleString(),
+                  (end.rival.score - end.score + 1).toLocaleString(),
+                )}
           </p>
         )}
-        {daily && props.dailyBest > 0 && <p className="end-sub">{t("Your best today: {0}", props.dailyBest.toLocaleString())}</p>}
         {!won && (
           <ul className="end-goals">
             {s.progress().map((g, i) => (
@@ -981,8 +1158,9 @@ function EndPanel(props: {
           ) : (
             <p className="end-note">{t(end.note)}</p>
           ))}
+        {end.score > 0 && <ChallengeButton played={end.played} />}
         <div className="gem-actions">
-          {won && !daily && !props.practice && s.spec.level < LAST_LEVEL && (
+          {won && !daily && s.spec.level < LAST_LEVEL && (
             <button className="button" onClick={props.onNext}>
               {t("Next level")}
             </button>
@@ -995,51 +1173,50 @@ function EndPanel(props: {
               {t("Get upgrades")}
             </button>
           )}
-          {canShare && (
-            <button className="secondary-button" onClick={share} disabled={sharing}>
-              {t("Challenge a friend")}
-            </button>
-          )}
           <button className="secondary-button" onClick={props.onMenu}>
             {t("Menu")}
           </button>
         </div>
-        {link && (
-          <input
-            className="share-link"
-            readOnly
-            value={link}
-            aria-label={t("Challenge link")}
-            onFocus={(e) => e.currentTarget.select()}
-          />
-        )}
-        {shareNote && (
-          <p className="end-note" role="status">
-            {shareNote}
-          </p>
-        )}
       </div>
     </div>
   );
 }
 
-/** Hands a challenge link to the device's share sheet, or copies it; says which in a line for the player. */
-async function shareLink(url: string, text: string) {
-  if (typeof navigator.share === "function") {
+/**
+ * "Challenge a friend": a link to this round with the score to beat, through
+ * the phone's share sheet or copied, or shown to copy by hand.
+ */
+function ChallengeButton({ played }: { played: Round }) {
+  const { t } = useLocale();
+  const sdk = useDingn();
+  const [state, setState] = useState<"idle" | "busy" | "copied" | "shared" | "unavailable">("idle");
+  const [link, setLink] = useState("");
+  async function send() {
+    setState("busy");
+    let url: string;
     try {
-      await navigator.share({ text, url });
-      return "";
-    } catch (err) {
-      // The player closed the share sheet.
-      if ((err as { name?: string })?.name === "AbortError") return "";
+      url = await sdk.challengeLink(challengeFor(played));
+    } catch {
+      setState("unavailable");
+      return;
     }
+    const text = t("Can you beat my {0} points in Gem Surge?", played.score.toLocaleString());
+    const how = await shareLink(url, text);
+    if (how === "failed") setLink(url);
+    setState(how === "copied" ? "copied" : how === "shared" ? "shared" : "idle");
   }
-  try {
-    await navigator.clipboard.writeText(url);
-    return "Link copied! Send it to a friend.";
-  } catch {
-    return "Copy this link and send it to a friend.";
-  }
+  if (state === "unavailable") return null;
+  return (
+    <div className="end-challenge">
+      <button className="button challenge-button" onClick={send} disabled={state === "busy"}>
+        ⚔ {t("Challenge a friend")}
+      </button>
+      {state === "copied" && <p className="end-sub">{t("Link copied. Send it to a friend!")}</p>}
+      {link && (
+        <input className="challenge-link" readOnly value={link} aria-label={t("Challenge link")} onFocus={(e) => e.target.select()} />
+      )}
+    </div>
+  );
 }
 
 // ------------------------------------------------------------------- round
@@ -1059,37 +1236,19 @@ function RoundPrize({ round }: { round: number }) {
 }
 
 /** The ceremony for finishing a round: a new title, the reward, the draw and a line of the story. */
-function RoundPanel(props: { end: EndInfo; round: RoundEnd; last: boolean; onNext: () => void; onMenu: () => void }) {
+function RoundPanel(props: {
+  end: EndInfo;
+  round: RoundEnd;
+  last: boolean;
+  onDrawn: (novas: number) => void;
+  onNext: () => void;
+  onMenu: () => void;
+}) {
   const { t } = useLocale();
   const { end, round } = props;
   const title = titleOf(round.round + 1);
   const milestone = isMilestone(round.round);
-  // The prize is already won and saved; the player spins the wheel to see it.
-  const [stage, setStage] = useState<"ready" | "spinning" | "landed">("ready");
-  const [turn, setTurn] = useState(0);
-  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
-  useEffect(() => () => timers.current.forEach(clearTimeout), []);
-  const spin = () => {
-    if (stage !== "ready") return;
-    const slice = sliceFor(round.luck.novas, Math.random());
-    const step = 360 / WHEEL.length;
-    // Six full turns, then on to the slice, stopping a little off its middle.
-    setTurn(360 * 6 - (slice + 0.5) * step + (Math.random() - 0.5) * step * 0.6);
-    setStage("spinning");
-    // Ticks that slow down with the wheel.
-    for (let i = 0, at = 0; at < SPIN_MS - 300; i++) {
-      timers.current.push(setTimeout(() => sfx.select(), at));
-      at += 60 + i * i * 1.6;
-    }
-    timers.current.push(
-      setTimeout(() => {
-        setStage("landed");
-        if (round.luck.index === DRAW.length - 1) sfx.fanfare();
-        else sfx.star(3);
-      }, SPIN_MS),
-    );
-  };
-  const landed = stage === "landed";
+  const [landed, setLanded] = useState(false);
   return (
     <div className="gem-end round-end" role="dialog" aria-label={t("Round complete!")}>
       <div className={`gem-panel round-panel${milestone ? " milestone" : ""}`}>
@@ -1120,23 +1279,7 @@ function RoundPanel(props: { end: EndInfo; round: RoundEnd; last: boolean; onNex
             </li>
           )}
         </ul>
-        <div className={`round-draw ${stage}`}>
-          <p className="round-draw-title">🎁 {t("Lucky draw")}</p>
-          <div className="wheel-box">
-            <Wheel turn={turn} won={landed ? round.luck.novas : 0} />
-            <span className="wheel-pin" aria-hidden />
-          </div>
-          {landed ? (
-            <p className="round-won" role="status">
-              {t("You won")} <strong>✹ {t("Supernova")} ×{round.luck.novas}</strong>
-              {round.luck.index === DRAW.length - 1 ? ` · ${t("Jackpot!")}` : ""}
-            </p>
-          ) : (
-            <button className="button big" onClick={spin} disabled={stage !== "ready"}>
-              {stage === "ready" ? t("Spin the wheel") : t("Spinning…")}
-            </button>
-          )}
-        </div>
+        <LuckyDraw onDrawn={props.onDrawn} onLanded={() => setLanded(true)} />
         {landed && (
           <>
             <p className="round-story">“{t(storyOf(round.round))}”</p>
@@ -1162,8 +1305,221 @@ function RoundPanel(props: { end: EndInfo; round: RoundEnd; last: boolean; onNex
   );
 }
 
-/** How long the wheel turns before it stops. */
-const SPIN_MS = 4200;
+/** A lucky draw owed from a round whose wheel was never spun. */
+function OwedDraw(props: { onDrawn: (novas: number) => void; onOpen: () => void; onClose: () => void }) {
+  const { t } = useLocale();
+  const [landed, setLanded] = useState(false);
+  return (
+    <div className="gem-end round-end" role="dialog" aria-label={t("Lucky draw")}>
+      <div className="gem-panel round-panel">
+        <p className="eyebrow">{t("A lucky draw is waiting for you")}</p>
+        <LuckyDraw
+          onDrawn={(won) => {
+            // Stay open to show the prize, though the draw is no longer owed.
+            props.onOpen();
+            props.onDrawn(won);
+          }}
+          onLanded={() => setLanded(true)}
+        />
+        {landed && (
+          <div className="gem-actions">
+            <button className="button big" onClick={props.onClose}>
+              {t("Close")}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** How fast a spinning wheel slows down, in degrees per millisecond squared. */
+const FRICTION = 0.0003;
+/** How long the button's power bar takes to fill. */
+const CHARGE_MS = 900;
+
+/**
+ * The lucky draw: the player spins the wheel as hard as they like, by swiping
+ * it or by holding the button while a power bar fills, and wins the slice it
+ * comes to rest on. The prize is paid (`onDrawn`) the moment the wheel is let
+ * go, so leaving while it turns changes nothing.
+ */
+function LuckyDraw(props: { onDrawn: (novas: number) => void; onLanded: (novas: number) => void }) {
+  const { t } = useLocale();
+  const [stage, setStage] = useState<"ready" | "charging" | "spinning" | "landed">("ready");
+  const [turn, setTurn] = useState(0);
+  const [power, setPower] = useState(0);
+  const [won, setWon] = useState(0);
+  const angle = useRef(0);
+  const stageRef = useRef(stage);
+  stageRef.current = stage;
+  const frame = useRef(0);
+  const box = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ id: number; at: number; samples: { t: number; a: number }[] } | null>(null);
+  const charge = useRef({ start: 0, power: 0 });
+  useEffect(() => () => cancelAnimationFrame(frame.current), []);
+  const turnTo = (a: number) => {
+    angle.current = a;
+    setTurn(a);
+  };
+
+  /** Lets the wheel go with a push that would carry it `push` degrees. */
+  const letGo = (push: number) => {
+    cancelAnimationFrame(frame.current);
+    stageRef.current = "spinning";
+    const start = angle.current;
+    const rest = restAngle(start, push, Math.random());
+    const prize = WHEEL[sliceAt(rest)];
+    props.onDrawn(prize);
+    setStage("spinning");
+    // It slows down evenly, from just the speed that carries it to rest.
+    const dir = Math.sign(rest - start);
+    const distance = Math.abs(rest - start);
+    const speed = Math.sqrt(2 * FRICTION * distance);
+    const duration = speed / FRICTION;
+    const begun = performance.now();
+    let slice = sliceAt(start);
+    let ticked = 0;
+    const step = (now: number) => {
+      const t = Math.min(duration, now - begun);
+      const a = start + dir * (speed * t - (FRICTION * t * t) / 2);
+      turnTo(a);
+      // The pin clicks over each slice it passes, as often as it can be heard.
+      if (sliceAt(a) !== slice) {
+        slice = sliceAt(a);
+        if (now - ticked > 45) {
+          ticked = now;
+          sfx.select();
+        }
+      }
+      if (t < duration) {
+        frame.current = requestAnimationFrame(step);
+        return;
+      }
+      turnTo(rest);
+      setWon(prize);
+      setStage("landed");
+      if (prize === JACKPOT) sfx.fanfare();
+      else sfx.star(3);
+      props.onLanded(prize);
+    };
+    frame.current = requestAnimationFrame(step);
+  };
+
+  // Swiping the wheel: it follows the finger, and spins on with the speed it
+  // had when let go.
+  const pointerAngle = (e: React.PointerEvent) => {
+    const r = box.current!.getBoundingClientRect();
+    const x = e.clientX - (r.left + r.width / 2);
+    const y = e.clientY - (r.top + r.height / 2);
+    return (Math.atan2(x, -y) * 180) / Math.PI;
+  };
+  const onWheelDown = (e: React.PointerEvent) => {
+    if (stageRef.current !== "ready") return;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    const a = pointerAngle(e);
+    drag.current = { id: e.pointerId, at: a, samples: [{ t: performance.now(), a: angle.current }] };
+  };
+  const onWheelMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d || d.id !== e.pointerId) return;
+    const a = pointerAngle(e);
+    // The change in angle, taking the short way round.
+    const delta = ((((a - d.at) % 360) + 540) % 360) - 180;
+    d.at = a;
+    turnTo(angle.current + delta);
+    const now = performance.now();
+    d.samples.push({ t: now, a: angle.current });
+    while (d.samples.length > 2 && now - d.samples[0].t > 120) d.samples.shift();
+  };
+  const onWheelUp = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d || d.id !== e.pointerId) return;
+    drag.current = null;
+    const first = d.samples[0];
+    const last = d.samples[d.samples.length - 1];
+    const dt = performance.now() - first.t;
+    const speed = dt > 0 ? (last.a - first.a) / dt : 0;
+    // Too gentle to count as a spin: the wheel just stays where it was put.
+    if (Math.abs(speed) < 0.2) return;
+    // The distance a wheel let go at this speed would roll before stopping.
+    letGo((Math.sign(speed) * speed * speed) / (2 * FRICTION));
+  };
+
+  // Holding the button: a power bar fills and empties again; letting go
+  // spins the wheel as hard as the bar shows.
+  const startCharge = () => {
+    if (stageRef.current !== "ready") return;
+    setStage("charging");
+    charge.current = { start: performance.now(), power: 0 };
+    const fill = (now: number) => {
+      if (stageRef.current !== "charging") return;
+      const k = ((now - charge.current.start) / CHARGE_MS) % 2;
+      charge.current.power = k < 1 ? k : 2 - k;
+      setPower(charge.current.power);
+      frame.current = requestAnimationFrame(fill);
+    };
+    frame.current = requestAnimationFrame(fill);
+  };
+  const endCharge = () => {
+    if (stageRef.current !== "charging") return;
+    letGo(360 + charge.current.power * 360 * 4);
+  };
+  // A click with no press and release before it (a screen reader's, say)
+  // still spins the wheel, with a middling push.
+  const clickSpin = () => {
+    if (stageRef.current === "ready") letGo(360 * 2.5);
+  };
+  const key = (e: React.KeyboardEvent, down: boolean) => {
+    if (e.key !== " " && e.key !== "Enter") return;
+    e.preventDefault();
+    if (down && !e.repeat) startCharge();
+    if (!down) endCharge();
+  };
+
+  return (
+    <div className={`round-draw ${stage}`}>
+      <p className="round-draw-title">🎁 {t("Lucky draw")}</p>
+      <div
+        className="wheel-box"
+        ref={box}
+        onPointerDown={onWheelDown}
+        onPointerMove={onWheelMove}
+        onPointerUp={onWheelUp}
+        onPointerCancel={() => (drag.current = null)}
+      >
+        <Wheel turn={turn} won={stage === "landed" ? won : 0} />
+        <span className="wheel-pin" aria-hidden />
+      </div>
+      {stage === "landed" ? (
+        <p className="round-won" role="status">
+          {t("You won")} <strong>✹ {t("Supernova")} ×{won}</strong>
+          {won === JACKPOT ? ` · ${t("Jackpot!")}` : ""}
+        </p>
+      ) : (
+        <>
+          <button
+            className="button big draw-button"
+            disabled={stage === "spinning"}
+            onPointerDown={startCharge}
+            onPointerUp={endCharge}
+            onPointerLeave={endCharge}
+            onKeyDown={(e) => key(e, true)}
+            onKeyUp={(e) => key(e, false)}
+            onClick={clickSpin}
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            {stage === "spinning" ? t("Spinning…") : stage === "charging" ? t("Let go to spin!") : t("Spin the wheel")}
+          </button>
+          <div className="draw-power" aria-hidden style={{ visibility: stage === "charging" ? "visible" : "hidden" }}>
+            <span style={{ width: `${Math.round(power * 100)}%` }} />
+          </div>
+          {stage === "ready" && <p className="draw-hint">{t("Swipe the wheel, or hold the button: the harder the push, the longer it spins.")}</p>}
+        </>
+      )}
+    </div>
+  );
+}
 const SLICE_COLORS: Record<number, string> = { 1: "#22306e", 2: "#5a2a9c", 3: "#0b7a4a", 5: "#d9a21b" };
 
 /** The lucky draw's wheel: a slice for each twentieth of the odds. */
@@ -1175,7 +1531,7 @@ function Wheel({ turn, won }: { turn: number; won: number }) {
       className="wheel"
       viewBox="-104 -104 208 208"
       aria-hidden
-      style={{ transform: `rotate(${turn}deg)`, transitionDuration: `${SPIN_MS}ms` }}
+      style={{ transform: `rotate(${turn}deg)` }}
     >
       <circle r="100.5" fill="#120e26" stroke="#ffe9a8" strokeWidth="5" />
       {WHEEL.map((novas, i) => {

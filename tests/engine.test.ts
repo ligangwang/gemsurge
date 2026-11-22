@@ -7,6 +7,7 @@ import {
   findGroups,
   findHint,
   idx,
+  supernova,
   surge,
   swap,
   type Board,
@@ -80,6 +81,35 @@ test("three in a row clear, gems fall and new ones drop in", () => {
   assert.equal(r.collected[0] >= 3, true);
   settled(b);
   assert.equal(r.steps[0].spawned.length >= 3, true);
+});
+
+test("ice covers block swaps and matches, then crack without clearing their gems", () => {
+  const b = board(BASE);
+  b.iceCover = true;
+  const middle = idx(1, 7);
+  const above = idx(1, 6);
+  b.cells[idx(0, 7)]!.color = 0;
+  b.cells[middle]!.color = 0;
+  b.cells[idx(2, 6)]!.color = 0;
+  b.cells[idx(2, 7)]!.color = 4;
+  b.ice[middle] = 2;
+  const from = { x: 2, y: 6 };
+  const to = { x: 2, y: 7 };
+  assert.equal(swap(b, from, to), null, "the middle gem cannot complete a hidden match");
+  assert.equal(swap(b, to, { x: 1, y: 7 }), null, "the covered gem cannot move");
+
+  b.ice[middle] = 0;
+  b.ice[above] = 2;
+  const gem = b.cells[above]!;
+  const first = swap(b, from, to)!.steps[0];
+  assert.deepEqual(first.ice, [{ x: 1, y: 6, left: 1 }]);
+  assert.deepEqual(first.cells[above], gem, "gravity leaves the covered gem in place");
+  b.ice[above] = 1;
+  const hidden = b.cells[above]!;
+  const blast = supernova(b).steps[0];
+  assert.ok(blast.ice.some((c) => c.x === 1 && c.y === 6 && c.left === 0));
+  assert.ok(!blast.cleared.some((c) => c.id === hidden.id), "the blast reveals the gem");
+  assert.ok(blast.cells.some((c) => c?.id === hidden.id));
 });
 
 test("four in a row makes a line blaster where the gem was moved", () => {
@@ -277,4 +307,51 @@ test("Fever doubles points for three moves", () => {
   assert.equal(t.inFever, true);
   assert.equal(t.points, t.score * 2);
   assert.equal(s.feverMoves, 2);
+});
+
+test("a shaped board keeps its holes empty and its gems fall past them", () => {
+  const holes = new Array(SIZE * SIZE).fill(0);
+  // A hole in the middle of column 2, and the top two cells of column 5.
+  holes[idx(2, 4)] = holes[idx(2, 5)] = holes[idx(5, 0)] = holes[idx(5, 1)] = 1;
+  const ice = new Array(SIZE * SIZE).fill(1);
+  for (let seed = 1; seed <= 40; seed++) {
+    const b = createBoard(seed, 5, ice, holes);
+    assert.equal(findGroups(b.cells).length, 0);
+    assert.ok(findHint(b));
+    holes.forEach((h, i) => {
+      assert.equal(!b.cells[i], !!h, `cell ${i}`);
+      if (h) assert.equal(b.ice[i], 0, "no ice in a hole");
+    });
+    for (let m = 0; m < 25; m++) {
+      const hint = findHint(b);
+      if (!hint) break;
+      const r = swap(b, hint[0], hint[1])!;
+      assert.ok(r);
+      for (const step of r.steps)
+        holes.forEach((h, i) => assert.equal(!step.cells[i], !!h, `after a step, cell ${i}`));
+      holes.forEach((h, i) => assert.equal(!b.cells[i], !!h, `after the move, cell ${i}`));
+      assert.equal(findGroups(b.cells).length, 0);
+    }
+    const end = surge(b, 6);
+    holes.forEach((h, i) => assert.equal(!b.cells[i], !!h));
+    assert.ok(end.steps.length > 0);
+  }
+});
+
+test("a gem above a hole falls past it to the open cell below", () => {
+  const b = board(BASE);
+  b.holes = new Array(SIZE * SIZE).fill(0);
+  b.holes[idx(0, 6)] = 1;
+  b.cells[idx(0, 6)] = null;
+  b.cells[idx(0, 7)] = { id: 900, color: 0 };
+  b.cells[idx(1, 7)] = { id: 901, color: 0 };
+  b.cells[idx(2, 6)] = { id: 902, color: 0 };
+  b.cells[idx(2, 7)] = { id: 903, color: 1 };
+  assert.equal(findGroups(b.cells).length, 0);
+  const above = b.cells[idx(0, 5)]!.id;
+  const r = swap(b, { x: 2, y: 6 }, { x: 2, y: 7 })!;
+  assert.ok(r);
+  const first = r.steps[0].cells;
+  assert.equal(first[idx(0, 6)], null, "the hole stays empty");
+  assert.equal(first[idx(0, 7)]!.id, above, "the gem above the hole fell past it");
 });

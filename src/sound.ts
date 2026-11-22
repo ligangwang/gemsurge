@@ -78,6 +78,26 @@ function noise(dur: number, gain: number, freq: number, delay = 0) {
   src.start(t);
 }
 
+/** A short, bright burst of noise in one band: one crack of ice or a glint. */
+function crack(dur: number, gain: number, freq: number, delay = 0) {
+  const a = audio();
+  if (!a || !master) return;
+  const t = a.currentTime + delay;
+  const buffer = a.createBuffer(1, Math.ceil(a.sampleRate * dur), a.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length) ** 3;
+  const src = a.createBufferSource();
+  src.buffer = buffer;
+  const filter = a.createBiquadFilter();
+  filter.type = "bandpass";
+  filter.frequency.value = freq;
+  filter.Q.value = 1.4;
+  const g = a.createGain();
+  g.gain.value = gain;
+  src.connect(filter).connect(g).connect(master);
+  src.start(t);
+}
+
 // A pentatonic scale, so rising chains always sound good.
 const SCALE = [0, 2, 4, 7, 9];
 const note = (step: number, base = 523.25) =>
@@ -86,8 +106,20 @@ const note = (step: number, base = 523.25) =>
 // --- A spoken word of encouragement, in a soft, higher voice.
 
 // Voices that sound young and bright come first; any other woman's voice is next best.
-const GIRL_VOICES = /xiaoyi|xiaoxiao|xiaomeng|xiaoshuang|ting-?ting|mei-?jia|sin-?ji|yaoyao|ana\b|jenny|aria|samantha|shelley|sandy|flo\b/i;
+const GIRL_VOICES =
+  /xiaoyi|xiaoxiao|xiaomeng|xiaoshuang|ting-?ting|mei-?jia|sin-?ji|yaoyao|ana\b|jenny|aria|samantha|shelley|sandy|flo\b|paulina|monica|m[oó]nica|luciana|francisca|damayanti|gadis|kyoko|nanami|o-?ren|yuna|sun-?hi/i;
 const SOFT_VOICES = /female|woman|girl|huihui|karen|victoria|zira|moira|tessa|google/i;
+
+/** The speech language for each of the game's languages. */
+const SPEECH_LANG: Record<string, string> = {
+  en: "en-US",
+  "zh-CN": "zh-CN",
+  es: "es-ES",
+  "pt-BR": "pt-BR",
+  id: "id-ID",
+  ja: "ja-JP",
+  ko: "ko-KR",
+};
 
 // Browsers load their voices late, so ask early: the first cheer then has them.
 if (typeof speechSynthesis !== "undefined") {
@@ -99,16 +131,37 @@ if (typeof speechSynthesis !== "undefined") {
   }
 }
 
-/** Says `text` aloud with the device's own speech, when it has one. */
-export function say(text: string, locale: string) {
+/** The device's voices for `lang` ("pt-BR"): that region's first, else any of the language. */
+function voicesFor(lang: string) {
+  const norm = (l: string) => l.toLowerCase().replace(/_/g, "-");
+  const all = speechSynthesis.getVoices();
+  const exact = all.filter((v) => norm(v.lang) === norm(lang));
+  if (exact.length) return { all, voices: exact };
+  const base = norm(lang).split("-")[0];
+  return { all, voices: all.filter((v) => norm(v.lang).split("-")[0] === base) };
+}
+
+/**
+ * Says `text` aloud with the device's own speech, when it has one, in the
+ * player's language. A device with voices but none in that language says
+ * `english` (the words as written) in English instead, so a cheer is never
+ * read out in the wrong accent.
+ */
+export function say(text: string, locale: string, english?: string) {
   if (muted || typeof speechSynthesis === "undefined" || typeof SpeechSynthesisUtterance === "undefined") return;
   try {
-    const lang = locale.startsWith("zh") ? "zh" : "en";
-    const voices = speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith(lang));
-    const line = new SpeechSynthesisUtterance(text.replace(/[!！]/g, ""));
+    let lang = SPEECH_LANG[locale] ?? locale;
+    let found = voicesFor(lang);
+    if (!found.voices.length && found.all.length && english && lang !== SPEECH_LANG.en) {
+      lang = SPEECH_LANG.en;
+      text = english;
+      found = voicesFor(lang);
+    }
+    const { voices } = found;
+    const line = new SpeechSynthesisUtterance(text.replace(/[!！¡]/g, "").trim());
     line.voice =
       voices.find((v) => GIRL_VOICES.test(v.name)) ?? voices.find((v) => SOFT_VOICES.test(v.name)) ?? voices[0] ?? null;
-    line.lang = lang === "zh" ? "zh-CN" : "en-US";
+    line.lang = lang;
     // A bright, girlish voice: clearly higher than the default and a touch quicker.
     line.pitch = 1.8;
     line.rate = 1.1;
@@ -120,7 +173,54 @@ export function say(text: string, locale: string) {
   }
 }
 
+/**
+ * Pieces landing on a goal in quick succession climb in pitch, so a big
+ * collection sounds like a rising cascade; a pause starts the run again.
+ */
+let lastLanding = -1;
+let landings = 0;
+function landingStep() {
+  const a = audio();
+  if (!a) return -1;
+  const now = a.currentTime;
+  // Pieces that land together sound once.
+  if (now - lastLanding < 0.035) return -1;
+  landings = now - lastLanding > 0.7 ? 0 : Math.min(landings + 1, 14);
+  lastLanding = now;
+  return landings;
+}
+
 export const sfx = {
+  /**
+   * A gem landing on its goal: a quick run of tiny bells, "sha-la-la", that
+   * ends in a soft pop as it drops into the bag.
+   */
+  collect: () => {
+    const step = landingStep();
+    if (step < 0) return;
+    for (let i = 0; i < 3; i++) {
+      const f = note(step + i + 8);
+      tone(f, { type: "sine", dur: 0.14, gain: 0.085, delay: i * 0.028 });
+      tone(f * 2.01, { type: "sine", dur: 0.08, gain: 0.03, delay: i * 0.028 });
+    }
+    crack(0.06, 0.08, 9000, 0.02);
+    tone(240, { type: "sine", dur: 0.1, gain: 0.12, to: 130, delay: 0.09 });
+  },
+  /** A chip of ice landing on its goal: a crunchy crackle with a glassy tinkle. */
+  collectIce: () => {
+    const step = landingStep();
+    if (step < 0) return;
+    for (let i = 0; i < 5; i++) crack(0.025, 0.18, 2500 + Math.random() * 4500, i * 0.014 + Math.random() * 0.008);
+    tone(note(step + 12) * 2, { type: "triangle", dur: 0.09, gain: 0.05, delay: 0.05 });
+    tone(note(step + 14) * 2, { type: "triangle", dur: 0.12, gain: 0.04, delay: 0.085 });
+  },
+  /** A goal is complete: a bright "ding-ding" with a sparkle. */
+  goalDone: () => {
+    tone(note(12), { type: "triangle", dur: 0.22, gain: 0.12, delay: 0.12 });
+    tone(note(14), { type: "triangle", dur: 0.4, gain: 0.12, delay: 0.22 });
+    tone(note(14) * 2, { type: "sine", dur: 0.3, gain: 0.03, delay: 0.22 });
+    crack(0.3, 0.04, 10000, 0.22);
+  },
   select: () => tone(880, { type: "triangle", dur: 0.06, gain: 0.06 }),
   swap: () => tone(420, { type: "triangle", dur: 0.1, gain: 0.07, to: 620 }),
   invalid: () => {
