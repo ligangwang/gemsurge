@@ -2,6 +2,7 @@
 import { SIZE } from "./engine/board";
 import { below, hashSeed, next, shuffleInPlace } from "./engine/random";
 import type { Goal, LevelSpec } from "./engine/session";
+import { lanternLakePuzzle } from "./lantern-lake";
 
 export type World = { id: string; name: string };
 /**
@@ -104,7 +105,7 @@ const TABLE: [number, number, string][] = [
   [30, 5, "i:frame c0:24 c4:24"],
 ];
 
-/** The first levels are laid out by hand in TABLE; the rest are generated from them. */
+/** The original level templates. Later levels are generated from this table. */
 export const HAND_MADE = TABLE.length;
 export const LAST_LEVEL = 10000;
 /** Generated levels get harder up to this level, then hold steady. */
@@ -255,6 +256,11 @@ function fitGoals(text: string, stones: readonly number[]) {
 
 export function levelSpec(level: number): LevelSpec {
   const n = Math.min(Math.max(1, level), LAST_LEVEL);
+  const world = worldNumber(n) % WORLDS.length;
+  const seed = hashSeed(`gemsurge-level-${n}`);
+  const puzzle = lanternLakePuzzle(n);
+  if (puzzle) return { ...puzzle, level: n, world, colors: stonesFor(n).length, seed };
+
   const [tableMoves, tableColors, tableText] = n <= HAND_MADE ? TABLE[n - 1] : generated(n);
   const stones = stonesFor(n);
   const colors = stones.length;
@@ -279,7 +285,7 @@ export function levelSpec(level: number): LevelSpec {
   const three = round(Math.max(base * 2, per * moves * 1.5));
   return {
     level: n,
-    world: worldNumber(n) % WORLDS.length,
+    world,
     moves,
     colors,
     // Five and seven colours are the first five or all seven stones; six
@@ -289,7 +295,7 @@ export function levelSpec(level: number): LevelSpec {
     ice: iceLayout.map((layers, i) => (holes[i] ? 0 : layers)),
     ...(shape ? { holes } : {}),
     stars: [base, two, three],
-    seed: hashSeed(`gemsurge-level-${n}`),
+    seed,
   };
 }
 

@@ -7,6 +7,7 @@ import {
   findGroups,
   findHint,
   idx,
+  supernova,
   surge,
   swap,
   type Board,
@@ -80,6 +81,35 @@ test("three in a row clear, gems fall and new ones drop in", () => {
   assert.equal(r.collected[0] >= 3, true);
   settled(b);
   assert.equal(r.steps[0].spawned.length >= 3, true);
+});
+
+test("ice covers block swaps and matches, then crack without clearing their gems", () => {
+  const b = board(BASE);
+  b.iceCover = true;
+  const middle = idx(1, 7);
+  const above = idx(1, 6);
+  b.cells[idx(0, 7)]!.color = 0;
+  b.cells[middle]!.color = 0;
+  b.cells[idx(2, 6)]!.color = 0;
+  b.cells[idx(2, 7)]!.color = 4;
+  b.ice[middle] = 2;
+  const from = { x: 2, y: 6 };
+  const to = { x: 2, y: 7 };
+  assert.equal(swap(b, from, to), null, "the middle gem cannot complete a hidden match");
+  assert.equal(swap(b, to, { x: 1, y: 7 }), null, "the covered gem cannot move");
+
+  b.ice[middle] = 0;
+  b.ice[above] = 2;
+  const gem = b.cells[above]!;
+  const first = swap(b, from, to)!.steps[0];
+  assert.deepEqual(first.ice, [{ x: 1, y: 6, left: 1 }]);
+  assert.deepEqual(first.cells[above], gem, "gravity leaves the covered gem in place");
+  b.ice[above] = 1;
+  const hidden = b.cells[above]!;
+  const blast = supernova(b).steps[0];
+  assert.ok(blast.ice.some((c) => c.x === 1 && c.y === 6 && c.left === 0));
+  assert.ok(!blast.cleared.some((c) => c.id === hidden.id), "the blast reveals the gem");
+  assert.ok(blast.cells.some((c) => c?.id === hidden.id));
 });
 
 test("four in a row makes a line blaster where the gem was moved", () => {

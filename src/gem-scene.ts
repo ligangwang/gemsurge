@@ -24,6 +24,7 @@ import {
 } from "./engine/board";
 import type { Turn } from "./engine/session";
 import type { Cleared } from "./engine/board";
+import type { FrostMotif } from "./lantern-lake";
 import { sfx } from "./sound";
 import { Scenery } from "./scenery";
 
@@ -836,6 +837,43 @@ function starTexture() {
   return t;
 }
 
+const FROST_OUTLINES: Record<FrostMotif, [number, number][]> = {
+  shard: [[36, 11], [51, 49], [13, 40]],
+  hexagon: [[23, 15], [41, 15], [51, 32], [41, 49], [23, 49], [13, 32]],
+  diamond: [[32, 10], [51, 32], [32, 54], [13, 32]],
+};
+
+function frostTexture(motif: FrostMotif) {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 64;
+  const ctx = canvas.getContext("2d")!;
+  const gradient = ctx.createLinearGradient(0, 0, 64, 64);
+  gradient.addColorStop(0, "#f0fbff");
+  gradient.addColorStop(1, "#7ca2bb");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 64, 64);
+  ctx.fillStyle = "#dff6ff";
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(64, 0);
+  ctx.lineTo(39, 26);
+  ctx.lineTo(0, 46);
+  ctx.fill();
+  const [[x, y], ...corners] = FROST_OUTLINES[motif];
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  for (const [cx, cy] of corners) ctx.lineTo(cx, cy);
+  ctx.closePath();
+  ctx.fillStyle = "#98b8cd";
+  ctx.fill();
+  ctx.strokeStyle = "#f2fbff";
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
 function glowTexture() {
   const c = document.createElement("canvas");
   c.width = c.height = 64;
@@ -992,6 +1030,20 @@ export class GemScene {
   private iceMeshes: (THREE.Mesh | null)[] = new Array(SIZE * SIZE).fill(null);
   private iceGeo = new RoundedBoxGeometry(0.94, 0.94, 0.08, 2, 0.03);
   private iceMats: THREE.MeshStandardMaterial[];
+  private iceCoverGeo = new THREE.PlaneGeometry(0.94, 0.94);
+  private iceCoverTex = {
+    shard: frostTexture("shard"),
+    hexagon: frostTexture("hexagon"),
+    diamond: frostTexture("diamond"),
+  };
+  private iceCoverMats = [0xa9dcff, 0x568bc1].map((color) => new THREE.MeshBasicMaterial({
+    color,
+    map: this.iceCoverTex.shard,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+  }));
+  private coverIce = false;
   private tiles!: THREE.InstancedMesh;
   private selRing: THREE.Mesh;
   private tweens: Tween[] = [];
@@ -1375,6 +1427,7 @@ export class GemScene {
     worldIndex: number,
     worldCycle = 0,
     holes: number[] = [],
+    frostMotif?: FrostMotif,
   ) {
     for (const id of [...this.views.keys()]) this.removeView(id);
     // The lines between the cells follow the board's shape.
@@ -1389,9 +1442,12 @@ export class GemScene {
     this.tweens = [];
     for (const tw of pending) tw.cancel?.();
     this.setWorld(worldIndex, worldCycle);
+    this.coverIce = !!frostMotif;
+    if (frostMotif) for (const material of this.iceCoverMats) material.map = this.iceCoverTex[frostMotif];
+    this.iceMeshes.forEach((_, i) => this.setIce(i, ice[i] ?? 0));
     this.cells = cells.map((g) => (g ? { ...g } : null));
     cells.forEach((g, i) => {
-      if (!g) return;
+      if (!g || this.isIceCovered(i)) return;
       const v = this.makeView(g, i % SIZE, Math.floor(i / SIZE));
       // Drop in from above, column by column.
       const target = v.group.position.clone();
@@ -1403,7 +1459,6 @@ export class GemScene {
         delay,
       );
     });
-    ice.forEach((n, i) => this.setIce(i, n));
     this.select(null);
     this.hint = null;
     this.setFever(false);
@@ -1426,15 +1481,24 @@ export class GemScene {
       }
       return;
     }
-    const m = mesh ?? new THREE.Mesh(this.iceGeo, this.iceMats[0]);
-    m.material = this.iceMats[Math.min(layers, 2) - 1];
+    const geometry = this.coverIce ? this.iceCoverGeo : this.iceGeo;
+    const materials = this.coverIce ? this.iceCoverMats : this.iceMats;
+    const material = materials[Math.min(layers, 2) - 1];
+    const m = mesh ?? new THREE.Mesh(geometry, material);
+    m.geometry = geometry;
+    m.material = material;
     const p = world(i % SIZE, Math.floor(i / SIZE));
-    m.position.set(p.x, p.y, -0.4);
-    m.scale.z = layers > 1 ? 2 : 1;
+    // Frost is blended over the gems, but projects from the grid's plane.
+    m.position.set(p.x, p.y, this.coverIce ? this.grid.position.z : -0.4);
+    m.scale.z = !this.coverIce && layers > 1 ? 2 : 1;
     if (!mesh) {
       this.boardGroup.add(m);
       this.iceMeshes[i] = m;
     }
+  }
+
+  private isIceCovered(i: number) {
+    return this.coverIce && this.iceMeshes[i] !== null;
   }
 
   setInput(on: boolean) {
@@ -1475,7 +1539,7 @@ export class GemScene {
     this.options.onPoke?.();
     if (!this.inputOn) return;
     const hit = this.cellAt(e);
-    if (!hit) {
+    if (!hit || this.isIceCovered(idx(hit.pos.x, hit.pos.y))) {
       this.select(null);
       return;
     }
@@ -1508,7 +1572,7 @@ export class GemScene {
         ? { x: from.x + Math.sign(dx), y: from.y }
         : { x: from.x, y: from.y - Math.sign(dy) };
     this.dragFrom = null;
-    if (to.x < 0 || to.y < 0 || to.x >= SIZE || to.y >= SIZE) return;
+    if (to.x < 0 || to.y < 0 || to.x >= SIZE || to.y >= SIZE || this.isIceCovered(idx(to.x, to.y))) return;
     this.select(null);
     this.options.onSwap(from, to);
   };
@@ -1822,6 +1886,7 @@ export class GemScene {
           clearDelay.get(idx(c.x, c.y)) ??
           (ripple.get(idx(c.x, c.y)) ?? 0) + 0.08,
       ),
+      ...step.ice.map((c) => clearDelay.get(idx(c.x, c.y)) ?? 0),
     );
     await this.wait(longest + 0.2);
 
@@ -1871,14 +1936,15 @@ export class GemScene {
     cells.forEach((g, i) => g && spawned.has(g.id) && newPerColumn[i % SIZE]++);
     let longest = 0;
     cells.forEach((g, i) => {
-      if (!g) return;
+      if (!g || this.isIceCovered(i)) return;
       const x = i % SIZE;
       const y = Math.floor(i / SIZE);
       let v = this.views.get(g.id);
       let fromY: number;
       if (!v) {
         v = this.makeView(g, x, y);
-        fromY = y - newPerColumn[x] - 0.6;
+        const previous = this.coverIce ? this.cells.findIndex((cell) => cell?.id === g.id) : -1;
+        fromY = previous >= 0 ? Math.floor(previous / SIZE) : y - newPerColumn[x] - 0.6;
       } else {
         fromY = HALF - v.group.position.y;
       }
@@ -2444,9 +2510,10 @@ export class GemScene {
    * A big word across the board, such as "Fever!", or, given `at`, a word
    * that pops up over that spot on the board, such as a chain's cheer.
    */
-  banner(text: string, level = 1, at?: THREE.Vector3) {
+  banner(text: string, level = 1, at?: THREE.Vector3, wrap = false) {
     const el = document.createElement("div");
     el.className = `gem-banner level-${Math.min(level, 6)}${at ? " at-match" : ""}`;
+    if (wrap) el.classList.add("wrapped");
     el.dataset.text = text;
     el.textContent = this.translate(text);
     if (at) {
@@ -2606,6 +2673,9 @@ export class GemScene {
     window.removeEventListener("pointermove", this.onMove);
     window.removeEventListener("pointerup", this.onUp);
     for (const id of [...this.views.keys()]) this.removeView(id);
+    this.iceCoverGeo.dispose();
+    Object.values(this.iceCoverTex).forEach((texture) => texture.dispose());
+    this.iceCoverMats.forEach((material) => material.dispose());
     this.composer.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();

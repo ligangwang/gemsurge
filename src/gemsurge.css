@@ -75,6 +75,14 @@
   animation: banner 1.3s cubic-bezier(0.2, 1.4, 0.4, 1) forwards;
 }
 .gem-banner.level-3 { font-size: 62px; }
+.gem-banner.wrapped {
+  width: max-content;
+  max-width: calc(100% - 32px);
+  white-space: normal;
+  text-align: center;
+  line-height: 1.1;
+  font-size: 36px;
+}
 .gem-banner.level-4,
 .gem-banner.level-5 {
   font-size: 70px;
@@ -613,6 +621,7 @@
   .hud-nova .nova-star { margin-right: 2px; }
   .gem-end { left: 0; }
   .gem-banner { font-size: 36px !important; }
+  .gem-banner.wrapped { font-size: 26px !important; }
   .gem-banner.at-match { font-size: 28px !important; }
   .gem-splash-title { font-size: 64px; }
 }
