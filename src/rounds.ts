@@ -113,30 +113,44 @@ export function rewardOf(round: number): RoundReward {
   return { novas: (milestone ? 3 : 1) + depth, coins: milestone ? 30 : 10, milestone };
 }
 
-/** The lucky draw: extra Supernovas. `roll` is a number in [0, 1). */
+/** The lucky draw's prizes, in extra Supernovas, and the chance of each. */
 export const DRAW = [
   { novas: 1, chance: 0.5 },
   { novas: 2, chance: 0.3 },
   { novas: 3, chance: 0.15 },
   { novas: 5, chance: 0.05 },
 ];
-export function draw(roll: number) {
-  let at = 0;
-  for (let i = 0; i < DRAW.length; i++) {
-    at += DRAW[i].chance;
-    if (roll < at) return { index: i, novas: DRAW[i].novas };
-  }
-  return { index: 0, novas: DRAW[0].novas };
-}
+/** The draw's top prize. */
+export const JACKPOT = DRAW[DRAW.length - 1].novas;
 
 /**
  * The wheel the draw is spun on: 20 equal slices, each holding a prize, so a
- * prize's share of the wheel is its chance. The draw decides the prize; the
- * wheel then stops on one of that prize's slices.
+ * prize's share of the wheel is its chance. The player spins it and says when
+ * to stop; it wins the slice it comes to rest on.
  */
 export const WHEEL = [1, 2, 1, 3, 1, 2, 1, 2, 1, 5, 1, 2, 1, 3, 1, 2, 1, 2, 1, 3];
-/** A slice of the wheel holding `novas`; `roll` in [0, 1) picks among them. */
-export function sliceFor(novas: number, roll: number) {
-  const slices = WHEEL.flatMap((n, i) => (n === novas ? [i] : []));
-  return slices[Math.min(slices.length - 1, Math.floor(roll * slices.length))] ?? 0;
+
+/** The slice under the pin once the wheel has turned `angle` degrees clockwise. */
+export function sliceAt(angle: number) {
+  const step = 360 / WHEEL.length;
+  const under = (((-angle % 360) + 360) % 360) / step;
+  return Math.min(WHEEL.length - 1, Math.floor(under));
+}
+
+/** The shortest and longest a push carries the wheel, in degrees. */
+export const PUSH_MIN = 360;
+export const PUSH_MAX = 360 * 5;
+/**
+ * Where the wheel comes to rest when the player lets it go at `angle` with a
+ * push that would carry it `push` degrees (negative: anticlockwise). The push
+ * is the player's: a harder swipe spins it further, at least a full turn. On
+ * top it coasts a little more, up to one more turn, `roll` in [0, 1) saying
+ * how far, the way a real wheel never stops twice in the same place. That
+ * turn of spread makes every slice exactly as likely as its share of the
+ * wheel however the player pushes, so no push can aim for the jackpot.
+ */
+export function restAngle(angle: number, push: number, roll: number) {
+  const dir = push < 0 ? -1 : 1;
+  const carry = Math.min(PUSH_MAX, Math.max(PUSH_MIN, Math.abs(push)));
+  return angle + dir * (carry + 360 * roll);
 }

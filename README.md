@@ -26,13 +26,13 @@ in rounds of 10, across eight worlds. Play it at <https://dingn.com/play/gemsurg
   octagon, a heart, a terrace, an hourglass, pillars, a cross), and most
   generated levels get one. Gems fall past the holes, and a smaller board has
   smaller targets.
-- **Feedback**: gems and ice that count towards a goal fly to it in the HUD,
-  and its count ticks up as they land. Cheers such as Nice and Great pop up
-  over the match that earned them. A win with moves left opens with a Surge!
-  title, shows the surge's points large, and a tap plays the end faster.
+- **Feedback**: cheers such as Nice and Great pop up over the match that
+  earned them. A win with moves left opens with a Surge! title, shows the
+  surge's points large, and a tap plays the end faster.
 - **Daily board**: 20 moves, the same board and refills for everyone each UTC
   day.
-- English and Chinese.
+- English, Chinese, Spanish, Brazilian Portuguese, Indonesian, Japanese and
+  Korean, with the language switchable mid-game (packs in `src/locales/`).
 
 ## Coins and upgrades
 

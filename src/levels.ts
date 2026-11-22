@@ -10,7 +10,7 @@ export type World = { id: string; name: string };
  * time (see `worldCycle`).
  */
 export const WORLDS: World[] = [
-  { id: "neon", name: "Neon City" },
+  { id: "neon", name: "Crystal Forest" },
   { id: "sea", name: "Deep Sea" },
   { id: "space", name: "Outer Space" },
   { id: "lake", name: "Lantern Lake" },
@@ -26,7 +26,7 @@ export const worldNumber = (level: number) => Math.floor((Math.max(1, level) - 1
 /** How many times the worlds have come round by this level: 0 for the first 80 levels. */
 export const worldCycle = (level: number) => Math.floor(worldNumber(level) / WORLDS.length);
 
-export const COLOR_NAMES = ["Ruby", "Topaz", "Emerald", "Sapphire", "Amethyst", "Diamond"];
+export const COLOR_NAMES = ["Ruby", "Diamond", "Emerald", "Sapphire", "Amethyst", "Topaz", "Morganite"];
 
 const ICE: Record<string, string[]> = {
   center: ["........", "........", "..1111..", "..1111..", "..1111..", "..1111..", "........", "........"],
@@ -69,7 +69,7 @@ const iceCells = (name?: string) =>
  * out as `center`, and "b:heart" cuts the board into one of the SHAPES.
  */
 const TABLE: [number, number, string][] = [
-  // Neon City
+  // Crystal Forest
   [20, 5, "s3000"],
   [20, 5, "c0:30"],
   [18, 5, "i:center"],
@@ -213,12 +213,53 @@ export const EASY_LEVELS = 100;
  */
 const ease = (n: number) => Math.min(1, Math.max(0, (EASY_LEVELS + 1 - n) / 30));
 
-/** Rough points a move scores with 5 or 6 colours, used to set the star scores. */
-const PER_MOVE: Record<number, number> = { 5: 200, 6: 110 };
+/** Rough points a move scores with 5, 6 or 7 colours, used to set the star scores. */
+const PER_MOVE: Record<number, number> = { 5: 200, 6: 110, 7: 70 };
+
+/**
+ * How many colours a level has, by its number: five up to level 50, six from
+ * 51 (the pink morganite, stone 6, joins the five), and all seven from 101
+ * (stone 5 joins too). Each new colour makes matches harder to find, so a
+ * level gets two more moves for each colour beyond what its design (TABLE)
+ * had, and two fewer for each one less.
+ */
+export const SIX_COLORS_LEVEL = 51;
+export const SEVEN_COLORS_LEVEL = 101;
+/** The morganite joins with the sixth colour. */
+export const SEVENTH_COLOR_LEVEL = SIX_COLORS_LEVEL;
+const FIVE = [0, 1, 2, 3, 4] as const;
+const FIVE_AND_MORGANITE = [0, 1, 2, 3, 4, 6] as const;
+const SEVEN = [0, 1, 2, 3, 4, 5, 6] as const;
+/** The stones a level's gems are. */
+export const stonesFor = (level: number): readonly number[] =>
+  level >= SEVEN_COLORS_LEVEL ? SEVEN : level >= SIX_COLORS_LEVEL ? FIVE_AND_MORGANITE : FIVE;
+
+/**
+ * Goals asking for a stone the level doesn't have (its design had more
+ * colours) ask for one it has instead, one no other goal asks for.
+ */
+function fitGoals(text: string, stones: readonly number[]) {
+  const parts = text.split(" ");
+  const asked = new Set(parts.filter((p) => p[0] === "c").map((p) => Number(p.slice(1).split(":")[0])));
+  return parts
+    .map((part) => {
+      if (part[0] !== "c") return part;
+      const [color, target] = part.slice(1).split(":");
+      if (stones.includes(Number(color))) return part;
+      const free = stones.find((s) => !asked.has(s)) ?? stones[0];
+      asked.add(free);
+      return `c${free}:${target}`;
+    })
+    .join(" ");
+}
 
 export function levelSpec(level: number): LevelSpec {
   const n = Math.min(Math.max(1, level), LAST_LEVEL);
-  const [tableMoves, colors, text] = n <= HAND_MADE ? TABLE[n - 1] : generated(n);
+  const [tableMoves, tableColors, tableText] = n <= HAND_MADE ? TABLE[n - 1] : generated(n);
+  const stones = stonesFor(n);
+  const colors = stones.length;
+  // From the morganite on, one colour goal in three asks for it.
+  const text = fitGoals(n >= SIX_COLORS_LEVEL ? withSeventh(tableText, n) : tableText, stones);
   const { goals, ice, shape: tableShape } = parseGoals(text);
   const iceLayout = ice && n > HAND_MADE ? variedIce(n, iceCells(ice)) : iceCells(ice);
   const shape = n > HAND_MADE ? generatedShape(n, iceLayout, tableShape) : tableShape;
@@ -226,7 +267,7 @@ export function levelSpec(level: number): LevelSpec {
   // A smaller board clears fewer gems a move, so its targets shrink with it.
   const area = holes.filter((h) => !h).length / (SIZE * SIZE);
   const easy = ease(n);
-  const moves = Math.round(tableMoves * (1 + 0.3 * easy));
+  const moves = Math.round((tableMoves + 2 * (colors - tableColors)) * (1 + 0.3 * easy));
   for (const goal of goals) {
     if (goal.kind === "score") goal.target = Math.round((goal.target * area * (1 - 0.2 * easy)) / 100) * 100;
     else if (goal.kind === "color") goal.target = Math.round(goal.target * area * (1 - 0.2 * easy));
@@ -241,6 +282,9 @@ export function levelSpec(level: number): LevelSpec {
     world: worldNumber(n) % WORLDS.length,
     moves,
     colors,
+    // Five and seven colours are the first five or all seven stones; six
+    // are the five and the morganite.
+    ...(colors === 6 ? { palette: stones } : {}),
     goals,
     ice: iceLayout.map((layers, i) => (holes[i] ? 0 : layers)),
     ...(shape ? { holes } : {}),
@@ -250,6 +294,23 @@ export function levelSpec(level: number): LevelSpec {
 }
 
 const round = (n: number) => Math.round(n / 500) * 500;
+
+/**
+ * A level's goals once the morganite has joined: one colour goal in three,
+ * chosen by the level number, asks for the morganite instead.
+ */
+function withSeventh(text: string, n: number) {
+  if (hashSeed(`gemsurge-seventh-${n}`) % 3 !== 0) return text;
+  let swapped = false;
+  return text
+    .split(" ")
+    .map((part) => {
+      if (swapped || part[0] !== "c") return part;
+      swapped = true;
+      return `c6:${part.split(":")[1]}`;
+    })
+    .join(" ");
+}
 
 /** Today's UTC day, as 2026-11-15. */
 export const utcDay = (now = new Date()) => now.toISOString().slice(0, 10);

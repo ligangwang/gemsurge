@@ -8,7 +8,6 @@ import { GemGame } from "./game";
 import { loadSaved } from "./save";
 
 const sdk = await connect();
-document.documentElement.lang = sdk.locale;
 const [saved, prefs] = await Promise.all([
   loadSaved(sdk),
   sdk.storage.get("prefs").catch(() => null),
