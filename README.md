@@ -19,9 +19,10 @@ in rounds of 10, across eight worlds. Play it at <https://dingn.com/play/gemsurg
 - **Chain coins**: a chain reaction earns coins (1 for the first cascade, up to 5 for a chain of five), at most 10 a level, paid with the level's own coins when it ends.
 - **Undo**: take your last move back, up to 3 times a level. It is free up to level 100; after that each tier of the Undo upgrade gives one undo a level.
 - **Encouragement**: words such as Nice, Good and Awesome for chains and big clears, said aloud in a bright, girlish voice by the device's own speech (it varies by device; mute silences it).
-- **Levels**: 10,000 levels through eight worlds, a new one every 10 levels (Neon City, Deep Sea, Outer Space, Lantern Lake, Aurora Peaks, Golden Desert, Firefly Forest and Cloud Kingdom; they come round again in new colours after level 80; the first 30 levels are hand-made, the rest generated from them, each with its own mirrored ice shape, and no harder after level 1000), the first 100 eased with extra moves and lower targets, each with its
+- **Levels**: 10,000 levels through eight worlds, a new one every 10 levels (Neon City, Deep Sea, Outer Space, Lantern Lake, Aurora Peaks, Golden Desert, Firefly Forest and Cloud Kingdom; they come round again in new colours after level 80; the first 33 levels are hand-made, and later levels draw from the original templates, with mirrored ice shapes and difficulty capped at level 1000), the first 100 eased with extra moves and lower targets, each with its
   own background. Goals are scores, gems of a colour, and ice
   to break (1 or 2 layers), within a move limit. 1 to 3 stars by score.
+- **Lantern Lake**: in levels 31–33, ice covers hide and hold the gems underneath. Match beside a cover or hit it with a blast to crack one layer and open up the board.
 - **Shaped boards**: from level 12 some boards are cut into shapes (an
   octagon, a heart, a terrace, an hourglass, pillars, a cross), and most
   generated levels get one. Gems fall past the holes, and a smaller board has

@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import game from "../game.json" with { type: "json" };
 import { PACKS } from "../src/i18n";
-import { SIZE, findHint } from "../src/engine/board";
+import { frostMotifForLevel } from "../src/lantern-lake";
+import { SIZE, findGroups, findHint } from "../src/engine/board";
 import { CHAIN_COIN_CAP, Session, chainCoinsFor } from "../src/engine/session";
 import { DAILY_COINS, HAND_MADE, LAST_LEVEL, WORLDS, LEVELS_PER_WORLD, coinsFor, dailySpec, levelSpec, worldCycle } from "../src/levels";
 import { DAILY, levelBadges, CHAIN_5, CHAIN_8, COMBO, FEVER, PRISM, THREE_STARS, WIPE } from "../src/badges";
@@ -46,6 +47,49 @@ test("the daily board is the same all day and different the next", () => {
   assert.deepEqual(dailySpec("2026-11-15"), dailySpec("2026-11-15"));
   assert.notEqual(dailySpec("2026-11-15").seed, dailySpec("2026-11-16").seed);
   assert.equal(dailySpec("2026-11-15").allMoves, true);
+});
+
+test("the three Lantern Lake openings work and the puzzles are beatable without upgrades", () => {
+  const motifs = [31, 32, 33].map(frostMotifForLevel);
+  assert.equal(new Set(motifs).size, 3);
+  assert.deepEqual([31, 32, 33].map(frostMotifForLevel), motifs);
+  const solutions = [
+    [[4, 4, 3, 4], [1, 3, 1, 4], [4, 4, 4, 5], [3, 5, 3, 6]],
+    [[3, 3, 4, 3], [1, 3, 2, 3], [5, 0, 5, 1], [5, 0, 6, 0], [4, 2, 5, 2], [3, 2, 4, 2],
+     [6, 1, 7, 1], [4, 3, 5, 3], [3, 4, 4, 4], [2, 5, 2, 6], [1, 5, 1, 6]],
+    [[4, 2, 4, 3], [3, 3, 4, 3], [5, 3, 6, 3], [4, 5, 5, 5], [2, 4, 2, 5], [5, 2, 5, 3],
+     [3, 5, 3, 6], [4, 1, 4, 2], [3, 6, 3, 7], [0, 5, 1, 5], [2, 6, 3, 6]],
+  ];
+  for (const [i, solution] of solutions.entries()) {
+    const level = 31 + i;
+    const spec = levelSpec(level);
+    const session = new Session(spec);
+    assert.equal(spec.opening?.length, SIZE * SIZE);
+    assert.deepEqual(session.board, new Session(levelSpec(level)).board);
+    assert.equal(findGroups(session.board.cells.map((gem, i) => session.board.ice[i] ? null : gem)).length, 0);
+    assert.ok(findHint(session.board));
+    session.board.cells.forEach((gem, cell) => {
+      assert.equal(gem === null, Boolean(spec.holes?.[cell]));
+      if (gem) assert.ok(gem.special === "prism" ? gem.color === -1 : gem.color >= 0 && gem.color < spec.colors);
+    });
+    const turns = solution.map(([x, y, toX, toY]) => {
+      const turn = session.move({ x, y }, { x: toX, y: toY });
+      assert.ok(turn, `level ${level}: swap ${x},${y} to ${toX},${toY}`);
+      return turn;
+    });
+    assert.equal(session.outcome, "won", `level ${level}`);
+    if (level === 31) {
+      assert.equal(turns[0].steps[0].created[0].gem.special, "row");
+      assert.ok(turns[1].steps[0].blasts.some((blast) => blast.kind === "row"));
+      assert.ok(turns[1].steps[0].ice.length >= 4);
+    } else if (level === 32) {
+      assert.equal(turns[0].combo, "bomb+row");
+      assert.ok(turns[0].steps[0].ice.length >= 8);
+    } else {
+      assert.ok(turns[0].steps[0].blasts.some((blast) => blast.kind === "prism" && blast.color === 3));
+      assert.ok(turns[0].steps[0].ice.length >= 9);
+    }
+  }
 });
 
 test("coins pay 1 to 10 for a cleared level", () => {
@@ -211,13 +255,15 @@ test("generated ice levels each have their own mirrored shape", () => {
   const shapes = new Set<string>();
   let levels = 0;
   for (let n = 31; n <= 400; n++) {
-    const ice = levelSpec(n).ice;
+    const spec = levelSpec(n);
+    if (spec.opening) continue;
+    const { ice } = spec;
     if (!ice.some((c) => c > 0)) continue;
     levels++;
     shapes.add(ice.join(""));
     // Mirrored both ways, except where the board's shape cut it away
     // (shapes are mirrored left to right only).
-    const holes = levelSpec(n).holes ?? [];
+    const holes = spec.holes ?? [];
     for (let i = 0; i < ice.length; i++) {
       const x = i % 8;
       const y = Math.floor(i / 8);

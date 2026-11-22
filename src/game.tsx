@@ -7,6 +7,7 @@ import { FEVER_MOVES, FREE_UNDO_LEVELS, SURGE_MAX, Session, type Goal, type Turn
 import { version } from "../game.json";
 import { AnimationCancelled, CHEERS, GEM_OUTLINES, GemScene, STONE_CSS, type Collected } from "./gem-scene";
 import { useDingn, useLocale } from "./dingn";
+import { frostMotifForLevel } from "./lantern-lake";
 import {
   COLOR_NAMES,
   DAILY_COINS,
@@ -242,11 +243,13 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   // whether the round can pay (scoreOnly).
   useEffect(() => {
     const c = challenge.current;
-    if (challengeStarted.current || !c || !scene.current) return;
-    if (c.kind === "level" && !ownedLoaded) return;
+    const preview = import.meta.env.DEV ? Number(new URLSearchParams(window.location.search).get("level")) : 0;
+    if (challengeStarted.current || !scene.current) return;
+    if (!c && (!Number.isInteger(preview) || preview < 1 || preview > LAST_LEVEL)) return;
+    if (c?.kind !== "daily" && !ownedLoaded) return;
     challengeStarted.current = true;
-    if (c.kind === "daily") start(0, c.day);
-    else start(c.level);
+    if (c?.kind === "daily") start(0, c.day);
+    else start(c?.level ?? preview);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownedLoaded]);
 
@@ -274,9 +277,10 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     setEnd(null);
     setScreen("play");
     rerender();
-    scene.current?.setBoard(s.board.cells, s.board.ice, spec.world, worldCycle(spec.level), s.board.holes);
+    scene.current?.setBoard(s.board.cells, s.board.ice, spec.world, worldCycle(spec.level), s.board.holes, spec.iceCover ? frostMotifForLevel(level) : undefined);
     scene.current?.setInput(true);
-    scene.current?.banner(level === 0 ? "Daily board" : `Level ${level}`, 2);
+    if (spec.iceCover) scene.current?.banner("Match beside ice to break it", 2, undefined, true);
+    else scene.current?.banner(level === 0 ? "Daily board" : `Level ${level}`, 2);
     armHint();
   }
 
@@ -372,7 +376,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     const s = session.current;
     const sc = scene.current;
     if (!s || !sc || busy.current || screen !== "play" || !s.undo()) return;
-    sc.setBoard(s.board.cells, s.board.ice, s.spec.world, worldCycle(s.spec.level), s.board.holes);
+    sc.setBoard(s.board.cells, s.board.ice, s.spec.world, worldCycle(s.spec.level), s.board.holes, s.spec.iceCover ? frostMotifForLevel(s.spec.level) : undefined);
     sc.setFever(s.fever);
     sc.setInput(true);
     setShown(s.score);
