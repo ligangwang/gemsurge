@@ -22,7 +22,7 @@ const patterns = Object.entries(catalog)
     value,
   }));
 export function translate(text: string, locale: Locale): string {
-  if (locale === "en" || !text) return text;
+  if (locale !== "zh-CN" || !text) return text;
   const key = text.replace(/\s+/g, " ").trim();
   if (catalog[key]) return catalog[key];
   for (const { re, value } of patterns) {

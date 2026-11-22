@@ -20,6 +20,9 @@ Notes for AI coding agents working on Gem Surge.
   generator, so the daily board is the same for everyone.
 - `game.json`'s `shop` is generated from `src/upgrades.ts` (a test checks they
   match). When you change prices or tiers, update both.
+- Challenges (`src/challenge.ts`) name a round by `mode` ("daily" or "level"),
+  `seed` (the day or the level) and `rules` (the upgrades, "moves2.bomb1").
+  Links already shared keep working only while these keep their meaning.
 - Gem Surge is an original game: don't copy names, art, levels or sounds from
   other match-3 games. The gems are three.js shapes and the sounds are
   synthesised, so there are no third-party assets to credit.

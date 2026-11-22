@@ -8,6 +8,7 @@ import { DAILY_COINS, HAND_MADE, LAST_LEVEL, WORLDS, LEVELS_PER_WORLD, coinsFor,
 import { DAILY, levelBadges, CHAIN_5, CHAIN_8, COMBO, FEVER, PRISM, THREE_STARS, WIPE } from "../src/badges";
 import { boostsFor, nextTier, NONE, ownedFrom, PRICES, shopManifest, upgradeId } from "../src/upgrades";
 import { BEST_KEPT, novas, novaCharge, empty, highest, merge, parse, store } from "../src/save";
+import { ownedFromRules, roundFrom, rulesOf, toChallenge } from "../src/challenge";
 import { DRAW, ROUND, ROUNDS, STORY, TITLES, WHEEL, draw, isMilestone, lastLevelOf, rewardOf, roundOf, sliceFor, storyOf, titleOf, worldOf } from "../src/rounds";
 
 test("every level has goals it can meet", () => {
@@ -274,4 +275,26 @@ test("the draw's wheel shows the true odds and stops on the prize that was drawn
     assert.equal(WHEEL.filter((n) => n === novas).length / WHEEL.length, chance);
     for (const roll of [0, 0.3, 0.6, 0.999]) assert.equal(WHEEL[sliceFor(novas, roll)], novas);
   }
+});
+
+test("a challenge names its round, and the round comes back from it", () => {
+  const owned = { ...NONE, moves: 5, blaster: 3, bomb: 3, prism: 2, fever: 3, undo: 3 };
+  // dingn takes up to 64 letters, digits, dots, dashes or underscores.
+  assert.match(rulesOf(owned)!, /^[A-Za-z0-9._-]{1,64}$/);
+  assert.equal(rulesOf(NONE), undefined);
+  assert.deepEqual(ownedFromRules(rulesOf(owned)), owned);
+  assert.deepEqual(ownedFromRules(undefined), NONE);
+  for (const bad of ["moves6", "moves0", "wings1", "moves1.moves2", "moves", "MOVES1", "moves1."]) assert.equal(ownedFromRules(bad), null, bad);
+
+  const level = { mode: "level" as const, level: 123, owned: { ...NONE, bomb: 2 } };
+  assert.deepEqual(toChallenge(level, 4200), { mode: "level", seed: "123", score: 4200, unit: "points", rules: "bomb2" });
+  assert.deepEqual(roundFrom(toChallenge(level, 4200)), level);
+  assert.deepEqual(toChallenge({ mode: "level", level: 7, owned: NONE }, 1), { mode: "level", seed: "7", score: 1, unit: "points" });
+  const daily = { mode: "daily" as const, day: "2026-11-22" };
+  assert.deepEqual(toChallenge(daily, 9000), { mode: "daily", seed: "2026-11-22", score: 9000, unit: "points" });
+  assert.deepEqual(roundFrom(toChallenge(daily, 9000)), daily);
+
+  assert.equal(roundFrom(null), null);
+  for (const [mode, seed] of [["daily", "today"], ["daily", "2026-13-45"], ["daily", undefined], ["level", "0"], ["level", String(LAST_LEVEL + 1)], ["level", "1.5"], ["endless", "1"]] as const)
+    assert.equal(roundFrom({ mode, seed, score: 1, unit: "points" }), null, `${mode} ${seed}`);
 });

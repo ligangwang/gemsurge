@@ -6,6 +6,8 @@ import { findHint, type Pos } from "./engine/board";
 import { FEVER_MOVES, FREE_UNDO_LEVELS, Session, type Goal, type Turn } from "./engine/session";
 import { AnimationCancelled, CHEERS, GEM_OUTLINES, GemScene, STONE_CSS } from "./gem-scene";
 import { useDingn, useLocale } from "./dingn";
+import type { ChallengeOutcome } from "../sdk/dingn-sdk.js";
+import { roundFrom, toChallenge, type ChallengeRound } from "./challenge";
 import {
   COLOR_NAMES,
   DAILY_COINS,
@@ -50,6 +52,24 @@ type EndInfo = {
   novas: number;
   /** Set when this win finished a round for the first time. */
   round: RoundEnd | null;
+  /** Set when this play answered the challenge the page was opened from. */
+  challenge: ChallengeEnd | null;
+};
+type ChallengeEnd = {
+  /** The score to beat, and whether it was the player's own. */
+  target: number;
+  mine: boolean;
+  beat: boolean;
+  /** What dingn made of the result, or null when it couldn't be told. */
+  outcome: ChallengeOutcome | null;
+};
+/** What a play is of, and how it counts. */
+type PlayInfo = {
+  round: ChallengeRound;
+  /** A play of the challenge the page was opened from: dingn is told its score. */
+  challenged: boolean;
+  /** A play that saves nothing and pays nothing: a challenge on a board that isn't the player's own next one. */
+  practice: boolean;
 };
 type RoundEnd = {
   round: number;
@@ -80,6 +100,9 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   const session = useRef<Session | null>(null);
   const busy = useRef(false);
   const [rewarded] = useState(() => new WeakSet<Session>());
+  const [plays] = useState(() => new WeakMap<Session, PlayInfo>());
+  // The round of the challenge link that opened the game, if one did.
+  const dared = useMemo(() => roundFrom(sdk.challenge), [sdk.challenge]);
   const hintTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const savedRef = useRef(saved);
   savedRef.current = saved;
@@ -154,9 +177,19 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     badges.unlock(sdk, ids).catch(() => {});
   };
 
-  function start(level: number) {
-    const spec = level === 0 ? dailySpec(today) : levelSpec(level);
-    const s = new Session(spec, level === 0 ? boostsFor(NONE) : boostsFor(owned));
+  const start = (level: number) => begin(level === 0 ? { mode: "daily", day: today } : { mode: "level", level, owned });
+
+  /** Starts a round; `challenged` when it is the one the challenge link asks for. */
+  function begin(round: ChallengeRound, challenged = false) {
+    const daily = round.mode === "daily";
+    const level = daily ? 0 : round.level;
+    const spec = daily ? dailySpec(round.day) : levelSpec(level);
+    const s = new Session(spec, boostsFor(daily ? NONE : round.owned));
+    // Today's daily board is the same play wherever it was started from.
+    if (daily && dared?.mode === "daily" && dared.day === round.day) challenged = true;
+    // A friend's level is played with their upgrades, and a past day's board
+    // is not today's: those are for the challenge only.
+    plays.set(s, { round, challenged, practice: challenged && (!daily || round.day !== today) });
     session.current = s;
     setShown(0);
     setEnd(null);
@@ -167,6 +200,12 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     scene.current?.banner(level === 0 ? "Daily board" : `Level ${level}`, 2);
     armHint();
   }
+
+  // A challenge link goes straight to its round: dingn has shown the score to beat.
+  useEffect(() => {
+    if (dared && scene.current) begin(dared, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // A handle for the browser checks while developing.
   if (import.meta.env.DEV)
@@ -183,7 +222,9 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     const s = session.current;
     const sc = scene.current;
     if (!s || !sc || busy.current || screen !== "play") return;
-    if (!pair && (s.outcome || !s.spec.level || novas(savedRef.current) < 1)) return;
+    const info = plays.get(s);
+    // A challenge is played without Supernovas, so everyone has the same chance.
+    if (!pair && (s.outcome || !s.spec.level || info?.challenged || novas(savedRef.current) < 1)) return;
     busy.current = true;
     sc.setInput(false);
     clearTimeout(hintTimer.current);
@@ -217,9 +258,9 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
         sfx.fever();
       }
       sc.setFever(s.fever);
-      unlock(playBadges(s));
+      if (!info?.practice) unlock(playBadges(s));
       // A chain reaction earns coins, paid with the level's own when it ends.
-      if (s.spec.level > 0 && s.chainCoins > chainBefore) sc.banner(`+${s.chainCoins - chainBefore} 🪙`, 3);
+      if (s.spec.level > 0 && !info?.practice && s.chainCoins > chainBefore) sc.banner(`+${s.chainCoins - chainBefore} 🪙`, 3);
       // A nudge when the moves are running low.
       if (pair && !s.outcome && s.movesLeft === 5) sc.banner("Keep going!", 2);
       rerender();
@@ -283,6 +324,22 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     const won = s.outcome === "won";
     const level = s.spec.level;
     const stars = s.stars;
+    const info = plays.get(s);
+    sdk.roundEnded();
+    // dingn ranks the score under the challenge and tells the player how they did.
+    let challenge: ChallengeEnd | null = null;
+    if (info?.challenged && sdk.challenge) {
+      const target = sdk.challenge.score;
+      const outcome = await sdk.challengeResult(s.score).catch(() => null);
+      challenge = { target, mine: !!sdk.challenge.mine, beat: outcome ? outcome.beat : s.score > target, outcome };
+    }
+    if (info?.practice) {
+      if (!show) return;
+      setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: null, chain: 0, note: "A challenge round pays no coins and doesn't change your levels.", best: false, novas: 0, round: null, challenge });
+      setScreen("end");
+      stars && [1, 2, 3].slice(0, stars).forEach((n, i) => setTimeout(() => sfx.star(n), 300 + i * 250));
+      return;
+    }
     const next: Saved = {
       ...savedRef.current,
       stars: [...savedRef.current.stars],
@@ -361,7 +418,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       round.coins = paidForRound;
     }
     if (!show) return;
-    setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: paid, chain: chainPaid, note, best, novas: charged, round });
+    setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: paid, chain: chainPaid, note, best, novas: charged, round, challenge });
     if (round) {
       scene.current?.banner("Round complete!", 6);
       sfx.fanfare();
@@ -416,6 +473,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   }, [screen]);
 
   const s = session.current;
+  const info = s ? plays.get(s) : undefined;
   const nextLevel = Math.min(top + 1, LAST_LEVEL);
   const totalStars = saved.stars.reduce((a, b) => a + b, 0);
 
@@ -436,6 +494,8 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
           dailyDone={dailyDone}
           signedIn={signedIn}
           onPlay={start}
+          challenge={dared && sdk.challenge ? sdk.challenge.score : null}
+          onChallenge={() => dared && begin(dared, true)}
           onShop={() => setScreen("shop")}
           muted={muted}
           onMute={toggleMute}
@@ -450,7 +510,10 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
           muted={muted}
           onMute={toggleMute}
           onMenu={toMenu}
-          owned={owned}
+          owned={info?.round.mode === "level" ? info.round.owned : owned}
+          day={info?.round.mode === "daily" ? info.round.day : today}
+          target={info?.challenged && sdk.challenge ? sdk.challenge.score : null}
+          practice={!!info?.practice}
           novas={novas(saved)}
           charge={novaCharge(saved)}
           onNova={() => play(null)}
@@ -475,13 +538,15 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
           session={s}
           signedIn={signedIn}
           onNext={() => start(Math.min(s.spec.level + 1, LAST_LEVEL))}
-          onRetry={() => start(s.spec.level)}
+          onRetry={() => (info ? begin(info.round, info.challenged) : start(s.spec.level))}
+          round={info?.round ?? null}
+          practice={!!info?.practice}
           onMenu={toMenu}
           onShop={() => {
             toMenu();
             setScreen("shop");
           }}
-          dailyBest={saved.daily?.day === today ? saved.daily.score : 0}
+          dailyBest={!info?.practice && saved.daily?.day === today ? saved.daily.score : 0}
         />
       )}
 
@@ -513,6 +578,9 @@ function Menu(props: {
   signedIn: boolean;
   nextLevel: number;
   muted: boolean;
+  /** The score of the challenge the page was opened from. */
+  challenge: number | null;
+  onChallenge: () => void;
   onPlay: (level: number) => void;
   onShop: () => void;
   onMute: () => void;
@@ -542,6 +610,11 @@ function Menu(props: {
           <button className="button big" onClick={() => props.onPlay(props.nextLevel)}>
             {props.top === 0 ? t("Play") : t("Play level {0}", String(props.nextLevel))}
           </button>
+          {props.challenge !== null && (
+            <button className="secondary-button" onClick={props.onChallenge}>
+              {t("Challenge: beat {0}", props.challenge.toLocaleString())}
+            </button>
+          )}
           <button className="secondary-button" onClick={() => props.onPlay(0)}>
             {t("Daily board")}
             {props.dailyDone && <span className="tick"> ✓</span>}
@@ -661,6 +734,12 @@ function Hud(props: {
   shown: number;
   muted: boolean;
   owned: Owned;
+  /** The day of a daily board. */
+  day: string;
+  /** The challenge's score to beat, on a play of it. */
+  target: number | null;
+  /** A challenge round that pays and saves nothing. */
+  practice: boolean;
   onMute: () => void;
   onMenu: () => void;
   /** Supernovas ready, and coins towards the next one. */
@@ -695,7 +774,7 @@ function Hud(props: {
         </button>
         <div className="hud-level">
           <p className="eyebrow">{spec.level ? t(WORLDS[spec.world].name) : t("Daily board")}</p>
-          <h2>{spec.level ? t("Level {0}", String(spec.level)) : utcDay()}</h2>
+          <h2>{spec.level ? t("Level {0}", String(spec.level)) : props.day}</h2>
         </div>
         <button className="icon-button" onClick={props.onMute} aria-label={props.muted ? t("Sound on") : t("Sound off")}>
           {props.muted ? "🔇" : "🔊"}
@@ -724,6 +803,11 @@ function Hud(props: {
           )}
         </div>
       </div>
+      {props.target !== null && (
+        <p className={`hud-target${props.shown > props.target ? " beat" : ""}`}>
+          {t("Score to beat: {0}", props.target.toLocaleString())}
+        </p>
+      )}
       <div className="hud-goals">
         <p className="eyebrow">{t("Goals")}</p>
         {s.progress().map((g, i) => (
@@ -735,7 +819,7 @@ function Hud(props: {
             </span>
           </div>
         ))}
-        {spec.level > 0 && lastLevelOf(roundOf(spec.level)) - spec.level <= 1 && (
+        {spec.level > 0 && !props.practice && lastLevelOf(roundOf(spec.level)) - spec.level <= 1 && (
           <p className="goal-note round-note">
             {t("Finish level {0} to win:", String(lastLevelOf(roundOf(spec.level))))} <RoundPrize round={roundOf(spec.level)} />
           </p>
@@ -756,12 +840,12 @@ function Hud(props: {
       {spec.level > FREE_UNDO_LEVELS && !props.owned.undo && (
         <p className="hud-note">{t("Buy Undo in Upgrades to use it after level 100.")}</p>
       )}
-      {spec.level > 0 && s.chainCoins > 0 && (
+      {spec.level > 0 && !props.practice && s.chainCoins > 0 && (
         <p className="hud-note hud-chain">
           <span className="coin" aria-hidden /> {t("Chain reactions: +{0} coins", String(s.chainCoins))}
         </p>
       )}
-      {spec.level > 0 && (
+      {spec.level > 0 && props.target === null && (
         <div className="hud-nova">
           <button className="button nova" disabled={!props.canNova || props.novas < 1} onClick={props.onNova}>
             <span className="nova-star" aria-hidden>
@@ -804,6 +888,9 @@ function EndPanel(props: {
   session: Session;
   signedIn: boolean;
   dailyBest: number;
+  /** The round this play was of, to dare a friend with. */
+  round: ChallengeRound | null;
+  practice: boolean;
   onNext: () => void;
   onRetry: () => void;
   onMenu: () => void;
@@ -814,6 +901,26 @@ function EndPanel(props: {
   const { end, session: s } = props;
   const daily = s.spec.level === 0;
   const won = end.outcome === "won";
+  const ch = end.challenge;
+  // A link that dares a friend to beat this score. A play that used a
+  // Supernova can't be matched, so it makes none.
+  const [link, setLink] = useState("");
+  const [shareNote, setShareNote] = useState("");
+  const [sharing, setSharing] = useState(false);
+  const canShare = sdk.embedded && !!props.round && end.score > 0 && s.novas === 0;
+  const share = async () => {
+    if (!props.round || sharing) return;
+    setSharing(true);
+    setShareNote("");
+    try {
+      const url = link || (await sdk.challengeLink(toChallenge(props.round, end.score)));
+      setLink(url);
+      setShareNote(t(await shareLink(url, t("Can you beat my {0} points in Gem Surge?", end.score.toLocaleString()))));
+    } catch {
+      setShareNote(t("The challenge link couldn't be made just now."));
+    }
+    setSharing(false);
+  };
   return (
     <div className="gem-end" role="dialog" aria-label={won ? t("Level complete") : t("Out of moves")}>
       <div className="gem-panel">
@@ -832,6 +939,18 @@ function EndPanel(props: {
           {end.score.toLocaleString()}
           {end.best && end.score > 0 && <span className="best">{t("New best!")}</span>}
         </p>
+        {ch && (
+          <p className={`end-challenge${ch.beat ? " beat" : ""}`} role="status">
+            {ch.beat
+              ? ch.mine
+                ? t("You beat your own score of {0}!", ch.target.toLocaleString())
+                : t("Challenge beaten! The score to beat was {0}.", ch.target.toLocaleString())
+              : t("Score to beat: {0}", ch.target.toLocaleString())}
+            {ch.outcome?.posted && ch.outcome.rank !== null && (
+              <small> {t("Place {0} of {1}", String(ch.outcome.rank), String(ch.outcome.players))}</small>
+            )}
+          </p>
+        )}
         {daily && props.dailyBest > 0 && <p className="end-sub">{t("Your best today: {0}", props.dailyBest.toLocaleString())}</p>}
         {!won && (
           <ul className="end-goals">
@@ -863,7 +982,7 @@ function EndPanel(props: {
             <p className="end-note">{t(end.note)}</p>
           ))}
         <div className="gem-actions">
-          {won && !daily && s.spec.level < LAST_LEVEL && (
+          {won && !daily && !props.practice && s.spec.level < LAST_LEVEL && (
             <button className="button" onClick={props.onNext}>
               {t("Next level")}
             </button>
@@ -876,13 +995,51 @@ function EndPanel(props: {
               {t("Get upgrades")}
             </button>
           )}
+          {canShare && (
+            <button className="secondary-button" onClick={share} disabled={sharing}>
+              {t("Challenge a friend")}
+            </button>
+          )}
           <button className="secondary-button" onClick={props.onMenu}>
             {t("Menu")}
           </button>
         </div>
+        {link && (
+          <input
+            className="share-link"
+            readOnly
+            value={link}
+            aria-label={t("Challenge link")}
+            onFocus={(e) => e.currentTarget.select()}
+          />
+        )}
+        {shareNote && (
+          <p className="end-note" role="status">
+            {shareNote}
+          </p>
+        )}
       </div>
     </div>
   );
+}
+
+/** Hands a challenge link to the device's share sheet, or copies it; says which in a line for the player. */
+async function shareLink(url: string, text: string) {
+  if (typeof navigator.share === "function") {
+    try {
+      await navigator.share({ text, url });
+      return "";
+    } catch (err) {
+      // The player closed the share sheet.
+      if ((err as { name?: string })?.name === "AbortError") return "";
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    return "Link copied! Send it to a friend.";
+  } catch {
+    return "Copy this link and send it to a friend.";
+  }
 }
 
 // ------------------------------------------------------------------- round

@@ -1,7 +1,7 @@
 import React from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { DingnGame, Locale, ShopItem } from "../sdk/dingn-sdk.js";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { Challenge, DingnGame, Locale, ShopItem } from "../sdk/dingn-sdk.js";
 import { GemGame } from "../src/game";
 import { DingnProvider } from "../src/dingn";
 import { empty, type Saved } from "../src/save";
@@ -41,12 +41,12 @@ vi.mock("../src/gem-scene", () => ({
 }));
 
 let sdk: DingnGame;
-const calls = { save: vi.fn(), earn: vi.fn(), unlock: vi.fn(), spend: vi.fn() };
+const calls = { save: vi.fn(), earn: vi.fn(), unlock: vi.fn(), spend: vi.fn(), link: vi.fn(), result: vi.fn(), ended: vi.fn() };
 let owned: string[] = [];
 let stored: Map<string, unknown>;
 let account: unknown = null;
 let setPlayer: (p: DingnGame["player"]) => void = () => {};
-function fakeSdk(signedIn: boolean, locale: Locale = "en") {
+function fakeSdk(signedIn: boolean, locale: Locale = "en", challenge: Challenge | null = null) {
   stored = new Map<string, unknown>();
   account = null;
   owned = [];
@@ -57,6 +57,15 @@ function fakeSdk(signedIn: boolean, locale: Locale = "en") {
     owned.push(id);
     return { new: true, coins: 60 };
   });
+  calls.link.mockReset().mockResolvedValue("https://dingn.com/c/abc");
+  calls.result.mockReset().mockImplementation(async (score: number) => ({
+    beat: score > (challenge?.score ?? 0),
+    posted: signedIn,
+    best: score,
+    rank: 2,
+    players: 5,
+  }));
+  calls.ended.mockReset();
   sdk = {
     gameId: "gemsurge",
     version: "1.0.0",
@@ -85,6 +94,11 @@ function fakeSdk(signedIn: boolean, locale: Locale = "en") {
     requestSignIn: () => {},
     navigate: () => {},
     ready() {},
+    onLanguage: () => () => {},
+    challenge,
+    challengeLink: calls.link,
+    challengeResult: calls.result,
+    roundEnded: calls.ended,
   };
 }
 const play = (saved: Saved = empty()) =>
@@ -269,4 +283,91 @@ test("undo takes the last move back, three times a level", async () => {
   expect(JSON.stringify(session().board.cells)).toBe(cells);
   expect(undo().textContent).toContain("×2");
   expect(undo().disabled).toBe(true);
+});
+
+test("a finished daily board makes a challenge link to share", async () => {
+  const copied = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", { value: { writeText: copied }, configurable: true });
+  play();
+  fireEvent.click(screen.getByRole("button", { name: /Daily board/ }));
+  await playOut();
+  const s = session();
+  expect(calls.ended).toHaveBeenCalledTimes(1);
+  // Not opened from a challenge: there is no result to report.
+  expect(calls.result).not.toHaveBeenCalled();
+  await act(async () => fireEvent.click(await screen.findByRole("button", { name: "Challenge a friend" })));
+  expect(calls.link).toHaveBeenCalledWith({
+    mode: "daily",
+    seed: new Date().toISOString().slice(0, 10),
+    score: s.score,
+    unit: "points",
+  });
+  expect(copied).toHaveBeenCalledWith("https://dingn.com/c/abc");
+  expect((screen.getByLabelText("Challenge link") as HTMLInputElement).value).toBe("https://dingn.com/c/abc");
+  expect(screen.getByText("Link copied! Send it to a friend.")).toBeTruthy();
+});
+
+test("a level's challenge carries the upgrades it was played with", async () => {
+  owned = ["moves-1", "moves-2", "bomb-1"];
+  play();
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: "Play" }));
+  await playOut();
+  await act(async () => fireEvent.click(await screen.findByRole("button", { name: "Challenge a friend" })));
+  expect(calls.link).toHaveBeenCalledWith({
+    mode: "level",
+    seed: "1",
+    score: session().score,
+    unit: "points",
+    rules: "moves2.bomb1",
+  });
+});
+
+test("a friend's challenge opens its level with their upgrades and reports the score", async () => {
+  fakeSdk(true, "en", { mode: "level", seed: "40", score: 1, unit: "points", rules: "moves3.prism1" });
+  play();
+  // Level 40 is far beyond this player's levels, and is played all the same.
+  expect(screen.getByRole("heading", { name: "Level 40" })).toBeTruthy();
+  expect(screen.getByText("Score to beat: 1")).toBeTruthy();
+  const s = session();
+  expect(s.boosts.moves).toBe(3);
+  expect(s.boosts.specials).toEqual(["prism"]);
+  expect(screen.queryByRole("button", { name: /Supernova/ })).toBeNull();
+  await playOut();
+  await screen.findByText("Challenge beaten! The score to beat was 1.");
+  expect(calls.result).toHaveBeenCalledWith(s.score);
+  expect(screen.getByText("Place 2 of 5")).toBeTruthy();
+  // The friend's upgrades are not the player's: nothing is paid or saved.
+  expect(calls.earn).not.toHaveBeenCalled();
+  expect(calls.unlock).not.toHaveBeenCalled();
+  expect(stored.get("gemsurge")).toMatchObject({ stars: "", earned: 0 });
+  expect(screen.queryByRole("button", { name: "Next level" })).toBeNull();
+  // Trying again is still the challenge.
+  fireEvent.click(screen.getByRole("button", { name: /Play again|Try again/ }));
+  expect(screen.getByText("Score to beat: 1")).toBeTruthy();
+  // From the menu, a level of the player's own is no challenge.
+  fireEvent.click(screen.getAllByRole("button", { name: "Menu" })[0]);
+  expect(screen.getByRole("button", { name: "Challenge: beat 1" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Play" }));
+  await playOut();
+  await waitFor(() => expect(calls.ended).toHaveBeenCalledTimes(2));
+  expect(calls.result).toHaveBeenCalledTimes(1);
+});
+
+test("a challenge on today's daily board is the daily board: it pays and reports", async () => {
+  const today = new Date().toISOString().slice(0, 10);
+  fakeSdk(true, "en", { mode: "daily", seed: today, score: 1e9, unit: "points", mine: true });
+  play();
+  expect(screen.getByRole("heading", { name: today })).toBeTruthy();
+  await playOut();
+  expect(await screen.findAllByText("Score to beat: 1,000,000,000")).toHaveLength(2);
+  expect(calls.result).toHaveBeenCalledWith(session().score);
+  expect(stored.get("gemsurge")).toMatchObject({ daily: { day: today } });
+});
+
+test("a challenge this version can't play opens the menu", () => {
+  fakeSdk(true, "en", { mode: "level", seed: "40", score: 5, unit: "points", rules: "wings9" });
+  play();
+  expect(screen.getByRole("heading", { name: /Gem Surge/ })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /Challenge: beat/ })).toBeNull();
 });

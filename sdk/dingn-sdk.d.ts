@@ -1,6 +1,25 @@
 export declare const PROTOCOL: 1;
-export type Locale = "en" | "zh-CN";
-export type Player = { signedIn: boolean; name: string; avatar: string };
+/**
+ * A language: "en", "zh-CN", "es", "pt-BR", "id", "ja", "ko", or another
+ * dingn adds later. A game gets only languages its game.json `languages`
+ * lists (English and Chinese for games that list none), so it can show any
+ * code it receives.
+ */
+export type Locale =
+  "en" | "zh-CN" | "es" | "pt-BR" | "id" | "ja" | "ko" | (string & {});
+export type Player = {
+  signedIn: boolean;
+  name: string;
+  avatar: string;
+  /**
+   * True for a test account that dingn's admins made for testing. A game may
+   * show test tools (skip a level, unlock everything) to it, and must not
+   * show them to anyone else. dingn already keeps test accounts off its
+   * leaderboard and statistics. Websites from before test accounts leave it
+   * out, so treat a missing value as false.
+   */
+  tester?: boolean;
+};
 export type Json =
   null | boolean | number | string | Json[] | { [key: string]: Json };
 export type BadgeTier = "bronze" | "silver" | "gold" | "diamond";
@@ -50,6 +69,48 @@ export type Earning = {
   /** True in a version dingn has not reviewed, or in the playground: nothing was paid. */
   test?: boolean;
 };
+/** What a score is counted in, so dingn can word a challenge in both languages. */
+export type ChallengeUnit =
+  "points" | "digits" | "cards" | "levels" | "stars" | "words" | "coins";
+/**
+ * A score for anyone to beat. `mode` (1-24 lowercase letters, digits or
+ * dashes) and `seed` (1-32 letters, digits or dashes, such as a day) tell the
+ * game which round to replay, so the friend plays the same one.
+ */
+export type Challenge = {
+  mode: string;
+  seed?: string;
+  /** A whole number from 0 to 1,000,000,000. */
+  score: number;
+  unit: ChallengeUnit;
+  /**
+   * The rules the round was played with, in the game's own terms (1-64
+   * letters, digits, dots, dashes or underscores), such as the upgrades and
+   * helpers the player had, so the friend can play under exactly the same
+   * ones. dingn saves it with the challenge and gives it back unchanged.
+   */
+  rules?: string;
+  /**
+   * In `dingn.challenge` only: true when the player opening the link is the
+   * one who made it (signed in to the same account, or in the same browser).
+   * Then it is their own score to beat, not a friend's.
+   */
+  mine?: boolean;
+};
+/** How a challenge round ended, from `dingn.challengeResult`. */
+export type ChallengeOutcome = {
+  /** True when the score is higher than the challenge's. */
+  beat: boolean;
+  /** False for a signed-out player, and in a test: nothing was posted. */
+  posted: boolean;
+  /** The player's best score under this challenge. */
+  best: number;
+  /** Its place among the results, or null below the ones dingn keeps. */
+  rank: number | null;
+  /** How many players have posted a result. */
+  players: number;
+  test?: boolean;
+};
 export type DingnGame = {
   gameId: string;
   version: string;
@@ -58,6 +119,12 @@ export type DingnGame = {
   /** False when the game was opened on its own, outside dingn. */
   embedded: boolean;
   onPlayer(listener: (player: Player) => void): () => void;
+  /**
+   * Called when the player switches language while playing, with the new
+   * language (one the game lists). Show your text and pictures in it and
+   * keep the player's game going. Returns a function that stops listening.
+   */
+  onLanguage(listener: (locale: Locale) => void): () => void;
   /** Saved on this device only. Keys: letters, digits, `._-`, up to 64. Values up to 16 KB as JSON. */
   storage: {
     get(key: string): Promise<Json>;
@@ -78,18 +145,48 @@ export type DingnGame = {
      * Buys an upgrade from game.json's `shop` with the player's dingn coins.
      * dingn asks the player to confirm first. Rejects with code "cancelled"
      * (the player said no), "not_enough_coins", "requires" (buy the upgrade
-     * it requires first) or "signed_out".
+     * it requires first) or "signed_out". A "not_enough_coins" error also
+     * carries `balance`, the coins the player has, so the game can show how
+     * many more they need.
      */
     spend(id: string): Promise<Purchase>;
     shop(): Promise<ShopItem[]>;
     /**
      * Pays the signed-in player 1-10 dingn coins for play itself, such as a
      * failed level that still got somewhere. Each game can pay a player at
-     * most 200 coins a day this way, on top of its badges. Rejects with code
+     * most 500 coins a day this way, on top of its badges. Rejects with code
      * "signed_out" for a signed-out player.
      */
     earn(coins: number): Promise<Earning>;
   };
+  /**
+   * The challenge in the page's address when a friend's challenge link
+   * opened the game, otherwise null. dingn has already shown the player the
+   * score to beat; start that round and compare at the end.
+   */
+  challenge: Challenge | null;
+  /**
+   * A link to this game that opens `challenge` for whoever follows it, with a
+   * link preview that shows the score. Share it yourself (copy it, or
+   * navigator.share). Rejects with code "invalid" for a malformed challenge,
+   * and "unknown_method" on a dingn website from before challenge links.
+   */
+  challengeLink(challenge: Challenge): Promise<string>;
+  /**
+   * Call it when the player finishes the round of `dingn.challenge`, with
+   * their score. A challenge is open to anyone: dingn posts a signed-in
+   * player's result under it, where every result is ranked, and tells the
+   * player whether they won; a signed-out player is told too and invited to
+   * sign in. Each player keeps their best score. Rejects with code
+   * "no_challenge" when the page was not opened from a challenge, and
+   * "unknown_method" on a dingn website from before challenge results.
+   */
+  challengeResult(score: number): Promise<ChallengeOutcome>;
+  /**
+   * Tells dingn a round was played to the end (won or lost), for the
+   * website's play statistics. Call it once per finished round.
+   */
+  roundEnded(): void;
   requestSignIn(): void;
   /** Leaves the game for a dingn page, such as "/" for the game list. The website keeps the player's language. */
   navigate(path: string): void;

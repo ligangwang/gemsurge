@@ -176,5 +176,17 @@
   "Topaz": "黄玉",
   "{0} for chain reactions": "其中连爆 {0}",
   "Chain reactions: +{0} coins": "连爆奖励：+{0} 金币",
-  "Chain reactions earn coins: the longer the chain, the more, up to 10 a level.": "连爆有金币奖励：连得越多奖励越多，每关最多 10 个。"
+  "Chain reactions earn coins: the longer the chain, the more, up to 10 a level.": "连爆有金币奖励：连得越多奖励越多，每关最多 10 个。",
+  "Challenge a friend": "挑战好友",
+  "Challenge: beat {0}": "挑战：超过 {0} 分",
+  "Score to beat: {0}": "要超过的分数：{0}",
+  "Challenge beaten! The score to beat was {0}.": "挑战成功！要超过的分数是 {0}。",
+  "You beat your own score of {0}!": "你超过了自己的 {0} 分！",
+  "Place {0} of {1}": "第 {0} 名，共 {1} 人",
+  "Can you beat my {0} points in Gem Surge?": "我在宝石狂潮拿了 {0} 分，你能超过吗？",
+  "Challenge link": "挑战链接",
+  "Link copied! Send it to a friend.": "链接已复制！发给好友吧。",
+  "Copy this link and send it to a friend.": "复制这个链接，发给好友吧。",
+  "The challenge link couldn't be made just now.": "暂时无法生成挑战链接。",
+  "A challenge round pays no coins and doesn't change your levels.": "挑战局不发金币，也不影响你的关卡进度。"
 }
