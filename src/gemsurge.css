@@ -93,6 +93,109 @@
   100% { opacity: 0; transform: translate(-50%, -70%) scale(1.1); }
 }
 
+/* A cheer over the match that earned it. */
+.gem-banner.at-match { font-size: 38px; animation-duration: 1.1s; }
+.gem-banner.at-match.level-3 { font-size: 44px; }
+.gem-banner.at-match.level-4,
+.gem-banner.at-match.level-5 { font-size: 50px; }
+.gem-banner.at-match.level-6 { font-size: 58px; }
+
+/* The end-of-level surge's points. */
+.gem-float.huge {
+  font-size: 44px;
+  font-weight: 800;
+  color: #ffe36e;
+  text-shadow: 0 0 18px rgba(255, 190, 40, 0.95), 0 3px 0 rgba(0, 0, 0, 0.55);
+  animation-duration: 1.2s;
+}
+
+/* A title across the whole screen, such as "Surge!". */
+.gem-splash {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: radial-gradient(circle, rgba(20, 10, 50, 0.55) 0%, rgba(10, 5, 30, 0.75) 70%);
+  animation: splash 1.1s ease-out forwards;
+}
+.gem-splash-title {
+  font-size: 96px;
+  font-weight: 800;
+  white-space: nowrap;
+  background: linear-gradient(90deg, #ff2d55, #ffb320, #23e07a, #3a86ff, #b84dff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 26px rgba(255, 120, 255, 0.95)) drop-shadow(0 4px 0 rgba(0, 0, 0, 0.6));
+  animation: splash-title 1.1s cubic-bezier(0.2, 1.4, 0.4, 1) forwards;
+}
+.gem-splash-line { font-size: 20px; font-weight: 600; color: #fff; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5); }
+@keyframes splash {
+  0% { opacity: 0; }
+  15% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes splash-title {
+  0% { transform: scale(0.3) rotate(-8deg); }
+  30% { transform: scale(1.1) rotate(0deg); }
+  100% { transform: scale(1); }
+}
+
+/* Under the board while the end of a level plays. */
+.gem-speed-up {
+  position: absolute;
+  left: 50%;
+  bottom: 4%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  animation: speed-up-pulse 1.2s ease-in-out infinite;
+}
+.gem-speed-up.on { animation: none; opacity: 0.6; }
+.gem-speed-up.on::after { content: " ⏩"; }
+@keyframes speed-up-pulse {
+  0%, 100% { opacity: 0.65; }
+  50% { opacity: 1; }
+}
+
+/* A goal piece flying from the board to its goal. */
+.goal-flyer {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  pointer-events: none;
+  z-index: 50;
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.8));
+}
+.goal-flyer .goal-gem { width: 22px; height: 22px; }
+.goal-flyer .goal-ice { display: block; width: 18px; height: 18px; margin: 2px; }
+.goal.bump .goal-count { animation: goal-bump 0.3s ease-out; }
+.goal.bump { animation: goal-glow 0.3s ease-out; }
+@keyframes goal-bump {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.35); color: #fff; }
+  100% { transform: scale(1); }
+}
+@keyframes goal-glow {
+  0% { box-shadow: 0 0 0 rgba(255, 255, 255, 0); }
+  40% { box-shadow: 0 0 14px rgba(255, 255, 255, 0.55); }
+  100% { box-shadow: 0 0 0 rgba(255, 255, 255, 0); }
+}
+.goal-count { display: inline-block; }
+.goal-icon { display: flex; flex: none; }
+
 /* --------------------------------------------------------------- shared */
 .icon-button {
   width: 40px;
@@ -479,6 +582,8 @@
   .goal { margin: 0; padding: 4px 8px; }
   .gem-end { left: 0; }
   .gem-banner { font-size: 36px !important; }
+  .gem-banner.at-match { font-size: 28px !important; }
+  .gem-splash-title { font-size: 64px; }
 }
 
 /* The Supernova: a board clear the player earns by playing. */

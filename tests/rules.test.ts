@@ -220,11 +220,15 @@ test("generated ice levels each have their own mirrored shape", () => {
     if (!ice.some((c) => c > 0)) continue;
     levels++;
     shapes.add(ice.join(""));
+    // Mirrored both ways, except where the board's shape cut it away
+    // (shapes are mirrored left to right only).
+    const holes = levelSpec(n).holes ?? [];
     for (let i = 0; i < ice.length; i++) {
       const x = i % 8;
       const y = Math.floor(i / 8);
       assert.equal(ice[i], ice[y * 8 + (7 - x)]);
-      assert.equal(ice[i], ice[(7 - y) * 8 + x]);
+      const flip = (7 - y) * 8 + x;
+      if (!holes[i] && !holes[flip]) assert.equal(ice[i], ice[flip]);
     }
     assert.deepEqual(levelSpec(n).ice, ice, "the same level is always the same shape");
   }
@@ -274,4 +278,27 @@ test("the draw's wheel shows the true odds and stops on the prize that was drawn
     assert.equal(WHEEL.filter((n) => n === novas).length / WHEEL.length, chance);
     for (const roll of [0, 0.3, 0.6, 0.999]) assert.equal(WHEEL[sliceFor(novas, roll)], novas);
   }
+});
+
+test("some levels are shaped boards, and a shape never loses a goal", () => {
+  let shaped = 0;
+  for (let n = 1; n <= 2000; n++) {
+    const spec = levelSpec(n);
+    if (!spec.holes) continue;
+    shaped++;
+    assert.equal(spec.holes.length, SIZE * SIZE);
+    const open = spec.holes.filter((h) => !h).length;
+    assert.ok(open >= 40 && open < SIZE * SIZE, `level ${n} keeps most of the board`);
+    spec.holes.forEach((h, i) => h && assert.equal(spec.ice[i], 0, `level ${n}: no ice in a hole`));
+    if (spec.goals.some((g) => g.kind === "ice")) assert.ok(spec.ice.some((c) => c > 0), `level ${n} ice`);
+    for (const g of spec.goals) if (g.kind !== "ice") assert.ok(g.target > 0, `level ${n} target`);
+    assert.deepEqual(levelSpec(n).holes, spec.holes, "the same level is always the same shape");
+    if (n % 50 === 0) {
+      const s = new Session(spec);
+      assert.ok(findHint(s.board), `level ${n} has a move`);
+    }
+  }
+  assert.ok([12, 14, 16, 21, 24, 26].every((n) => levelSpec(n).holes), "hand-made shaped levels");
+  assert.ok(!levelSpec(1).holes && !dailySpec("2026-11-22").holes, "the first levels and the daily board are square");
+  assert.ok(shaped > 800 && shaped < 1700, `${shaped} shaped levels in 2000`);
 });

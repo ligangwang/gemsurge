@@ -2,8 +2,8 @@
 // a level, and the upgrade shop. The 3D board (gem-scene.ts) stays mounted
 // behind them all.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { findHint, type Pos } from "./engine/board";
-import { FEVER_MOVES, FREE_UNDO_LEVELS, Session, type Goal, type Turn } from "./engine/session";
+import { findHint, type Pos, type Step } from "./engine/board";
+import { FEVER_MOVES, FREE_UNDO_LEVELS, SURGE_MAX, Session, type Goal, type Turn } from "./engine/session";
 import { AnimationCancelled, CHEERS, GEM_OUTLINES, GemScene, STONE_CSS } from "./gem-scene";
 import { useDingn, useLocale } from "./dingn";
 import {
@@ -62,6 +62,27 @@ type RoundEnd = {
 
 const HINT_AFTER = 7000;
 
+/** The board cells a step counts towards a goal: its gems of the goal's colour, or its cracked ice. */
+const goalCells = (goal: Goal, step: Step): Pos[] =>
+  goal.kind === "color" ? step.cleared.filter((c) => c.color === goal.color) : goal.kind === "ice" ? step.ice : [];
+
+/** How far a play has got on a goal, before it is capped at the target. */
+const goalHave = (s: Session, goal: Goal) =>
+  goal.kind === "score" ? s.score : goal.kind === "color" ? s.collected[goal.color] : s.iceTotal - s.iceLeft;
+
+/** The most pieces that fly to one goal from one step; each carries a share of the count. */
+const MAX_FLYERS = 6;
+
+/** A goal's icon as markup, for the pieces that fly to it. */
+function goalIconHtml(goal: Goal) {
+  if (goal.kind === "color")
+    return `<svg class="goal-gem" viewBox="-0.6 -0.6 1.2 1.2"><path d="${GEM_OUTLINES[goal.color]}" fill="${STONE_CSS[goal.color]}" stroke="rgba(255,255,255,0.75)" stroke-width="0.05"/></svg>`;
+  return `<span class="goal-ice"></span>`;
+}
+
+/** Goal pieces still flying to the HUD this turn, per goal; the HUD doesn't count them yet. */
+type Flight = { counts: number[] };
+
 export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: boolean } }) {
   const sdk = useDingn();
   const { t } = useLocale();
@@ -83,6 +104,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   const hintTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const savedRef = useRef(saved);
   savedRef.current = saved;
+  const flight = useRef<Flight>({ counts: [] });
   const rerender = () => setTick((n) => n + 1);
   const signedIn = sdk.player.signedIn;
   const top = highest(saved);
@@ -158,6 +180,8 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     const spec = level === 0 ? dailySpec(today) : levelSpec(level);
     const s = new Session(spec, level === 0 ? boostsFor(NONE) : boostsFor(owned));
     session.current = s;
+    flight.current = { counts: [] };
+    scene.current?.offerSpeedUp(false);
     setShown(0);
     setEnd(null);
     setScreen("play");
@@ -203,6 +227,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
         store(sdk, next).catch(() => {});
         sc.banner("Supernova!", 6);
       }
+      const f = launch(s, turn);
       rerender();
       let running = before;
       await sc.playTurn(turn, pair, {
@@ -210,6 +235,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
           running += points;
           setShown(running);
         },
+        onClear: (step) => flyToGoals(s, f, step),
       });
       setShown(s.score);
       if (turn.feverStarted) {
@@ -237,11 +263,84 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     }
   }
 
+  /**
+   * Starts a turn's goal pieces in flight: the HUD holds back what the turn
+   * adds to each goal until its pieces land there.
+   */
+  function launch(s: Session, turn: Turn): Flight {
+    const f: Flight = {
+      counts: s.spec.goals.map((goal) => turn.steps.reduce((n, step) => n + goalCells(goal, step).length, 0)),
+    };
+    flight.current = f;
+    // In case a piece never lands (its animation was dropped), count it anyway.
+    setTimeout(() => {
+      if (flight.current === f && f.counts.some(Boolean)) {
+        f.counts = [];
+        rerender();
+      }
+    }, 8000);
+    return f;
+  }
+
+  /** Sends a step's goal pieces from the board to their goals in the HUD. */
+  function flyToGoals(s: Session, f: Flight, step: Step) {
+    const sc = scene.current;
+    s.spec.goals.forEach((goal, g) => {
+      const cells = goalCells(goal, step);
+      if (!cells.length) return;
+      const land = (n: number) => {
+        if (flight.current !== f) return;
+        f.counts[g] = Math.max(0, (f.counts[g] ?? 0) - n);
+        rerender();
+        const row = document.querySelector<HTMLElement>(`[data-goal="${g}"]`);
+        if (!row) return;
+        row.classList.remove("bump");
+        void row.offsetWidth;
+        row.classList.add("bump");
+      };
+      const icon = document.querySelector<HTMLElement>(`[data-goal="${g}"] .goal-icon`);
+      // Nothing to fly to, or a goal already met: count them at once.
+      const met = goalHave(s, goal) - (f.counts[g] ?? 0) >= s.progress()[g].target;
+      if (!sc || !icon || met || typeof icon.animate !== "function") return land(cells.length);
+      const box = icon.getBoundingClientRect();
+      const to = { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+      const k = Math.min(cells.length, MAX_FLYERS);
+      for (let j = 0; j < k; j++) {
+        const share = Math.floor(cells.length / k) + (j < cells.length % k ? 1 : 0);
+        const from = sc.screenPoint(cells[Math.floor((j * cells.length) / k)]);
+        const el = document.createElement("div");
+        el.className = "goal-flyer";
+        el.innerHTML = goalIconHtml(goal);
+        document.body.appendChild(el);
+        // An arc: up and over towards the goal.
+        const mid = { x: (from.x + to.x) / 2, y: Math.min(from.y, to.y) - 60 };
+        const anim = el.animate(
+          [
+            { transform: `translate(${from.x}px, ${from.y}px) scale(1)` },
+            { transform: `translate(${mid.x}px, ${mid.y}px) scale(1.3)`, offset: 0.45 },
+            { transform: `translate(${to.x}px, ${to.y}px) scale(0.7)` },
+          ],
+          { duration: 600, delay: j * 50, easing: "ease-in", fill: "forwards" },
+        );
+        let done = false;
+        const end = () => {
+          if (done) return;
+          done = true;
+          el.remove();
+          land(share);
+        };
+        anim.onfinish = end;
+        anim.oncancel = end;
+      }
+    });
+  }
+
   /** Takes the last move back, so the player can choose again. */
   function undo() {
     const s = session.current;
     const sc = scene.current;
     if (!s || !sc || busy.current || screen !== "play" || !s.undo()) return;
+    flight.current = { counts: [] };
     sc.setBoard(s.board.cells, s.board.ice, s.spec.world, worldCycle(s.spec.level));
     sc.setFever(s.fever);
     sc.setInput(true);
@@ -255,21 +354,30 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     const sc = scene.current!;
     sc.setFever(false);
     if (s.outcome === "won") {
-      sc.banner(s.movesLeft > 0 ? "Surge!" : "Clear!", 6);
       sfx.win();
-      const surge = s.finish();
-      if (surge) {
-        const from = s.score - surge.points;
-        let running = from;
-        await sc.playTurn(surge, null, {
-          onStep: (_, p) => {
-            running += p;
-            setShown(running);
-          },
-        });
+      const left = Math.min(s.movesLeft, SURGE_MAX);
+      // The end can take a while, so a tap plays it faster.
+      sc.offerSpeedUp(true);
+      try {
+        if (left > 0) await sc.splash("Surge!", t("{0} moves left turn into blasters", String(left)));
+        else sc.banner("Clear!", 6);
+        const surge = s.finish();
+        if (surge) {
+          const from = s.score - surge.points;
+          let running = from;
+          await sc.playTurn(surge, null, {
+            huge: true,
+            onStep: (_, p) => {
+              running += p;
+              setShown(running);
+            },
+          });
+        }
+        setShown(s.score);
+        await sc.celebrate();
+      } finally {
+        sc.offerSpeedUp(false);
       }
-      setShown(s.score);
-      await sc.celebrate();
     } else {
       sfx.lose();
       sc.banner("Out of moves", 1);
@@ -373,6 +481,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
 
   function toMenu() {
     session.current = null;
+    scene.current?.offerSpeedUp(false);
     clearTimeout(hintTimer.current);
     scene.current?.setInput(false);
     scene.current?.setFever(false);
@@ -456,6 +565,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
           onNova={() => play(null)}
           onUndo={undo}
           canNova={screen === "play" && !s.outcome}
+          pending={flight.current.counts}
         />
       )}
 
@@ -669,6 +779,8 @@ function Hud(props: {
   canNova: boolean;
   onNova: () => void;
   onUndo: () => void;
+  /** Goal pieces still flying to each goal, not counted yet. */
+  pending: number[];
 }) {
   const { t } = useLocale();
   const s = props.session;
@@ -726,15 +838,23 @@ function Hud(props: {
       </div>
       <div className="hud-goals">
         <p className="eyebrow">{t("Goals")}</p>
-        {s.progress().map((g, i) => (
-          <div key={i} className={`goal${g.done ? " done" : ""}`}>
-            <GoalIcon goal={g.goal} />
-            <span className="goal-label">{goalLabel(g.goal, t)}</span>
-            <span className="goal-count">
-              {g.done ? "✓" : `${g.have.toLocaleString()} / ${g.target.toLocaleString()}`}
-            </span>
-          </div>
-        ))}
+        {s.progress().map((g, i) => {
+          // What has landed so far: the score as it counts up, other goals as their pieces arrive.
+          const have = Math.min(
+            g.target,
+            g.goal.kind === "score" ? props.shown : Math.max(0, goalHave(s, g.goal) - (props.pending[i] ?? 0)),
+          );
+          const done = g.done && have >= g.target;
+          return (
+            <div key={i} className={`goal${done ? " done" : ""}`} data-goal={i}>
+              <span className="goal-icon">
+                <GoalIcon goal={g.goal} />
+              </span>
+              <span className="goal-label">{goalLabel(g.goal, t)}</span>
+              <span className="goal-count">{done ? "✓" : `${have.toLocaleString()} / ${g.target.toLocaleString()}`}</span>
+            </div>
+          );
+        })}
         {spec.level > 0 && lastLevelOf(roundOf(spec.level)) - spec.level <= 1 && (
           <p className="goal-note round-note">
             {t("Finish level {0} to win:", String(lastLevelOf(roundOf(spec.level))))} <RoundPrize round={roundOf(spec.level)} />

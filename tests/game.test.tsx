@@ -34,8 +34,15 @@ vi.mock("../src/gem-scene", () => ({
     setBannerTranslator() {}
     setBannerListener() {}
     async playInvalid() {}
-    async playTurn() {}
+    async playTurn(turn: { steps: unknown[] }, _swapped: unknown, hooks: { onClear?: (step: unknown) => void } = {}) {
+      for (const step of turn.steps) hooks.onClear?.(step);
+    }
     async celebrate() {}
+    async splash() {}
+    offerSpeedUp() {}
+    screenPoint() {
+      return { x: 0, y: 0 };
+    }
     dispose() {}
   },
 }));

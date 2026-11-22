@@ -668,6 +668,9 @@ export class GemScene {
   private last = performance.now();
   private time = 0;
   private timeScale = 1;
+  /** The player tapped to speed up the end of a level. */
+  private fast = false;
+  private speedUpCaption: HTMLDivElement | null = null;
   private slowUntil = 0;
   private shake = 0;
   private pointer = new THREE.Vector2();
@@ -1240,7 +1243,7 @@ export class GemScene {
   async playTurn(
     turn: Turn,
     swapped: [Pos, Pos] | null,
-    hooks: { onStep?: (index: number, points: number) => void } = {},
+    hooks: TurnHooks = {},
   ) {
     this.hint = null;
     this.select(null);
@@ -1279,7 +1282,7 @@ export class GemScene {
     for (let i = 0; i < turn.steps.length; i++) {
       const step = turn.steps[i];
       if (step.chain >= 4) this.slowMotion(0.7);
-      await this.playStep(step, multiplier);
+      await this.playStep(step, multiplier, hooks);
       hooks.onStep?.(i, step.score * multiplier);
     }
     if (turn.shuffled) await this.playShuffle(turn.shuffled);
@@ -1292,7 +1295,7 @@ export class GemScene {
     );
   }
 
-  private async playStep(step: Turn["steps"][number], multiplier: number) {
+  private async playStep(step: Turn["steps"][number], multiplier: number, hooks: TurnHooks = {}) {
     // Gems turning into specials first (prism combos and the end surge).
     if (step.converted.length) {
       step.converted.forEach((c, n) => {
@@ -1505,8 +1508,10 @@ export class GemScene {
       );
     }
     if (step.created.length) sfx.made();
+    hooks.onClear?.(step);
 
-    // Points float up from the middle of what was cleared.
+    // Points float up from the middle of what was cleared, and a word for a
+    // chain or a big clear pops up right there.
     if (step.cleared.length) {
       const mid = new THREE.Vector3();
       for (const c of step.cleared) mid.add(world(c.x, c.y));
@@ -1514,13 +1519,15 @@ export class GemScene {
       this.floatText(
         `+${(step.score * multiplier).toLocaleString()}`,
         mid,
-        step.chain > 1 ? "big" : "",
+        hooks.huge ? "huge" : step.chain > 1 ? "big" : "",
       );
+      // The word sits a little above the points, so the two don't overlap.
+      const above = mid.clone().add(new THREE.Vector3(0, 1.1, 0));
+      if (step.chain >= 2) this.banner(chainWord(step.chain), step.chain, above);
+      // A word for a big clear on the swap's own match.
+      else if (step.cleared.length >= 8) this.banner("Awesome!", 3, above);
+      else if (step.cleared.length >= 5) this.banner("Good!", 2, above);
     }
-    if (step.chain >= 2) this.banner(chainWord(step.chain), step.chain);
-    // A word for a big clear on the swap's own match.
-    else if (step.cleared.length >= 8) this.banner("Awesome!", 3);
-    else if (step.cleared.length >= 5) this.banner("Good!", 2);
 
     // Gems fall and new ones drop in.
     await this.fall(step.cells, new Set(step.spawned));
@@ -2019,20 +2026,91 @@ export class GemScene {
     const el = document.createElement("div");
     el.className = `gem-float ${kind}`;
     el.textContent = text;
-    const p = at.clone();
-    this.boardGroup.localToWorld(p);
-    p.project(this.camera);
-    el.style.left = `${(p.x * 0.5 + 0.5) * 100}%`;
-    el.style.top = `${(-p.y * 0.5 + 0.5) * 100}%`;
+    const p = this.overlayPoint(at);
+    el.style.left = `${p.x * 100}%`;
+    el.style.top = `${p.y * 100}%`;
     this.overlay.appendChild(el);
     setTimeout(() => el.remove(), 1200);
   }
 
-  /** A big word across the board, such as "Fever!". */
-  banner(text: string, level = 1) {
+  /** Where a point on the board shows in the overlay, 0 to 1 across and down. */
+  private overlayPoint(at: THREE.Vector3) {
+    const p = at.clone();
+    this.boardGroup.localToWorld(p);
+    p.project(this.camera);
+    return { x: p.x * 0.5 + 0.5, y: -p.y * 0.5 + 0.5 };
+  }
+
+  /** Where a cell shows on the page, in client pixels. */
+  screenPoint(cell: Pos): { x: number; y: number } {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const p = this.overlayPoint(world(cell.x, cell.y));
+    return { x: rect.left + p.x * rect.width, y: rect.top + p.y * rect.height };
+  }
+
+  /**
+   * A title that fills the screen for a moment, such as "Surge!" before the
+   * end-of-level blasters, with a line under it.
+   */
+  async splash(title: string, line = "") {
     const el = document.createElement("div");
-    el.className = `gem-banner level-${Math.min(level, 6)}`;
+    el.className = "gem-splash";
+    const h = document.createElement("div");
+    h.className = "gem-splash-title";
+    h.textContent = this.translate(title);
+    el.appendChild(h);
+    if (line) {
+      const p = document.createElement("div");
+      p.className = "gem-splash-line";
+      p.textContent = line;
+      el.appendChild(p);
+    }
+    this.overlay.appendChild(el);
+    this.flash(0.5);
+    try {
+      await this.wait(1.1);
+    } finally {
+      el.remove();
+    }
+  }
+
+  /**
+   * While on, a tap anywhere on the board plays the animations faster, and a
+   * caption says so. Used for the end of a level, which can take a while.
+   */
+  offerSpeedUp(on: boolean) {
+    this.speedUpCaption?.remove();
+    this.speedUpCaption = null;
+    this.renderer.domElement.removeEventListener("pointerdown", this.onSpeedUp);
+    this.fast = false;
+    if (!on) return;
+    const el = document.createElement("div");
+    el.className = "gem-speed-up";
+    el.textContent = this.translate("Tap to speed up");
+    this.overlay.appendChild(el);
+    this.speedUpCaption = el;
+    this.renderer.domElement.addEventListener("pointerdown", this.onSpeedUp);
+  }
+
+  private onSpeedUp = () => {
+    this.fast = true;
+    this.speedUpCaption?.classList.add("on");
+  };
+
+  /**
+   * A big word across the board, such as "Fever!", or, given `at`, a word
+   * that pops up over that spot on the board, such as a chain's cheer.
+   */
+  banner(text: string, level = 1, at?: THREE.Vector3) {
+    const el = document.createElement("div");
+    el.className = `gem-banner level-${Math.min(level, 6)}${at ? " at-match" : ""}`;
     el.textContent = this.translate(text);
+    if (at) {
+      const p = this.overlayPoint(at);
+      // Kept clear of the edges, so a long word stays on screen.
+      el.style.left = `${Math.min(80, Math.max(20, p.x * 100))}%`;
+      el.style.top = `${Math.min(85, Math.max(12, p.y * 100))}%`;
+    }
     this.overlay.appendChild(el);
     this.onBanner(text, el.textContent);
     setTimeout(() => el.remove(), 1400);
@@ -2079,7 +2157,7 @@ export class GemScene {
     const now = nowMs / 1000;
     const slow = now < this.slowUntil;
     this.timeScale +=
-      ((slow ? 0.35 : 1) - this.timeScale) * Math.min(1, real * 10);
+      ((slow ? 0.35 : 1) * (this.fast ? FAST : 1) - this.timeScale) * Math.min(1, real * 10);
     const dt = real * this.timeScale;
     this.time += dt;
 
@@ -2175,6 +2253,7 @@ export class GemScene {
     cancelAnimationFrame(this.raf);
     this.resizeObserver.disconnect();
     this.renderer.domElement.removeEventListener("pointerdown", this.onDown);
+    this.renderer.domElement.removeEventListener("pointerdown", this.onSpeedUp);
     window.removeEventListener("pointermove", this.onMove);
     window.removeEventListener("pointerup", this.onUp);
     for (const id of [...this.views.keys()]) this.removeView(id);
@@ -2223,6 +2302,9 @@ function blastColor(cells: (Gem | null)[], blast: Blast) {
   return new THREE.Color(g && g.color >= 0 ? GEM_COLORS[g.color] : 0xffffff);
 }
 
+/** How much faster the end of a level plays after a tap. */
+const FAST = 3;
+
 const CHAIN_WORDS = [
   "",
   "",
@@ -2264,3 +2346,13 @@ function easeOutBounce(k: number) {
 }
 
 export type { Special };
+
+/** What the game hears about while a turn plays. */
+export type TurnHooks = {
+  /** After each step, with the points it scored. */
+  onStep?: (index: number, points: number) => void;
+  /** As a step's gems and ice go, before the gems fall. */
+  onClear?: (step: Turn["steps"][number]) => void;
+  /** Show each step's points extra large (the end-of-level surge). */
+  huge?: boolean;
+};
