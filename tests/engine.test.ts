@@ -278,3 +278,50 @@ test("Fever doubles points for three moves", () => {
   assert.equal(t.points, t.score * 2);
   assert.equal(s.feverMoves, 2);
 });
+
+test("a shaped board keeps its holes empty and its gems fall past them", () => {
+  const holes = new Array(SIZE * SIZE).fill(0);
+  // A hole in the middle of column 2, and the top two cells of column 5.
+  holes[idx(2, 4)] = holes[idx(2, 5)] = holes[idx(5, 0)] = holes[idx(5, 1)] = 1;
+  const ice = new Array(SIZE * SIZE).fill(1);
+  for (let seed = 1; seed <= 40; seed++) {
+    const b = createBoard(seed, 5, ice, holes);
+    assert.equal(findGroups(b.cells).length, 0);
+    assert.ok(findHint(b));
+    holes.forEach((h, i) => {
+      assert.equal(!b.cells[i], !!h, `cell ${i}`);
+      if (h) assert.equal(b.ice[i], 0, "no ice in a hole");
+    });
+    for (let m = 0; m < 25; m++) {
+      const hint = findHint(b);
+      if (!hint) break;
+      const r = swap(b, hint[0], hint[1])!;
+      assert.ok(r);
+      for (const step of r.steps)
+        holes.forEach((h, i) => assert.equal(!step.cells[i], !!h, `after a step, cell ${i}`));
+      holes.forEach((h, i) => assert.equal(!b.cells[i], !!h, `after the move, cell ${i}`));
+      assert.equal(findGroups(b.cells).length, 0);
+    }
+    const end = surge(b, 6);
+    holes.forEach((h, i) => assert.equal(!b.cells[i], !!h));
+    assert.ok(end.steps.length > 0);
+  }
+});
+
+test("a gem above a hole falls past it to the open cell below", () => {
+  const b = board(BASE);
+  b.holes = new Array(SIZE * SIZE).fill(0);
+  b.holes[idx(0, 6)] = 1;
+  b.cells[idx(0, 6)] = null;
+  b.cells[idx(0, 7)] = { id: 900, color: 0 };
+  b.cells[idx(1, 7)] = { id: 901, color: 0 };
+  b.cells[idx(2, 6)] = { id: 902, color: 0 };
+  b.cells[idx(2, 7)] = { id: 903, color: 1 };
+  assert.equal(findGroups(b.cells).length, 0);
+  const above = b.cells[idx(0, 5)]!.id;
+  const r = swap(b, { x: 2, y: 6 }, { x: 2, y: 7 })!;
+  assert.ok(r);
+  const first = r.steps[0].cells;
+  assert.equal(first[idx(0, 6)], null, "the hole stays empty");
+  assert.equal(first[idx(0, 7)]!.id, above, "the gem above the hole fell past it");
+});

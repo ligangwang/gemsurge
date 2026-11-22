@@ -39,6 +39,25 @@ const ICE: Record<string, string[]> = {
   checks: ["1.1.1.1.", ".1.1.1.1", "1.1.1.1.", ".1.1.1.1", "1.1.1.1.", ".1.1.1.1", "1.1.1.1.", ".1.1.1.1"],
 };
 
+/**
+ * Board shapes: "#" is a cell, "." a hole. Each is mirrored left to right.
+ * Gems fall past the holes, so a shape changes how a board plays as well as
+ * how it looks.
+ */
+export const SHAPES: Record<string, string[]> = {
+  octagon: ["..####..", ".######.", "########", "########", "########", "########", ".######.", "..####.."],
+  heart: [".##..##.", "########", "########", "########", ".######.", ".######.", "..####..", "...##..."],
+  terrace: ["..####..", "..####..", "########", "########", "########", "########", "########", "########"],
+  hourglass: ["########", "########", ".######.", "..####..", "..####..", ".######.", "########", "########"],
+  pillars: ["###..###", "###..###", "########", "########", "########", "########", "###..###", "###..###"],
+  cross: ["..####..", "..####..", "########", "########", "########", "########", "..####..", "..####.."],
+};
+
+const shapeHoles = (name?: string) =>
+  name
+    ? SHAPES[name].join("").split("").map((c) => (c === "." ? 1 : 0))
+    : new Array(SIZE * SIZE).fill(0);
+
 const iceCells = (name?: string) =>
   name
     ? ICE[name].join("").split("").map((c) => (c === "." ? 0 : Number(c)))
@@ -47,7 +66,7 @@ const iceCells = (name?: string) =>
 /**
  * Each level: moves, colours, and its goals in a short form: "s3000" is a
  * score, "c0:25" collects 25 gems of colour 0, "i:center" breaks the ice laid
- * out as `center`.
+ * out as `center`, and "b:heart" cuts the board into one of the SHAPES.
  */
 const TABLE: [number, number, string][] = [
   // Crystal Forest
@@ -63,22 +82,22 @@ const TABLE: [number, number, string][] = [
   [24, 5, "i:cross c0:20"],
   // Deep Sea
   [24, 6, "s2200"],
-  [24, 6, "c3:22"],
+  [24, 6, "c3:22 b:octagon"],
   [25, 5, "i:floor"],
-  [25, 6, "c0:16 c2:16"],
+  [25, 6, "c0:16 c2:16 b:heart"],
   [28, 5, "i:diamond"],
-  [26, 6, "s2400"],
+  [26, 6, "s2400 b:terrace"],
   [26, 6, "c1:16 c4:16 c5:16"],
   [28, 5, "i:frame"],
   [24, 6, "i:center c3:18"],
   [28, 5, "i:checks"],
   // Outer Space
-  [22, 6, "s2200"],
+  [22, 6, "s2200 b:hourglass"],
   [22, 6, "c5:22"],
   [28, 5, "i:diamond c1:20"],
-  [22, 6, "c0:18 c3:18"],
+  [22, 6, "c0:18 c3:18 b:pillars"],
   [28, 5, "i:frame c2:24"],
-  [24, 6, "s2500"],
+  [24, 6, "s2500 b:cross"],
   [28, 5, "i:checks c4:24"],
   [24, 6, "c1:16 c2:16 c3:16"],
   [28, 5, "i:cross s6000"],
@@ -148,10 +167,15 @@ function variedIce(level: number, pattern: number[]): number[] {
   return ice;
 }
 
-function parseGoals(text: string): { goals: Goal[]; ice?: string } {
+function parseGoals(text: string): { goals: Goal[]; ice?: string; shape?: string } {
   const goals: Goal[] = [];
   let ice: string | undefined;
+  let shape: string | undefined;
   for (const part of text.split(" ")) {
+    if (part[0] === "b") {
+      shape = part.slice(2);
+      continue;
+    }
     if (part[0] === "s") goals.push({ kind: "score", target: Number(part.slice(1)) });
     else if (part[0] === "c") {
       const [color, target] = part.slice(1).split(":").map(Number);
@@ -161,7 +185,23 @@ function parseGoals(text: string): { goals: Goal[]; ice?: string } {
       goals.unshift({ kind: "ice" });
     }
   }
-  return { goals, ice };
+  return { goals, ice, shape };
+}
+
+/**
+ * A generated level's shape: most get one of the SHAPES, picked by the level
+ * number, so the same level always has the same shape. A board keeps at least
+ * half its ice.
+ */
+function generatedShape(level: number, ice: number[], from?: string): string | undefined {
+  const rng = { seed: hashSeed(`gemsurge-shape-${level}`) };
+  const names = Object.keys(SHAPES);
+  const pick = next(rng) < 0.6 ? names[below(rng, names.length)] : from;
+  if (!pick) return undefined;
+  const holes = shapeHoles(pick);
+  const total = ice.filter((n) => n > 0).length;
+  const kept = ice.filter((n, i) => n > 0 && !holes[i]).length;
+  return kept * 2 >= total ? pick : undefined;
 }
 
 /** The first levels are gentler than their tables say, to ease a new player in. */
@@ -220,14 +260,19 @@ export function levelSpec(level: number): LevelSpec {
   const colors = stones.length;
   // From the morganite on, one colour goal in three asks for it.
   const text = fitGoals(n >= SIX_COLORS_LEVEL ? withSeventh(tableText, n) : tableText, stones);
-  const { goals, ice } = parseGoals(text);
+  const { goals, ice, shape: tableShape } = parseGoals(text);
+  const iceLayout = ice && n > HAND_MADE ? variedIce(n, iceCells(ice)) : iceCells(ice);
+  const shape = n > HAND_MADE ? generatedShape(n, iceLayout, tableShape) : tableShape;
+  const holes = shapeHoles(shape);
+  // A smaller board clears fewer gems a move, so its targets shrink with it.
+  const area = holes.filter((h) => !h).length / (SIZE * SIZE);
   const easy = ease(n);
   const moves = Math.round((tableMoves + 2 * (colors - tableColors)) * (1 + 0.3 * easy));
   for (const goal of goals) {
-    if (goal.kind === "score") goal.target = Math.round((goal.target * (1 - 0.2 * easy)) / 100) * 100;
-    else if (goal.kind === "color") goal.target = Math.round(goal.target * (1 - 0.2 * easy));
+    if (goal.kind === "score") goal.target = Math.round((goal.target * area * (1 - 0.2 * easy)) / 100) * 100;
+    else if (goal.kind === "color") goal.target = Math.round(goal.target * area * (1 - 0.2 * easy));
   }
-  const per = PER_MOVE[colors] ?? 110;
+  const per = (PER_MOVE[colors] ?? 110) * area;
   const scoreGoal = goals.find((g) => g.kind === "score");
   const base = scoreGoal?.kind === "score" ? scoreGoal.target : 0;
   const two = round(Math.max(base * 1.4, per * moves * 0.9));
@@ -241,7 +286,8 @@ export function levelSpec(level: number): LevelSpec {
     // are the five and the morganite.
     ...(colors === 6 ? { palette: stones } : {}),
     goals,
-    ice: ice && n > HAND_MADE ? variedIce(n, iceCells(ice)) : iceCells(ice),
+    ice: iceLayout.map((layers, i) => (holes[i] ? 0 : layers)),
+    ...(shape ? { holes } : {}),
     stars: [base, two, three],
     seed: hashSeed(`gemsurge-level-${n}`),
   };

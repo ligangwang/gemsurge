@@ -23,8 +23,16 @@ export type Gem = { id: number; color: number; special?: Special };
 export type Pos = { x: number; y: number };
 
 export type Board = {
-  /** SIZE × SIZE cells, row by row. Every cell holds a gem between moves. */
+  /**
+   * SIZE × SIZE cells, row by row. Between moves every cell holds a gem,
+   * except the holes, which never do.
+   */
   cells: (Gem | null)[];
+  /**
+   * Cells cut out of the board's shape (1 is a hole), SIZE × SIZE. Gems fall
+   * past holes and new ones never drop into them. Missing means no holes.
+   */
+  holes?: number[];
   /** Ice layers under each cell (0-2). Clearing a gem there cracks one. */
   ice: number[];
   /** How many colours fall (3-7). */
@@ -93,6 +101,9 @@ export const inside = (x: number, y: number) =>
 export const adjacent = (a: Pos, b: Pos) =>
   Math.abs(a.x - b.x) + Math.abs(a.y - b.y) === 1;
 
+/** Whether cell i is cut out of the board. */
+export const isHole = (b: Pick<Board, "holes">, i: number) => !!b.holes?.[i];
+
 export const SCORE = {
   gem: 10,
   made: { row: 40, col: 40, bomb: 80, prism: 150 } as Record<Special, number>,
@@ -110,22 +121,26 @@ const newGem = (b: Board, color: number, special?: Special): Gem =>
 export const cloneBoard = (b: Board): Board => ({
   cells: b.cells.map((g) => (g ? { ...g } : null)),
   ice: [...b.ice],
+  ...(b.holes ? { holes: [...b.holes] } : {}),
   colors: b.colors,
   ...(b.palette ? { palette: b.palette } : {}),
   rng: { ...b.rng },
   nextId: b.nextId,
 });
 
-/** A full board with no matches and at least one swap. */
+/** A full board with no matches and at least one swap. `holes` cuts its shape. */
 export function createBoard(
   seed: number,
   colors: number | readonly number[],
   ice: number[] = [],
+  holes: number[] = [],
 ): Board {
   const palette = typeof colors === "number" ? undefined : colors;
+  const cut = holes.some(Boolean);
   const b: Board = {
     cells: [],
-    ice: Array.from({ length: SIZE * SIZE }, (_, i) => ice[i] ?? 0),
+    ice: Array.from({ length: SIZE * SIZE }, (_, i) => (holes[i] ? 0 : (ice[i] ?? 0))),
+    ...(cut ? { holes: Array.from({ length: SIZE * SIZE }, (_, i) => (holes[i] ? 1 : 0)) } : {}),
     colors: Math.min(MAX_COLORS, Math.max(3, palette?.length ?? (colors as number))),
     ...(palette ? { palette } : {}),
     rng: { seed },
@@ -135,15 +150,19 @@ export function createBoard(
     b.cells = [];
     for (let i = 0; i < SIZE * SIZE; i++) {
       const { x, y } = pos(i);
+      if (isHole(b, i)) {
+        b.cells.push(null);
+        continue;
+      }
       let color: number;
       do color = drawColor(b);
       while (
         (x >= 2 &&
-          b.cells[i - 1]!.color === color &&
-          b.cells[i - 2]!.color === color) ||
+          colorAt(b.cells, i - 1) === color &&
+          colorAt(b.cells, i - 2) === color) ||
         (y >= 2 &&
-          b.cells[i - SIZE]!.color === color &&
-          b.cells[i - 2 * SIZE]!.color === color)
+          colorAt(b.cells, i - SIZE) === color &&
+          colorAt(b.cells, i - 2 * SIZE) === color)
       );
       b.cells.push(newGem(b, color));
     }
@@ -155,7 +174,7 @@ export function createBoard(
 export function placeSpecials(b: Board, specials: Special[]) {
   const free = shuffleInPlace(
     b.rng,
-    b.cells.map((_, i) => i).filter((i) => !b.cells[i]!.special),
+    b.cells.map((_, i) => i).filter((i) => b.cells[i] && !b.cells[i]!.special),
   );
   for (const s of specials) {
     const i = free.pop();
@@ -423,22 +442,25 @@ function runStep(b: Board, seed: Seed, chain: number): Step {
   };
 }
 
-/** Gems fall into the gaps and new ones drop in from the top. */
+/**
+ * Gems fall into the gaps and new ones drop in from the top. A gem falls past
+ * holes to the lowest open cell of its column.
+ */
 function fall(b: Board): number[] {
   const spawned: number[] = [];
   for (let x = 0; x < SIZE; x++) {
-    let write = SIZE - 1;
-    for (let y = SIZE - 1; y >= 0; y--) {
-      const g = b.cells[idx(x, y)];
-      if (!g) continue;
-      b.cells[idx(x, y)] = null;
-      b.cells[idx(x, write--)] = g;
-    }
-    for (let y = write; y >= 0; y--) {
-      const g = newGem(b, drawColor(b));
-      b.cells[idx(x, y)] = g;
-      spawned.push(g.id);
-    }
+    // The column's open cells, bottom first.
+    const open: number[] = [];
+    for (let y = SIZE - 1; y >= 0; y--) if (!isHole(b, idx(x, y))) open.push(idx(x, y));
+    const gems = open.map((i) => b.cells[i]).filter((g): g is Gem => !!g);
+    open.forEach((i, k) => {
+      if (k < gems.length) b.cells[i] = gems[k];
+      else {
+        const g = newGem(b, drawColor(b));
+        b.cells[i] = g;
+        spawned.push(g.id);
+      }
+    });
   }
   return spawned;
 }
@@ -639,7 +661,7 @@ export function surge(b: Board, count: number): MoveResult {
   const seed = emptySeed();
   const plain = shuffleInPlace(
     b.rng,
-    b.cells.map((_, i) => i).filter((i) => !b.cells[i]!.special),
+    b.cells.map((_, i) => i).filter((i) => b.cells[i] && !b.cells[i]!.special),
   );
   for (const i of plain.slice(0, count)) {
     const g = b.cells[i]!;
@@ -661,14 +683,20 @@ export function supernova(b: Board): MoveResult {
 /** Rearranges the gems so there is no match and at least one swap. */
 export function shuffle(b: Board) {
   const gems = b.cells.filter((g): g is Gem => !!g);
+  const open = b.cells.map((_, i) => i).filter((i) => !isHole(b, i));
+  const lay = () => {
+    b.cells = b.cells.map(() => null);
+    open.forEach((i, k) => (b.cells[i] = gems[k] ?? null));
+  };
   for (let tries = 0; tries < 200; tries++) {
     shuffleInPlace(b.rng, gems);
-    b.cells = [...gems];
+    lay();
     if (!findGroups(b.cells).length && findHint(b)) return;
   }
   // Very unlikely: recolour from scratch, keeping ids.
-  const fresh = createBoard(b.rng.seed, b.palette ?? b.colors, b.ice);
-  b.cells = fresh.cells.map((g, i) => ({ ...g!, id: gems[i]?.id ?? b.nextId++ }));
+  const fresh = createBoard(b.rng.seed, b.palette ?? b.colors, b.ice, b.holes);
+  let k = 0;
+  b.cells = fresh.cells.map((g) => (g ? { ...g, id: gems[k++]?.id ?? b.nextId++ } : null));
   b.rng = fresh.rng;
 }
 

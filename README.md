@@ -22,6 +22,13 @@ in rounds of 10, across eight worlds. Play it at <https://dingn.com/play/gemsurg
 - **Levels**: 10,000 levels through eight worlds, a new one every 10 levels (Neon City, Deep Sea, Outer Space, Lantern Lake, Aurora Peaks, Golden Desert, Firefly Forest and Cloud Kingdom; they come round again in new colours after level 80; the first 30 levels are hand-made, the rest generated from them, each with its own mirrored ice shape, and no harder after level 1000), the first 100 eased with extra moves and lower targets, each with its
   own background. Goals are scores, gems of a colour, and ice
   to break (1 or 2 layers), within a move limit. 1 to 3 stars by score.
+- **Shaped boards**: from level 12 some boards are cut into shapes (an
+  octagon, a heart, a terrace, an hourglass, pillars, a cross), and most
+  generated levels get one. Gems fall past the holes, and a smaller board has
+  smaller targets.
+- **Feedback**: cheers such as Nice and Great pop up over the match that
+  earned them. A win with moves left opens with a Surge! title, shows the
+  surge's points large, and a tap plays the end faster.
 - **Daily board**: 20 moves, the same board and refills for everyone each UTC
   day.
 - English, Chinese, Spanish, Brazilian Portuguese, Indonesian, Japanese and

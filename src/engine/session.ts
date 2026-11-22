@@ -31,6 +31,8 @@ export type LevelSpec = {
   goals: Goal[];
   /** Ice layers per cell, SIZE × SIZE, row by row. */
   ice: number[];
+  /** The board's shape: 1 for a hole, SIZE × SIZE. Missing is a full square. */
+  holes?: number[];
   /** Scores for 1, 2 and 3 stars. Meeting the goals always gives 1. */
   stars: [number, number, number];
   seed: number;
@@ -100,7 +102,7 @@ export class Session {
     readonly spec: LevelSpec,
     readonly boosts: Boosts = NO_BOOSTS,
   ) {
-    this.board = createBoard(spec.seed, spec.palette ?? spec.colors, spec.ice);
+    this.board = createBoard(spec.seed, spec.palette ?? spec.colors, spec.ice, spec.holes);
     placeSpecials(this.board, boosts.specials);
     this.movesLeft = spec.moves + boosts.moves;
     this.undosLeft = undosFor(spec.level, boosts.undos ?? 0);

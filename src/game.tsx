@@ -3,7 +3,7 @@
 // behind them all.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findHint, type Pos } from "./engine/board";
-import { FEVER_MOVES, FREE_UNDO_LEVELS, Session, type Goal, type Turn } from "./engine/session";
+import { FEVER_MOVES, FREE_UNDO_LEVELS, SURGE_MAX, Session, type Goal, type Turn } from "./engine/session";
 import { version } from "../game.json";
 import { AnimationCancelled, CHEERS, GEM_OUTLINES, GemScene, STONE_CSS, type Collected } from "./gem-scene";
 import { useDingn, useLocale } from "./dingn";
@@ -220,7 +220,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     scene.current = s;
     // A board to look at behind the menu.
     const demo = new Session(levelSpec(Math.max(1, top)));
-    s.setBoard(demo.board.cells, [], demo.spec.world, worldCycle(demo.spec.level));
+    s.setBoard(demo.board.cells, [], demo.spec.world, worldCycle(demo.spec.level), demo.board.holes);
     s.setInput(false);
     return () => {
       s.dispose();
@@ -269,11 +269,12 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     sessionOwned.set(s, tiers);
     if (rules) sessionRules.set(s, rules);
     session.current = s;
+    scene.current?.offerSpeedUp(false);
     setShown(0);
     setEnd(null);
     setScreen("play");
     rerender();
-    scene.current?.setBoard(s.board.cells, s.board.ice, spec.world, worldCycle(spec.level));
+    scene.current?.setBoard(s.board.cells, s.board.ice, spec.world, worldCycle(spec.level), s.board.holes);
     scene.current?.setInput(true);
     scene.current?.banner(level === 0 ? "Daily board" : `Level ${level}`, 2);
     armHint();
@@ -371,7 +372,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     const s = session.current;
     const sc = scene.current;
     if (!s || !sc || busy.current || screen !== "play" || !s.undo()) return;
-    sc.setBoard(s.board.cells, s.board.ice, s.spec.world, worldCycle(s.spec.level));
+    sc.setBoard(s.board.cells, s.board.ice, s.spec.world, worldCycle(s.spec.level), s.board.holes);
     sc.setFever(s.fever);
     sc.setInput(true);
     setShown(s.score);
@@ -384,21 +385,30 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     const sc = scene.current!;
     sc.setFever(false);
     if (s.outcome === "won") {
-      sc.banner(s.movesLeft > 0 ? "Surge!" : "Clear!", 6);
       sfx.win();
-      const surge = s.finish();
-      if (surge) {
-        const from = s.score - surge.points;
-        let running = from;
-        await sc.playTurn(surge, null, {
-          onStep: (_, p) => {
-            running += p;
-            setShown(running);
-          },
-        });
+      const left = Math.min(s.movesLeft, SURGE_MAX);
+      // The end can take a while, so a tap plays it faster.
+      sc.offerSpeedUp(true);
+      try {
+        if (left > 0) await sc.splash("Surge!", t("{0} moves left turn into blasters", String(left)));
+        else sc.banner("Clear!", 6);
+        const surge = s.finish();
+        if (surge) {
+          const from = s.score - surge.points;
+          let running = from;
+          await sc.playTurn(surge, null, {
+            huge: true,
+            onStep: (_, p) => {
+              running += p;
+              setShown(running);
+            },
+          });
+        }
+        setShown(s.score);
+        await sc.celebrate();
+      } finally {
+        sc.offerSpeedUp(false);
       }
-      setShown(s.score);
-      await sc.celebrate();
     } else {
       sfx.lose();
       sc.banner("Out of moves", 1);
@@ -529,6 +539,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     // Supernovas it lent, end here. "Try again" on the end screen keeps them.
     challenge.current = null;
     session.current = null;
+    scene.current?.offerSpeedUp(false);
     clearTimeout(hintTimer.current);
     scene.current?.setInput(false);
     scene.current?.setFever(false);

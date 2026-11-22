@@ -190,5 +190,7 @@
   "Your score to beat: {0}. {1} more to beat it.": "Tu puntuación a superar: {0}. Te faltan {1} para superarla.",
   "Let go to spin!": "¡Suelta para girar!",
   "Swipe the wheel, or hold the button: the harder the push, the longer it spins.": "Desliza la ruleta o mantén pulsado el botón: cuanto más fuerte el impulso, más tiempo gira.",
-  "A lucky draw is waiting for you": "Tienes un sorteo de la suerte esperándote"
+  "A lucky draw is waiting for you": "Tienes un sorteo de la suerte esperándote",
+  "Tap to speed up": "Toca para acelerar",
+  "{0} moves left turn into blasters": "Los {0} movimientos que quedan se convierten en láseres"
 }

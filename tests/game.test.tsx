@@ -40,6 +40,8 @@ vi.mock("../src/gem-scene", () => ({
     async playInvalid() {}
     async playTurn() {}
     async celebrate() {}
+    async splash() {}
+    offerSpeedUp() {}
     dispose() {}
   },
 }));

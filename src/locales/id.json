@@ -190,5 +190,7 @@
   "Your score to beat: {0}. {1} more to beat it.": "Skor yang harus kamu kalahkan: {0}. Kurang {1} lagi untuk mengalahkannya.",
   "Let go to spin!": "Lepaskan untuk memutar!",
   "Swipe the wheel, or hold the button: the harder the push, the longer it spins.": "Usap rodanya, atau tahan tombolnya: makin kuat dorongannya, makin lama ia berputar.",
-  "A lucky draw is waiting for you": "Ada undian keberuntungan yang menunggumu"
+  "A lucky draw is waiting for you": "Ada undian keberuntungan yang menunggumu",
+  "Tap to speed up": "Ketuk untuk mempercepat",
+  "{0} moves left turn into blasters": "{0} langkah tersisa berubah jadi laser"
 }
