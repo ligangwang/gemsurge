@@ -434,6 +434,9 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     const rules: Rules = level === 0 ? DAILY_RULES : { owned: sessionOwned.get(s) ?? NONE, novas: s.novas };
     const played: Round = level === 0 ? { kind: "daily", day, score: s.score, rules } : { kind: "level", level, score: s.score, rules };
     const rival = challenge.current && sameRound(challenge.current, played) ? challenge.current : null;
+    // Beating their own challenge sets the player a new record: trying again
+    // is against that, not the score they have already beaten.
+    if (rival?.mine && s.score > rival.score && challenge.current) challenge.current = { ...challenge.current, score: s.score };
     // dingn posts the score under the friend's challenge, ranks it and tells
     // the player how they did. Older dingn builds have no challengeResult.
     let place: EndInfo["place"] = null;

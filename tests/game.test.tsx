@@ -568,3 +568,18 @@ test("a round away from the friend's challenge reports no result", async () => {
   await vi.waitFor(() => expect(calls.roundEnded).toHaveBeenCalledTimes(1));
   expect(calls.result).not.toHaveBeenCalled();
 });
+
+test("beating their own challenge sets the player a new record to beat", async () => {
+  sdk.challenge = { mode: "level", seed: "1", score: 1, unit: "points", rules: "u0-0-0-0-0-0.n0", mine: true };
+  play();
+  await act(async () => {});
+  await playOut();
+  const record = session().score;
+  expect(await screen.findByText("You beat your own 1!")).toBeTruthy();
+  // The same moves again make the same score, which no longer beats it.
+  fireEvent.click(screen.getByRole("button", { name: /Play again|Try again/ }));
+  await playOut();
+  expect(session().score).toBe(record);
+  expect(await screen.findByText(`Your score to beat: ${record.toLocaleString()}. 1 more to beat it.`)).toBeTruthy();
+  expect(calls.result).toHaveBeenCalledTimes(2);
+});
