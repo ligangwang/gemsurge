@@ -1232,14 +1232,15 @@ function ChallengeButton({ played, signedIn }: { played: Round; signedIn: boolea
     let active = true;
     Promise.resolve(sdk.challengeStanding?.(challengeFor(played)))
       .then((found) => {
-        if (active && found && !found.mine) setOpen(found);
+        if (active) setOpen(found && !found.mine ? found : null);
       })
       .catch(() => {});
     return () => {
       active = false;
     };
+    // Asked again on signing in: whose it is and the place depend on the account.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [signedIn]);
   const standing = open && (
     <p className="end-sub">
       {open.rank !== null
