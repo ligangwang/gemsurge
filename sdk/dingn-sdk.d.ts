@@ -20,8 +20,6 @@ export type Player = {
    */
   tester?: boolean;
 };
-/** What signing in would bring: a saved score and rank, coins and badges, or saved progress. */
-export type SignInReason = "score" | "rewards" | "progress";
 export type Json =
   null | boolean | number | string | Json[] | { [key: string]: Json };
 export type BadgeTier = "bronze" | "silver" | "gold" | "diamond";
@@ -126,6 +124,8 @@ export type ChallengeOutcome = {
   players: number;
   test?: boolean;
 };
+/** What signing in would bring the player, for `dingn.showSignIn`. */
+export type SignInReason = "score" | "rewards" | "progress";
 export type DingnGame = {
   gameId: string;
   version: string;
@@ -222,23 +222,21 @@ export type DingnGame = {
    * website's play statistics. Call it once per finished round.
    */
   roundEnded(): void;
-  /**
-   * Opens dingn's sign-in for a button of the game's own that needs an
-   * account to work, such as a shop. Not for end-of-round prompts: use
-   * `showSignIn` there.
-   */
+  /** Sends the player to sign in at once. They come back to the game. */
   requestSignIn(): void;
   /**
-   * Asks dingn to show its sign-in box to a signed-out player: a small bar
-   * along the bottom of the game, in the player's language, with one line
-   * per reason, a "Sign in free" button and a close button. All sign-in UI
-   * is dingn's; a game only decides when it shows, typically on the result
-   * of a round. After `challengeResult` dingn adds the challenge's own line
-   * itself. Nothing shows for a signed-in player. Missing on a dingn SDK
-   * from before 2.17.0, so call it as `dingn.showSignIn?.(reasons)`.
+   * Shows dingn's sign-in box over the game: what signing in brings, a
+   * "Sign in free" button and a way to put it away. Draw no sign-in text,
+   * link or button of your own; decide only when the box shows, such as on
+   * the result of a round. `reasons` says what this player would gain:
+   * "score" (their score saved and ranked), "rewards" (coins and badges),
+   * "progress" (their progress saved). After `challengeResult` for a
+   * signed-out player, dingn adds that their score will be posted under the
+   * challenge. Nothing shows for a signed-in player, or on a dingn website
+   * from before this call.
    */
-  showSignIn(reasons: SignInReason[]): void;
-  /** Takes the sign-in box away, e.g. when the next round starts. */
+  showSignIn(reasons?: SignInReason[]): void;
+  /** Takes the sign-in box away, such as when the next round starts. */
   hideSignIn(): void;
   /** Leaves the game for a dingn page, such as "/" for the game list. The website keeps the player's language. */
   navigate(path: string): void;

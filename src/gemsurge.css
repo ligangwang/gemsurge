@@ -487,8 +487,9 @@
   overflow-y: auto;
 }
 .gem-end > .gem-panel { margin: auto; }
-/* dingn's sign-in box lies over the bottom strip of the game: keep the result card and its buttons above it. */
-.signin-box .gem-end { padding-bottom: 104px; }
+/* dingn's sign-in box lies over the bottom strip of the game (about 70px with two reasons on
+   desktop, 145px on a phone, where its lines wrap): keep the result card and its buttons above it. */
+.signin-box .gem-end { padding-bottom: 90px; }
 .screen-shop .gem-end { left: 0; }
 @keyframes fade-in { from { opacity: 0; } }
 .gem-end .gem-panel {
@@ -620,6 +621,7 @@
   .gem-hud .hud-nova { grid-column: 4; grid-row: 3; margin: 0; }
   .hud-nova .nova-star { margin-right: 2px; }
   .gem-end { left: 0; }
+  .signin-box .gem-end { padding-bottom: 160px; }
   .gem-banner { font-size: 36px !important; }
   .gem-banner.wrapped { font-size: 26px !important; }
   .gem-banner.at-match { font-size: 28px !important; }

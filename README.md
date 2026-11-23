@@ -122,10 +122,6 @@ its own sign-in box along the bottom, taken away with `sdk.hideSignIn?.()` when
 the result card closes. Buttons that need an account (buying an upgrade,
 "Challenge anyone") call `sdk.requestSignIn()` for a signed-out player.
 
-`showSignIn` / `hideSignIn` were added to `sdk/` by hand from dingn 2.17.0's
-description, before dingn.com served them: run `npm run update-sdk` once that
-dingn version is live so the copy matches the real one.
-
 ## Credits
 
 Written by Ligang Wang. Built with [three.js](https://threejs.org/) and
