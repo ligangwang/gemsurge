@@ -462,6 +462,9 @@ test("a friend's challenge on a level not reached yet plays it without unlocking
   expect(await screen.findByRole("heading", { name: "Level 40" })).toBeTruthy();
   await playOut();
   if (session().score > 1) expect(await screen.findByText("You beat the challenge's 1!")).toBeTruthy();
+  // A challenge is that one round: it offers no next level.
+  expect(await screen.findByText(/^(Play again|Try again)$/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Next level" })).toBeNull();
   expect(calls.earn).not.toHaveBeenCalled();
   // Nor badges, during play or after it.
   expect(calls.unlock).not.toHaveBeenCalled();
