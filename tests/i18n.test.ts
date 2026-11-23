@@ -84,9 +84,9 @@ test("translate gives each language its own text, and English for English and un
   assert.equal(translate("Level 12", "es"), "Nivel 12");
   assert.equal(translate("Level 12", "ja"), "レベル 12");
   assert.equal(translate("Tier 2 of 5", "ko"), "5단계 중 2단계");
-  assert.equal(translate("Your friend scored 900. 15 more to beat it.", "pt-BR"), "Seu amigo fez 900 pontos. Faltam 15 para bater.");
+  assert.equal(translate("The score to beat is 900. 15 more to beat it.", "pt-BR"), "A pontuação a bater é 900. Faltam 15 para bater.");
   assert.equal(translate(`Collect ${translate("Ruby", "ja")}`, "ja"), "ルビーを集める");
-  assert.equal(translate("Can you beat my 1,234 points in Gem Surge?", "es"), "¿Puedes superar mis 1,234 puntos en Gem Surge?");
+  assert.equal(translate("Take on level 28 in Gem Surge. Can you beat the score?", "es"), "Atrévete con el nivel 28 de Gem Surge. ¿Puedes superar la puntuación?");
   // A language dingn adds later, or a missing string, stays in English.
   for (const locale of ["en", "fr", "de", "zh-TW", ""]) {
     assert.equal(translate("Play", locale), "Play", locale);
