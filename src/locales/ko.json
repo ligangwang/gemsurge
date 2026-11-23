@@ -198,5 +198,9 @@
   "{0} moves left turn into blasters": "남은 {0}번의 이동이 레이저로 바뀌어요",
   "Place {0} of {1}": "{1}명 중 {0}위",
   "Ranked No. {0} of {1}. Sign in free to save it.": "{1}명 중 {0}위. 무료로 로그인하고 저장하세요.",
-  "Sign in free to save your score and see your rank.": "무료로 로그인하고 점수를 저장해 순위를 확인하세요."
+  "Sign in free to save your score and see your rank.": "무료로 로그인하고 점수를 저장해 순위를 확인하세요.",
+  "{0} already has a challenge on this round. You would be No. {1} of {2}.": "이 라운드에는 이미 {0}의 챌린지가 있어요. {2}명 중 {1}위가 됩니다.",
+  "{0} already has a challenge on this round.": "이 라운드에는 이미 {0}의 챌린지가 있어요.",
+  "Join the challenge": "챌린지 참가",
+  "Sign in free to join the challenge.": "무료로 로그인하고 챌린지에 참가하세요."
 }

@@ -198,5 +198,9 @@
   "{0} moves left turn into blasters": "As {0} jogadas que sobraram viram lasers",
   "Place {0} of {1}": "{0}º lugar de {1}",
   "Ranked No. {0} of {1}. Sign in free to save it.": "{0}º lugar de {1}. Entre grátis para salvar.",
-  "Sign in free to save your score and see your rank.": "Entre grátis para salvar sua pontuação e ver sua posição."
+  "Sign in free to save your score and see your rank.": "Entre grátis para salvar sua pontuação e ver sua posição.",
+  "{0} already has a challenge on this round. You would be No. {1} of {2}.": "{0} já tem um desafio nesta rodada. Você ficaria em {1}º de {2}.",
+  "{0} already has a challenge on this round.": "{0} já tem um desafio nesta rodada.",
+  "Join the challenge": "Entrar no desafio",
+  "Sign in free to join the challenge.": "Entre grátis para entrar no desafio."
 }

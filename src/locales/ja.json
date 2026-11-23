@@ -198,5 +198,9 @@
   "{0} moves left turn into blasters": "残り {0} 手がレーザーに変わります",
   "Place {0} of {1}": "{1} 人中 {0} 位",
   "Ranked No. {0} of {1}. Sign in free to save it.": "{1} 人中 {0} 位。無料でログインして保存しよう。",
-  "Sign in free to save your score and see your rank.": "無料でログインしてスコアを保存し、順位を確認しよう。"
+  "Sign in free to save your score and see your rank.": "無料でログインしてスコアを保存し、順位を確認しよう。",
+  "{0} already has a challenge on this round. You would be No. {1} of {2}.": "このラウンドには {0} のチャレンジがあります。あなたは {2} 人中 {1} 位になります。",
+  "{0} already has a challenge on this round.": "このラウンドには {0} のチャレンジがあります。",
+  "Join the challenge": "チャレンジに参加",
+  "Sign in free to join the challenge.": "無料でログインしてチャレンジに参加しよう。"
 }
