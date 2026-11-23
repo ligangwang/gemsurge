@@ -108,6 +108,7 @@ function fakeSdk(signedIn: boolean, locale: Locale = "en") {
     },
     challenge: null,
     challengeLink: calls.link,
+    challengeStanding: async () => null,
     challengeResult: calls.result,
     roundEnded: calls.roundEnded,
     requestSignIn: () => {},
@@ -604,4 +605,49 @@ test("a signed-out visitor with a score is asked to sign in before challenging a
   fireEvent.click(await screen.findByRole("button", { name: "Great score! Sign in free to challenge anyone." }));
   expect(signIn).toHaveBeenCalledTimes(1);
   expect(calls.link).not.toHaveBeenCalled();
+});
+
+test("a round that already has someone's challenge offers to join it", async () => {
+  const writeText = vi.fn(async () => {});
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  const standing = vi.fn(async () => ({ name: "Ada", score: 2110, mine: false, rank: 2, players: 5 }));
+  sdk.challengeStanding = standing;
+  play();
+  fireEvent.click(screen.getByRole("button", { name: "Daily board" }));
+  await playOut();
+  // dingn is asked about this round and score; nothing is posted by asking.
+  expect(await screen.findByText("Ada already has a challenge on this round. You would be No. 2 of 5.")).toBeTruthy();
+  expect(standing).toHaveBeenCalledWith(expect.objectContaining({ mode: "daily", score: session().score, unit: "points" }));
+  expect(calls.link).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: /Challenge anyone/ })).toBeNull();
+  // Joining is the player's choice: the button posts the score and gives the link.
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: /Join the challenge/ })));
+  expect(calls.link).toHaveBeenCalledTimes(1);
+});
+
+test("the player's own challenge, or a dingn that can't say, leaves Challenge anyone", async () => {
+  sdk.challengeStanding = async () => ({ name: "Ada", score: 10, mine: true, rank: 1, players: 1 });
+  play();
+  fireEvent.click(screen.getByRole("button", { name: "Daily board" }));
+  await playOut();
+  expect(await screen.findByRole("button", { name: /Challenge anyone/ })).toBeTruthy();
+  expect(screen.queryByText(/already has a challenge/)).toBeNull();
+  cleanup();
+  sdk.challengeStanding = async () => {
+    throw Object.assign(new Error("old"), { code: "unknown_method" });
+  };
+  play();
+  fireEvent.click(screen.getByRole("button", { name: "Daily board" }));
+  await playOut();
+  expect(await screen.findByRole("button", { name: /Challenge anyone/ })).toBeTruthy();
+});
+
+test("a visitor is told about the round's challenge and asked to sign in to join it", async () => {
+  fakeSdk(false);
+  sdk.challengeStanding = async () => ({ name: "Ada", score: 2110, mine: false, rank: null, players: 60 });
+  play();
+  fireEvent.click(screen.getByRole("button", { name: "Daily board" }));
+  await playOut();
+  expect(await screen.findByText("Ada already has a challenge on this round.")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Sign in free to join the challenge." })).toBeTruthy();
 });

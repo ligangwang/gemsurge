@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findHint, type Pos } from "./engine/board";
 import { FEVER_MOVES, FREE_UNDO_LEVELS, SURGE_MAX, Session, type Goal, type Turn } from "./engine/session";
 import { version } from "../game.json";
+import type { ChallengeStanding } from "../sdk/dingn-sdk.js";
 import { AnimationCancelled, CHEERS, GEM_OUTLINES, GemScene, STONE_CSS, type Collected } from "./gem-scene";
 import { useDingn, useLocale } from "./dingn";
 import { frostMotifForLevel } from "./lantern-lake";
@@ -1214,13 +1215,38 @@ function EndPanel(props: {
  * on dingn: the first player to challenge it owns it, and later ones have
  * their score posted under it (dingn tells them their place), so the words
  * that go with the link name the round, not this player's score. A visitor
- * is asked to sign in first: a challenge belongs to an account.
+ * is asked to sign in first: a challenge belongs to an account. dingn is
+ * asked first whether the round already has someone else's challenge: then
+ * the player is told whose it is and the place their score would take, and
+ * the button joins it. Nothing is posted until the button is pressed.
  */
 function ChallengeButton({ played, signedIn }: { played: Round; signedIn: boolean }) {
   const { t } = useLocale();
   const sdk = useDingn();
   const [state, setState] = useState<"idle" | "busy" | "copied" | "shared" | "unavailable">("idle");
   const [link, setLink] = useState("");
+  // Someone else's open challenge on this round, if dingn knows of one. The
+  // player's own, an older dingn or a failed lookup leave "Challenge anyone".
+  const [open, setOpen] = useState<ChallengeStanding | null>(null);
+  useEffect(() => {
+    let active = true;
+    Promise.resolve(sdk.challengeStanding?.(challengeFor(played)))
+      .then((found) => {
+        if (active && found && !found.mine) setOpen(found);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const standing = open && (
+    <p className="end-sub">
+      {open.rank !== null
+        ? t("{0} already has a challenge on this round. You would be No. {1} of {2}.", open.name, String(open.rank), String(open.players))
+        : t("{0} already has a challenge on this round.", open.name)}
+    </p>
+  );
   async function send() {
     setState("busy");
     let url: string;
@@ -1241,16 +1267,18 @@ function ChallengeButton({ played, signedIn }: { played: Round; signedIn: boolea
   if (!signedIn)
     return (
       <div className="end-challenge">
+        {standing}
         <button className="link-button end-unsaved" onClick={() => sdk.requestSignIn()}>
-          {t("Great score! Sign in free to challenge anyone.")}
+          {open ? t("Sign in free to join the challenge.") : t("Great score! Sign in free to challenge anyone.")}
         </button>
       </div>
     );
   if (state === "unavailable") return null;
   return (
     <div className="end-challenge">
+      {standing}
       <button className="button challenge-button" onClick={send} disabled={state === "busy"}>
-        ⚔ {t("Challenge anyone")}
+        ⚔ {open ? t("Join the challenge") : t("Challenge anyone")}
       </button>
       {state === "copied" && <p className="end-sub">{t("Link copied. Send it to anyone!")}</p>}
       {link && (
