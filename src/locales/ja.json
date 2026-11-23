@@ -194,5 +194,7 @@
   "A lucky draw is waiting for you": "ラッキー抽選が待っているよ",
   "Tap to speed up": "タップで早送り",
   "{0} moves left turn into blasters": "残り {0} 手がレーザーに変わります",
-  "Place {0} of {1}": "{1} 人中 {0} 位"
+  "Place {0} of {1}": "{1} 人中 {0} 位",
+  "Ranked No. {0} of {1}. Sign in free to save it.": "{1} 人中 {0} 位。無料でログインして保存しよう。",
+  "Sign in free to save your score and see your rank.": "無料でログインしてスコアを保存し、順位を確認しよう。"
 }
