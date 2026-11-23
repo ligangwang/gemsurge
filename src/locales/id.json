@@ -8,7 +8,6 @@
   "Upgrades": "Upgrade",
   "Sound on": "Nyalakan suara",
   "Sound off": "Matikan suara",
-  "Sign in to earn coins and badges": "Masuk untuk mendapatkan koin dan lencana",
   "Levels": "Level",
   "Earlier levels": "Level sebelumnya",
   "Later levels": "Level berikutnya",
@@ -61,7 +60,6 @@
   "Spend your dingn coins": "Belanjakan koin dingn-mu",
   "Close": "Tutup",
   "Upgrades are yours to keep and work on every level. The daily board stays the same for everyone.": "Upgrade jadi milikmu selamanya dan berlaku di setiap level. Papan harian tetap sama untuk semua orang.",
-  "Sign in to buy upgrades": "Masuk untuk membeli upgrade",
   "Extra moves": "Langkah tambahan",
   "Every level starts with more moves: +1 a tier.": "Setiap level dimulai dengan langkah lebih banyak: +1 per tingkat.",
   "Line blasters": "Laser",
@@ -182,7 +180,6 @@
   "Challenge anyone": "Tantang siapa saja",
   "Take on level {0} in Gem Surge. Can you beat the score?": "Coba level {0} di Gem Surge. Bisakah kamu mengalahkan skornya?",
   "Take on today's daily board in Gem Surge. Can you beat the score?": "Coba papan harian di Gem Surge. Bisakah kamu mengalahkan skornya?",
-  "Great score! Sign in free to challenge anyone.": "Skor hebat! Masuk gratis untuk menantang siapa saja.",
   "Link copied. Send it to anyone!": "Tautan disalin. Kirim ke siapa saja!",
   "Challenge link": "Tautan tantangan",
   "You beat the challenge's {0}!": "Kamu mengalahkan skor tantangan {0}!",
@@ -197,10 +194,8 @@
   "Tap to speed up": "Ketuk untuk mempercepat",
   "{0} moves left turn into blasters": "{0} langkah tersisa berubah jadi laser",
   "Place {0} of {1}": "Peringkat {0} dari {1}",
-  "Ranked No. {0} of {1}. Sign in free to save it.": "Peringkat {0} dari {1}. Masuk gratis untuk menyimpannya.",
-  "Sign in free to save your score and see your rank.": "Masuk gratis untuk menyimpan skormu dan melihat peringkatmu.",
+  "You would be No. {0} of {1}.": "Kamu akan berada di peringkat {0} dari {1}.",
   "{0} already has a challenge on this round. You would be No. {1} of {2}.": "{0} sudah punya tantangan di ronde ini. Kamu akan berada di peringkat {1} dari {2}.",
   "{0} already has a challenge on this round.": "{0} sudah punya tantangan di ronde ini.",
-  "Join the challenge": "Ikut tantangan",
-  "Sign in free to join the challenge.": "Masuk gratis untuk ikut tantangan."
+  "Join the challenge": "Ikut tantangan"
 }

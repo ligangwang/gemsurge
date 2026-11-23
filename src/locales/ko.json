@@ -8,7 +8,6 @@
   "Upgrades": "업그레이드",
   "Sound on": "소리 켜기",
   "Sound off": "소리 끄기",
-  "Sign in to earn coins and badges": "로그인하고 코인과 배지를 모아 보세요",
   "Levels": "레벨",
   "Earlier levels": "이전 레벨",
   "Later levels": "다음 레벨들",
@@ -61,7 +60,6 @@
   "Spend your dingn coins": "dingn 코인을 써 보세요",
   "Close": "닫기",
   "Upgrades are yours to keep and work on every level. The daily board stays the same for everyone.": "업그레이드는 영원히 내 것이고 모든 레벨에서 효과가 있어요. 오늘의 보드는 모두에게 똑같아요.",
-  "Sign in to buy upgrades": "로그인하고 업그레이드를 구매하세요",
   "Extra moves": "추가 이동",
   "Every level starts with more moves: +1 a tier.": "모든 레벨을 더 많은 이동으로 시작해요. 단계마다 +1.",
   "Line blasters": "레이저",
@@ -182,7 +180,6 @@
   "Challenge anyone": "누구에게나 도전",
   "Take on level {0} in Gem Surge. Can you beat the score?": "Gem Surge 레벨 {0}에 도전해 보세요. 이 점수를 넘을 수 있나요?",
   "Take on today's daily board in Gem Surge. Can you beat the score?": "Gem Surge 데일리 보드에 도전해 보세요. 이 점수를 넘을 수 있나요?",
-  "Great score! Sign in free to challenge anyone.": "멋진 점수예요! 무료로 로그인하고 누구에게나 도전하세요.",
   "Link copied. Send it to anyone!": "링크를 복사했어요. 누구에게나 보내 보세요!",
   "Challenge link": "도전 링크",
   "You beat the challenge's {0}!": "챌린지의 {0}점을 넘었어요!",
@@ -197,10 +194,8 @@
   "Tap to speed up": "탭하면 빨라져요",
   "{0} moves left turn into blasters": "남은 {0}번의 이동이 레이저로 바뀌어요",
   "Place {0} of {1}": "{1}명 중 {0}위",
-  "Ranked No. {0} of {1}. Sign in free to save it.": "{1}명 중 {0}위. 무료로 로그인하고 저장하세요.",
-  "Sign in free to save your score and see your rank.": "무료로 로그인하고 점수를 저장해 순위를 확인하세요.",
+  "You would be No. {0} of {1}.": "{1}명 중 {0}위가 됩니다.",
   "{0} already has a challenge on this round. You would be No. {1} of {2}.": "이 라운드에는 이미 {0}의 챌린지가 있어요. {2}명 중 {1}위가 됩니다.",
   "{0} already has a challenge on this round.": "이 라운드에는 이미 {0}의 챌린지가 있어요.",
-  "Join the challenge": "챌린지 참가",
-  "Sign in free to join the challenge.": "무료로 로그인하고 챌린지에 참가하세요."
+  "Join the challenge": "챌린지 참가"
 }

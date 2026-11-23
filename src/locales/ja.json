@@ -8,7 +8,6 @@
   "Upgrades": "アップグレード",
   "Sound on": "サウンドをオン",
   "Sound off": "サウンドをオフ",
-  "Sign in to earn coins and badges": "ログインしてコインとバッジを集めよう",
   "Levels": "レベル",
   "Earlier levels": "前のレベル",
   "Later levels": "次のレベル",
@@ -61,7 +60,6 @@
   "Spend your dingn coins": "dingn コインを使おう",
   "Close": "閉じる",
   "Upgrades are yours to keep and work on every level. The daily board stays the same for everyone.": "アップグレードはずっと使え、すべてのレベルで効果があります。デイリーボードはみんな同じ条件です。",
-  "Sign in to buy upgrades": "ログインしてアップグレードを購入",
   "Extra moves": "手数アップ",
   "Every level starts with more moves: +1 a tier.": "どのレベルも手数が増えた状態で始まります。1 段階ごとに +1。",
   "Line blasters": "レーザー",
@@ -182,7 +180,6 @@
   "Challenge anyone": "誰にでも挑戦",
   "Take on level {0} in Gem Surge. Can you beat the score?": "Gem Surge のレベル {0} に挑戦。このスコアを超えられる？",
   "Take on today's daily board in Gem Surge. Can you beat the score?": "Gem Surge のデイリーボードに挑戦。このスコアを超えられる？",
-  "Great score! Sign in free to challenge anyone.": "ナイススコア！無料でログインして誰にでも挑戦しよう。",
   "Link copied. Send it to anyone!": "リンクをコピーしました。誰にでも送ろう！",
   "Challenge link": "チャレンジリンク",
   "You beat the challenge's {0}!": "チャレンジの {0} 点を超えた！",
@@ -197,10 +194,8 @@
   "Tap to speed up": "タップで早送り",
   "{0} moves left turn into blasters": "残り {0} 手がレーザーに変わります",
   "Place {0} of {1}": "{1} 人中 {0} 位",
-  "Ranked No. {0} of {1}. Sign in free to save it.": "{1} 人中 {0} 位。無料でログインして保存しよう。",
-  "Sign in free to save your score and see your rank.": "無料でログインしてスコアを保存し、順位を確認しよう。",
+  "You would be No. {0} of {1}.": "あなたは {1} 人中 {0} 位になります。",
   "{0} already has a challenge on this round. You would be No. {1} of {2}.": "このラウンドには {0} のチャレンジがあります。あなたは {2} 人中 {1} 位になります。",
   "{0} already has a challenge on this round.": "このラウンドには {0} のチャレンジがあります。",
-  "Join the challenge": "チャレンジに参加",
-  "Sign in free to join the challenge.": "無料でログインしてチャレンジに参加しよう。"
+  "Join the challenge": "チャレンジに参加"
 }

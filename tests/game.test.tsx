@@ -47,7 +47,7 @@ vi.mock("../src/gem-scene", () => ({
 }));
 
 let sdk: DingnGame;
-const calls = { save: vi.fn(), earn: vi.fn(), unlock: vi.fn(), spend: vi.fn(), link: vi.fn(), roundEnded: vi.fn(), result: vi.fn() };
+const calls = { save: vi.fn(), earn: vi.fn(), unlock: vi.fn(), spend: vi.fn(), link: vi.fn(), roundEnded: vi.fn(), result: vi.fn(), showSignIn: vi.fn(), hideSignIn: vi.fn() };
 let owned: string[] = [];
 let stored: Map<string, unknown>;
 let account: unknown = null;
@@ -66,6 +66,8 @@ function fakeSdk(signedIn: boolean, locale: Locale = "en") {
   calls.unlock.mockReset().mockResolvedValue({ new: true, coins: 10 });
   calls.link.mockReset().mockResolvedValue("https://dingn.com/play/gemsurge/?c=Xq3v9TzK1bWm");
   calls.roundEnded.mockReset();
+  calls.showSignIn.mockReset();
+  calls.hideSignIn.mockReset();
   calls.result.mockReset().mockImplementation(async (score: number) => ({
     beat: score > (sdk.challenge?.score ?? 0),
     posted: true,
@@ -112,6 +114,8 @@ function fakeSdk(signedIn: boolean, locale: Locale = "en") {
     challengeResult: calls.result,
     roundEnded: calls.roundEnded,
     requestSignIn: () => {},
+    showSignIn: calls.showSignIn,
+    hideSignIn: calls.hideSignIn,
     navigate: () => {},
     ready() {},
   };
@@ -200,11 +204,66 @@ test("upgrades are bought with coins and start the next level", async () => {
   expect(session().movesLeft).toBe(27);
 });
 
-test("signed-out players are asked to sign in to buy", async () => {
+test("a signed-out player's buy button asks dingn to sign them in", async () => {
   fakeSdk(false);
+  const signIn = vi.fn();
+  sdk.requestSignIn = signIn;
   play();
   fireEvent.click(screen.getByRole("button", { name: "Upgrades" }));
-  expect(screen.getByRole("button", { name: "Sign in to buy upgrades" })).toBeTruthy();
+  const buttons = await screen.findAllByRole("button", { name: /60/ });
+  await act(async () => fireEvent.click(buttons[0]));
+  expect(signIn).toHaveBeenCalledTimes(1);
+  expect(calls.spend).not.toHaveBeenCalled();
+});
+
+test("the game draws no sign-in prompt of its own; dingn's box shows on a signed-out result", async () => {
+  fakeSdk(false);
+  const view = play();
+  // Nothing on the menu or in the shop.
+  expect(view.container.textContent).not.toMatch(/sign in/i);
+  fireEvent.click(screen.getByRole("button", { name: "Upgrades" }));
+  expect(view.container.textContent).not.toMatch(/sign in/i);
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  expect(calls.showSignIn).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Play" }));
+  await playOut();
+  const won = session().outcome === "won";
+  await screen.findByRole("button", { name: won ? "Play again" : "Try again" });
+  expect(view.container.textContent).not.toMatch(/sign in/i);
+  // dingn is asked once, with what signing in would have brought.
+  expect(calls.showSignIn).toHaveBeenCalledTimes(1);
+  const reasons = calls.showSignIn.mock.calls[0][0] as string[];
+  expect(reasons).toContain("score");
+  if (won) expect(reasons).toEqual(["score", "rewards"]);
+  expect(calls.hideSignIn).not.toHaveBeenCalled();
+  // The box goes when the result card closes.
+  fireEvent.click(screen.getByRole("button", { name: won ? "Play again" : "Try again" }));
+  expect(calls.hideSignIn).toHaveBeenCalledTimes(1);
+  await playOut();
+  await screen.findByRole("button", { name: /Play again|Try again/ });
+  expect(calls.showSignIn).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getAllByRole("button", { name: "Menu" }).at(-1)!);
+  expect(calls.hideSignIn).toHaveBeenCalledTimes(2);
+});
+
+test("a signed-in player's result asks for no sign-in box", async () => {
+  play();
+  fireEvent.click(screen.getByRole("button", { name: "Play" }));
+  await playOut();
+  await screen.findByRole("button", { name: session().outcome === "won" ? "Play again" : "Try again" });
+  expect(calls.showSignIn).not.toHaveBeenCalled();
+});
+
+test("a dingn from before showSignIn still ends a signed-out round", async () => {
+  fakeSdk(false);
+  delete (sdk as Partial<DingnGame>).showSignIn;
+  delete (sdk as Partial<DingnGame>).hideSignIn;
+  play();
+  fireEvent.click(screen.getByRole("button", { name: "Play" }));
+  await playOut();
+  const again = await screen.findByRole("button", { name: session().outcome === "won" ? "Play again" : "Try again" });
+  fireEvent.click(again);
+  expect(session().movesMade).toBe(0);
 });
 
 test("signing in brings back the account's levels", async () => {
@@ -239,7 +298,6 @@ test("speaks Chinese", () => {
   expect(screen.getByRole("button", { name: "开始" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "每日棋盘" })).toBeTruthy();
   expect(screen.getByText(/水晶森林/)).toBeTruthy();
-  expect(screen.getByText("登录以赚取金币和徽章")).toBeTruthy();
 });
 
 test("speaks every language dingn gives it, in its own words", () => {
@@ -574,35 +632,35 @@ test("a round away from the friend's challenge reports no result", async () => {
   expect(calls.result).not.toHaveBeenCalled();
 });
 
-test("a signed-out visitor who takes a challenge is asked to sign in to save the score", async () => {
+test("a signed-out visitor who takes a challenge gets dingn's sign-in box, not a link of the game's", async () => {
   fakeSdk(false);
-  const signIn = vi.fn();
-  sdk.requestSignIn = signIn;
   sdk.challenge = { mode: "daily", seed: "2026-11-01", score: 999999, unit: "points", rules: "u0-0-0-0-0-0.n0" };
   // dingn holds a visitor's score until they sign in, and may not rank it yet.
   calls.result.mockResolvedValue({ beat: false, posted: false, best: 0, rank: null, players: 4 });
   play();
   await playOut();
-  fireEvent.click(await screen.findByRole("button", { name: "Sign in free to save your score and see your rank." }));
-  expect(signIn).toHaveBeenCalledTimes(1);
+  await screen.findByRole("button", { name: /Play again|Try again/ });
+  // dingn adds the challenge's own line to its box after challengeResult.
+  expect(calls.showSignIn).toHaveBeenCalledWith(["score"]);
+  expect(document.body.textContent).not.toMatch(/sign in/i);
   cleanup();
   // When dingn says where the score would stand, the place is shown too.
   calls.result.mockResolvedValue({ beat: false, posted: false, best: 0, rank: 3, players: 4 });
   play();
   await playOut();
-  expect(await screen.findByRole("button", { name: "Ranked No. 3 of 4. Sign in free to save it." })).toBeTruthy();
+  expect(await screen.findByText("You would be No. 3 of 4.")).toBeTruthy();
+  expect(document.body.textContent).not.toMatch(/sign in/i);
 });
 
-test("a signed-out visitor with a score is asked to sign in before challenging anyone", async () => {
+test("Challenge anyone asks dingn to sign a visitor in before challenging", async () => {
   fakeSdk(false);
   const signIn = vi.fn();
   sdk.requestSignIn = signIn;
   play();
   fireEvent.click(screen.getByRole("button", { name: "Daily board" }));
   await playOut();
-  // A challenge belongs to an account, so a visitor gets no challenge button.
-  expect(screen.queryByRole("button", { name: /Challenge anyone/ })).toBeNull();
-  fireEvent.click(await screen.findByRole("button", { name: "Great score! Sign in free to challenge anyone." }));
+  // A challenge belongs to an account, so a visitor's button opens dingn's sign-in.
+  fireEvent.click(await screen.findByRole("button", { name: /Challenge anyone/ }));
   expect(signIn).toHaveBeenCalledTimes(1);
   expect(calls.link).not.toHaveBeenCalled();
 });
@@ -642,12 +700,13 @@ test("the player's own challenge, or a dingn that can't say, leaves Challenge an
   expect(await screen.findByRole("button", { name: /Challenge anyone/ })).toBeTruthy();
 });
 
-test("a visitor is told about the round's challenge and asked to sign in to join it", async () => {
+test("a visitor is told about the round's challenge and can ask to join it", async () => {
   fakeSdk(false);
   sdk.challengeStanding = async () => ({ name: "Ada", score: 2110, mine: false, rank: null, players: 60 });
   play();
   fireEvent.click(screen.getByRole("button", { name: "Daily board" }));
   await playOut();
   expect(await screen.findByText("Ada already has a challenge on this round.")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Sign in free to join the challenge." })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /Join the challenge/ })).toBeTruthy();
+  expect(document.body.textContent).not.toMatch(/sign in/i);
 });

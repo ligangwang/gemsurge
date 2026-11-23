@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findHint, type Pos } from "./engine/board";
 import { FEVER_MOVES, FREE_UNDO_LEVELS, SURGE_MAX, Session, type Goal, type Turn } from "./engine/session";
 import { version } from "../game.json";
-import type { ChallengeStanding } from "../sdk/dingn-sdk.js";
+import type { ChallengeStanding, SignInReason } from "../sdk/dingn-sdk.js";
 import { AnimationCancelled, CHEERS, GEM_OUTLINES, GemScene, STONE_CSS, type Collected } from "./gem-scene";
 import { useDingn, useLocale } from "./dingn";
 import { frostMotifForLevel } from "./lantern-lake";
@@ -65,6 +65,11 @@ type EndInfo = {
    * sign in: the place it would take, when dingn says.
    */
   unsaved: { rank: number | null; players: number } | null;
+  /**
+   * What signing in would have brought this round, for a signed-out player.
+   * dingn draws the sign-in box (`sdk.showSignIn`); the game only says when.
+   */
+  signIn: SignInReason[];
 };
 type RoundEnd = {
   round: number;
@@ -453,7 +458,8 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     // yet, is played for the score alone: nothing is saved or paid.
     if (scoreOnly(s)) {
       if (!show) return;
-      setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: null, chain: 0, note: "", best: false, novas: 0, round: null, played, rival, place, unsaved });
+      const signIn: SignInReason[] = !signedIn && s.score > 0 ? ["score"] : [];
+      setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: null, chain: 0, note: "", best: false, novas: 0, round: null, played, rival, place, unsaved, signIn });
       setScreen("end");
       return;
     }
@@ -502,8 +508,8 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     let paid: number | null = null;
     let chainPaid = 0;
     if (coins + chain > 0) {
-      if (!signedIn) note = "Sign in to earn coins and badges";
-      else {
+      // A signed-out player's coins are not paid: dingn's sign-in box says so (below).
+      if (signedIn) {
         try {
           // dingn pays at most 10 coins a call, so the chains are paid on their own.
           const r = coins > 0 ? await sdk.rewards.earn(coins) : { coins: 0 };
@@ -535,7 +541,10 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       round.coins = paidForRound;
     }
     if (!show) return;
-    setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: paid, chain: chainPaid, note, best, novas: charged, round, played, rival, place, unsaved });
+    const signIn: SignInReason[] = [];
+    if (!signedIn && s.score > 0) signIn.push("score");
+    if (!signedIn && (coins + chain > 0 || round)) signIn.push("rewards");
+    setEnd({ outcome: won ? "won" : "lost", stars, score: s.score, coins: paid, chain: chainPaid, note, best, novas: charged, round, played, rival, place, unsaved, signIn });
     if (round) {
       scene.current?.banner("Round complete!", 6);
       sfx.fanfare();
@@ -607,8 +616,20 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   const nextLevel = Math.min(top + 1, LAST_LEVEL);
   const totalStars = saved.stars.reduce((a, b) => a + b, 0);
 
+  // All sign-in UI is dingn's: on a signed-out player's result the game asks
+  // dingn for its sign-in box, and takes it away when the result card closes
+  // (next level, play again, menu) or the player signs in. A dingn from
+  // before these calls has neither, and shows nothing.
+  const signInBox = screen === "end" && !signedIn && !!end?.signIn.length && !!sdk.showSignIn;
+  useEffect(() => {
+    if (!signInBox || !end) return;
+    sdk.showSignIn?.(end.signIn);
+    return () => sdk.hideSignIn?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signInBox, end]);
+
   return (
-    <div className={`gem-app screen-${screen}`}>
+    <div className={`gem-app screen-${screen}${signInBox ? " signin-box" : ""}`}>
       <div className="gem-host" ref={host} />
       {!webgl && (
         <div className="gem-panel center">
@@ -622,7 +643,6 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
           top={top}
           totalStars={totalStars}
           dailyDone={dailyDone}
-          signedIn={signedIn}
           onPlay={start}
           onShop={() => setScreen("shop")}
           muted={muted}
@@ -692,7 +712,6 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
       {screen === "shop" && (
         <Shop
           owned={owned}
-          signedIn={signedIn}
           buying={buying}
           note={shopNote && t(shopNote)}
           onBuy={purchase}
@@ -700,7 +719,6 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
             setShopNote("");
             setScreen("menu");
           }}
-          onSignIn={() => sdk.requestSignIn()}
         />
       )}
     </div>
@@ -714,7 +732,6 @@ function Menu(props: {
   top: number;
   totalStars: number;
   dailyDone: boolean;
-  signedIn: boolean;
   nextLevel: number;
   muted: boolean;
   onPlay: (level: number) => void;
@@ -722,7 +739,6 @@ function Menu(props: {
   onMute: () => void;
 }) {
   const { t } = useLocale();
-  const sdk = useDingn();
   const { saved, top } = props;
   // The map shows three rounds (worlds) at a time, starting on the page with the next level to play.
   const WORLDS_A_PAGE = 3;
@@ -757,13 +773,6 @@ function Menu(props: {
             {props.muted ? "🔇" : "🔊"}
           </button>
         </div>
-        {!props.signedIn && (
-          <p className="signin-note">
-            <button className="link-button" onClick={() => sdk.requestSignIn()}>
-              {t("Sign in to earn coins and badges")}
-            </button>
-          </p>
-        )}
         <div className="gem-round" aria-label={t("Your round")}>
           <p className="round-title">
             <span className="medal" aria-hidden>
@@ -1108,7 +1117,6 @@ function EndPanel(props: {
   onShop: () => void;
 }) {
   const { t } = useLocale();
-  const sdk = useDingn();
   const { end, session: s } = props;
   const daily = s.spec.level === 0;
   const won = end.outcome === "won";
@@ -1145,12 +1153,8 @@ function EndPanel(props: {
                   (end.rival.score - end.score + 1).toLocaleString(),
                 )}
             {end.place && <small> {t("Place {0} of {1}", String(end.place.rank), String(end.place.players))}</small>}
-            {end.unsaved && !props.signedIn && (
-              <button className="link-button end-unsaved" onClick={() => sdk.requestSignIn()}>
-                {end.unsaved.rank !== null
-                  ? t("Ranked No. {0} of {1}. Sign in free to save it.", String(end.unsaved.rank), String(end.unsaved.players))
-                  : t("Sign in free to save your score and see your rank.")}
-              </button>
+            {end.unsaved && end.unsaved.rank !== null && !props.signedIn && (
+              <small> {t("You would be No. {0} of {1}.", String(end.unsaved.rank), String(end.unsaved.players))}</small>
             )}
           </p>
         )}
@@ -1175,14 +1179,7 @@ function EndPanel(props: {
           </p>
         )}
         {end.novas > 0 && <p className="end-nova">✹ {t("Supernova charged! Use it on any level.")}</p>}
-        {end.note &&
-          (end.note === "Sign in to earn coins and badges" ? (
-            <button className="link-button end-note" onClick={() => sdk.requestSignIn()}>
-              {t(end.note)}
-            </button>
-          ) : (
-            <p className="end-note">{t(end.note)}</p>
-          ))}
+        {end.note && <p className="end-note">{t(end.note)}</p>}
         {/* A round that answers a challenge posts under it, so it makes no challenge of its own. */}
         {end.score > 0 && !end.rival && <ChallengeButton played={end.played} signedIn={props.signedIn} />}
         <div className="gem-actions">
@@ -1214,8 +1211,9 @@ function EndPanel(props: {
  * share sheet or copied, or shown to copy by hand. A level has one challenge
  * on dingn: the first player to challenge it owns it, and later ones have
  * their score posted under it (dingn tells them their place), so the words
- * that go with the link name the round, not this player's score. A visitor
- * is asked to sign in first: a challenge belongs to an account. dingn is
+ * that go with the link name the round, not this player's score. A challenge
+ * belongs to an account, so for a visitor the button asks dingn to sign them
+ * in instead (dingn draws the sign-in; the game has no sign-in text). dingn is
  * asked first whether the round already has someone else's challenge: then
  * the player is told whose it is and the place their score would take, and
  * the button joins it. Nothing is posted until the button is pressed.
@@ -1249,6 +1247,10 @@ function ChallengeButton({ played, signedIn }: { played: Round; signedIn: boolea
     </p>
   );
   async function send() {
+    if (!signedIn) {
+      sdk.requestSignIn();
+      return;
+    }
     setState("busy");
     let url: string;
     try {
@@ -1265,15 +1267,6 @@ function ChallengeButton({ played, signedIn }: { played: Round; signedIn: boolea
     if (how === "failed") setLink(url);
     setState(how === "copied" ? "copied" : how === "shared" ? "shared" : "idle");
   }
-  if (!signedIn)
-    return (
-      <div className="end-challenge">
-        {standing}
-        <button className="link-button end-unsaved" onClick={() => sdk.requestSignIn()}>
-          {open ? t("Sign in free to join the challenge.") : t("Great score! Sign in free to challenge anyone.")}
-        </button>
-      </div>
-    );
   if (state === "unavailable") return null;
   return (
     <div className="end-challenge">
@@ -1637,12 +1630,10 @@ const UPGRADE_TEXT: Record<UpgradeKind, { name: string; what: string }> = {
 
 function Shop(props: {
   owned: Owned;
-  signedIn: boolean;
   buying: string | null;
   note: string;
   onBuy: (kind: UpgradeKind) => void;
   onClose: () => void;
-  onSignIn: () => void;
 }) {
   const { t } = useLocale();
   return (
@@ -1658,13 +1649,6 @@ function Shop(props: {
           </button>
         </div>
         <p className="shop-intro">{t("Upgrades are yours to keep and work on every level. The daily board stays the same for everyone.")}</p>
-        {!props.signedIn && (
-          <p className="shop-signin">
-            <button className="button" onClick={props.onSignIn}>
-              {t("Sign in to buy upgrades")}
-            </button>
-          </p>
-        )}
         <ul className="shop-list">
           {UPGRADE_KINDS.map((kind) => {
             const have = props.owned[kind];
@@ -1685,7 +1669,7 @@ function Shop(props: {
                 {next ? (
                   <button
                     className="button buy"
-                    disabled={!!props.buying || !props.signedIn}
+                    disabled={!!props.buying}
                     onClick={() => props.onBuy(kind)}
                   >
                     <span className="coin" aria-hidden /> {next.price}
