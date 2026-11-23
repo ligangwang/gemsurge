@@ -1168,7 +1168,8 @@ function EndPanel(props: {
           ) : (
             <p className="end-note">{t(end.note)}</p>
           ))}
-        {end.score > 0 && <ChallengeButton played={end.played} />}
+        {/* A round that answers a challenge posts under it, so it makes no challenge of its own. */}
+        {end.score > 0 && !end.rival && <ChallengeButton played={end.played} />}
         <div className="gem-actions">
           {won && !daily && s.spec.level < LAST_LEVEL && (
             <button className="button" onClick={props.onNext}>
