@@ -569,3 +569,22 @@ test("a round away from the friend's challenge reports no result", async () => {
   await vi.waitFor(() => expect(calls.roundEnded).toHaveBeenCalledTimes(1));
   expect(calls.result).not.toHaveBeenCalled();
 });
+
+test("a signed-out visitor who takes a challenge is asked to sign in to save the score", async () => {
+  fakeSdk(false);
+  const signIn = vi.fn();
+  sdk.requestSignIn = signIn;
+  sdk.challenge = { mode: "daily", seed: "2026-11-01", score: 999999, unit: "points", rules: "u0-0-0-0-0-0.n0" };
+  // dingn holds a visitor's score until they sign in, and may not rank it yet.
+  calls.result.mockResolvedValue({ beat: false, posted: false, best: 0, rank: null, players: 4 });
+  play();
+  await playOut();
+  fireEvent.click(await screen.findByRole("button", { name: "Sign in free to save your score and see your rank." }));
+  expect(signIn).toHaveBeenCalledTimes(1);
+  cleanup();
+  // When dingn says where the score would stand, the place is shown too.
+  calls.result.mockResolvedValue({ beat: false, posted: false, best: 0, rank: 3, players: 4 });
+  play();
+  await playOut();
+  expect(await screen.findByRole("button", { name: "Ranked No. 3 of 4. Sign in free to save it." })).toBeTruthy();
+});

@@ -194,5 +194,7 @@
   "A lucky draw is waiting for you": "Tem um sorteio da sorte esperando por você",
   "Tap to speed up": "Toque para acelerar",
   "{0} moves left turn into blasters": "As {0} jogadas que sobraram viram lasers",
-  "Place {0} of {1}": "{0}º lugar de {1}"
+  "Place {0} of {1}": "{0}º lugar de {1}",
+  "Ranked No. {0} of {1}. Sign in free to save it.": "{0}º lugar de {1}. Entre grátis para salvar.",
+  "Sign in free to save your score and see your rank.": "Entre grátis para salvar sua pontuação e ver sua posição."
 }
