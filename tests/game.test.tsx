@@ -532,11 +532,12 @@ test("a friend's better upgrades and Supernovas are lent for the round, which pa
   // More than the player owns, so the round is for the score alone.
   expect(calls.earn).not.toHaveBeenCalled();
   expect(calls.unlock).not.toHaveBeenCalled();
-  // A challenge back carries the same rules.
-  Object.defineProperty(navigator, "clipboard", { value: { writeText: vi.fn(async () => {}) }, configurable: true });
-  const button = await screen.findByRole("button", { name: /Challenge a friend/ });
-  await act(async () => fireEvent.click(button));
-  expect(calls.link).toHaveBeenCalledWith(expect.objectContaining({ mode: "level", seed: "1", rules: "u2-0-0-0-0-0.n1" }));
+  // The score is posted under the friend's challenge, so the round offers
+  // no challenge of its own: that would be the same one again.
+  await vi.waitFor(() => expect(calls.result).toHaveBeenCalledTimes(1));
+  await screen.findByRole("button", { name: /Play again|Try again/ });
+  expect(screen.queryByRole("button", { name: /Challenge a friend/ })).toBeNull();
+  expect(calls.link).not.toHaveBeenCalled();
 });
 
 test("the player's own challenge is their score to beat", async () => {
