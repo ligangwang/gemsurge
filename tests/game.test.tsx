@@ -427,15 +427,15 @@ test("after a round, a player challenges a friend to beat the score", async () =
   // No challenge was opened, so there is no result to report.
   expect(calls.result).not.toHaveBeenCalled();
   const score = session().score;
-  const button = await screen.findByRole("button", { name: /Challenge a friend/ });
+  const button = await screen.findByRole("button", { name: /Challenge anyone/ });
   await act(async () => fireEvent.click(button));
   const today = new Date().toISOString().slice(0, 10);
   // The daily board is played without upgrades or Supernovas, for everyone.
   expect(calls.link).toHaveBeenCalledWith({ mode: "daily", seed: today, score, unit: "points", rules: "u0-0-0-0-0-0.n0" });
   // No share sheet here, so the link is copied with a line to send.
   expect(writeText).toHaveBeenCalledWith(expect.stringContaining("https://dingn.com/play/gemsurge/?c=Xq3v9TzK1bWm"));
-  expect(writeText).toHaveBeenCalledWith(expect.stringContaining("Can you beat my"));
-  expect(await screen.findByText("Link copied. Send it to a friend!")).toBeTruthy();
+  expect(writeText).toHaveBeenCalledWith(expect.stringContaining("Can you beat the score?"));
+  expect(await screen.findByText("Link copied. Send it to anyone!")).toBeTruthy();
 });
 
 test("a friend's challenge opens that daily board and says whether it was beaten", async () => {
@@ -444,7 +444,7 @@ test("a friend's challenge opens that daily board and says whether it was beaten
   // Straight into the friend's board: the daily board of that day, not today's.
   expect(screen.getByRole("heading", { name: "2026-11-01" })).toBeTruthy();
   await playOut();
-  expect(await screen.findByText(/Your friend scored 999,999\./)).toBeTruthy();
+  expect(await screen.findByText(/The score to beat is 999,999\./)).toBeTruthy();
   // dingn is told the score, and its ranking is shown.
   expect(calls.result).toHaveBeenCalledTimes(1);
   expect(calls.result).toHaveBeenCalledWith(session().score);
@@ -461,7 +461,7 @@ test("a friend's challenge on a level not reached yet plays it without unlocking
   play();
   expect(await screen.findByRole("heading", { name: "Level 40" })).toBeTruthy();
   await playOut();
-  if (session().score > 1) expect(await screen.findByText("You beat your friend's 1!")).toBeTruthy();
+  if (session().score > 1) expect(await screen.findByText("You beat the challenge's 1!")).toBeTruthy();
   expect(calls.earn).not.toHaveBeenCalled();
   // Nor badges, during play or after it.
   expect(calls.unlock).not.toHaveBeenCalled();
@@ -536,7 +536,7 @@ test("a friend's better upgrades and Supernovas are lent for the round, which pa
   // no challenge of its own: that would be the same one again.
   await vi.waitFor(() => expect(calls.result).toHaveBeenCalledTimes(1));
   await screen.findByRole("button", { name: /Play again|Try again/ });
-  expect(screen.queryByRole("button", { name: /Challenge a friend/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /Challenge anyone/ })).toBeNull();
   expect(calls.link).not.toHaveBeenCalled();
 });
 
@@ -555,7 +555,7 @@ test("an older dingn without challengeResult still ends a challenge round", asyn
   sdk.challenge = { mode: "daily", seed: "2026-11-01", score: 999999, unit: "points", rules: "u0-0-0-0-0-0.n0" };
   play();
   await playOut();
-  expect(await screen.findByText(/Your friend scored 999,999\./)).toBeTruthy();
+  expect(await screen.findByText(/The score to beat is 999,999\./)).toBeTruthy();
   expect(screen.queryByText(/Place \d+ of/)).toBeNull();
 });
 
@@ -587,4 +587,18 @@ test("a signed-out visitor who takes a challenge is asked to sign in to save the
   play();
   await playOut();
   expect(await screen.findByRole("button", { name: "Ranked No. 3 of 4. Sign in free to save it." })).toBeTruthy();
+});
+
+test("a signed-out visitor with a score is asked to sign in before challenging anyone", async () => {
+  fakeSdk(false);
+  const signIn = vi.fn();
+  sdk.requestSignIn = signIn;
+  play();
+  fireEvent.click(screen.getByRole("button", { name: "Daily board" }));
+  await playOut();
+  // A challenge belongs to an account, so a visitor gets no challenge button.
+  expect(screen.queryByRole("button", { name: /Challenge anyone/ })).toBeNull();
+  fireEvent.click(await screen.findByRole("button", { name: "Great score! Sign in free to challenge anyone." }));
+  expect(signIn).toHaveBeenCalledTimes(1);
+  expect(calls.link).not.toHaveBeenCalled();
 });

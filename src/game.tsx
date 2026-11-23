@@ -1042,7 +1042,7 @@ function Hud(props: {
         <p className="hud-note">
           {props.lent === "own"
             ? t("Your upgrades and Supernovas from that round.")
-            : t("Your friend's upgrades and Supernovas, so it's a fair match.")}
+            : t("The challenge's upgrades and Supernovas, so it's a fair match.")}
         </p>
       )}
       {spec.level > FREE_UNDO_LEVELS && !props.owned.undo && !props.lent && (
@@ -1137,9 +1137,9 @@ function EndPanel(props: {
             {end.score > end.rival.score
               ? end.rival.mine
                 ? t("You beat your own {0}!", end.rival.score.toLocaleString())
-                : t("You beat your friend's {0}!", end.rival.score.toLocaleString())
+                : t("You beat the challenge's {0}!", end.rival.score.toLocaleString())
               : t(
-                  end.rival.mine ? "Your score to beat: {0}. {1} more to beat it." : "Your friend scored {0}. {1} more to beat it.",
+                  end.rival.mine ? "Your score to beat: {0}. {1} more to beat it." : "The score to beat is {0}. {1} more to beat it.",
                   end.rival.score.toLocaleString(),
                   (end.rival.score - end.score + 1).toLocaleString(),
                 )}
@@ -1183,7 +1183,7 @@ function EndPanel(props: {
             <p className="end-note">{t(end.note)}</p>
           ))}
         {/* A round that answers a challenge posts under it, so it makes no challenge of its own. */}
-        {end.score > 0 && !end.rival && <ChallengeButton played={end.played} />}
+        {end.score > 0 && !end.rival && <ChallengeButton played={end.played} signedIn={props.signedIn} />}
         <div className="gem-actions">
           {won && !daily && s.spec.level < LAST_LEVEL && (
             <button className="button" onClick={props.onNext}>
@@ -1208,10 +1208,14 @@ function EndPanel(props: {
 }
 
 /**
- * "Challenge a friend": a link to this round with the score to beat, through
- * the phone's share sheet or copied, or shown to copy by hand.
+ * "Challenge anyone": a link to this round's challenge, through the phone's
+ * share sheet or copied, or shown to copy by hand. A level has one challenge
+ * on dingn: the first player to challenge it owns it, and later ones have
+ * their score posted under it (dingn tells them their place), so the words
+ * that go with the link name the round, not this player's score. A visitor
+ * is asked to sign in first: a challenge belongs to an account.
  */
-function ChallengeButton({ played }: { played: Round }) {
+function ChallengeButton({ played, signedIn }: { played: Round; signedIn: boolean }) {
   const { t } = useLocale();
   const sdk = useDingn();
   const [state, setState] = useState<"idle" | "busy" | "copied" | "shared" | "unavailable">("idle");
@@ -1225,18 +1229,29 @@ function ChallengeButton({ played }: { played: Round }) {
       setState("unavailable");
       return;
     }
-    const text = t("Can you beat my {0} points in Gem Surge?", played.score.toLocaleString());
+    const text =
+      played.kind === "level"
+        ? t("Take on level {0} in Gem Surge. Can you beat the score?", String(played.level))
+        : t("Take on today's daily board in Gem Surge. Can you beat the score?");
     const how = await shareLink(url, text);
     if (how === "failed") setLink(url);
     setState(how === "copied" ? "copied" : how === "shared" ? "shared" : "idle");
   }
+  if (!signedIn)
+    return (
+      <div className="end-challenge">
+        <button className="link-button end-unsaved" onClick={() => sdk.requestSignIn()}>
+          {t("Great score! Sign in free to challenge anyone.")}
+        </button>
+      </div>
+    );
   if (state === "unavailable") return null;
   return (
     <div className="end-challenge">
       <button className="button challenge-button" onClick={send} disabled={state === "busy"}>
-        ⚔ {t("Challenge a friend")}
+        ⚔ {t("Challenge anyone")}
       </button>
-      {state === "copied" && <p className="end-sub">{t("Link copied. Send it to a friend!")}</p>}
+      {state === "copied" && <p className="end-sub">{t("Link copied. Send it to anyone!")}</p>}
       {link && (
         <input className="challenge-link" readOnly value={link} aria-label={t("Challenge link")} onFocus={(e) => e.target.select()} />
       )}
