@@ -1185,12 +1185,13 @@ function EndPanel(props: {
         {/* A round that answers a challenge posts under it, so it makes no challenge of its own. */}
         {end.score > 0 && !end.rival && <ChallengeButton played={end.played} signedIn={props.signedIn} />}
         <div className="gem-actions">
-          {won && !daily && s.spec.level < LAST_LEVEL && (
+          {/* Answering a challenge is about that one round: play it again or leave, with no next level. */}
+          {won && !daily && !end.rival && s.spec.level < LAST_LEVEL && (
             <button className="button" onClick={props.onNext}>
               {t("Next level")}
             </button>
           )}
-          <button className={won ? "secondary-button" : "button"} onClick={props.onRetry}>
+          <button className={won && !end.rival ? "secondary-button" : "button"} onClick={props.onRetry}>
             {won ? t("Play again") : t("Try again")}
           </button>
           {!won && props.signedIn && (
