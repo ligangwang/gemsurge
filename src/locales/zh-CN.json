@@ -8,7 +8,6 @@
   "Upgrades": "升级",
   "Sound on": "打开声音",
   "Sound off": "关闭声音",
-  "Sign in to earn coins and badges": "登录以赚取金币和徽章",
   "Levels": "关卡",
   "Earlier levels": "前面的关卡",
   "Later levels": "后面的关卡",
@@ -61,7 +60,6 @@
   "Spend your dingn coins": "花掉你的 dingn 金币",
   "Close": "关闭",
   "Upgrades are yours to keep and work on every level. The daily board stays the same for everyone.": "升级永久保留，每一关都有效。每日棋盘对所有人都一样，不受升级影响。",
-  "Sign in to buy upgrades": "登录后购买升级",
   "Extra moves": "额外步数",
   "Every level starts with more moves: +1 a tier.": "每关开局多几步：每级 +1。",
   "Line blasters": "激光",
@@ -184,7 +182,6 @@
   "Challenge anyone": "发起挑战",
   "Take on level {0} in Gem Surge. Can you beat the score?": "来挑战宝石狂潮第 {0} 关，你能超过这个分数吗？",
   "Take on today's daily board in Gem Surge. Can you beat the score?": "来挑战宝石狂潮的每日棋盘，你能超过这个分数吗？",
-  "Great score! Sign in free to challenge anyone.": "成绩不错！免费登录后即可发起挑战。",
   "Link copied. Send it to anyone!": "链接已复制，发给任何人吧！",
   "Challenge link": "挑战链接",
   "You beat the challenge's {0}!": "你超过了挑战的 {0} 分！",
@@ -197,10 +194,8 @@
   "Swipe the wheel, or hold the button: the harder the push, the longer it spins.": "滑动转盘，或按住按钮：用力越大，转得越久。",
   "A lucky draw is waiting for you": "你还有一次幸运抽奖",
   "Place {0} of {1}": "第 {0} 名，共 {1} 人",
-  "Ranked No. {0} of {1}. Sign in free to save it.": "排名第 {0}，共 {1} 人。免费登录即可保存。",
-  "Sign in free to save your score and see your rank.": "免费登录，保存分数并查看排名。",
+  "You would be No. {0} of {1}.": "你的成绩可排第 {0} 名（共 {1} 人）。",
   "{0} already has a challenge on this round. You would be No. {1} of {2}.": "这一关已有 {0} 的挑战。你的成绩可排第 {1} 名（共 {2} 人）。",
   "{0} already has a challenge on this round.": "这一关已有 {0} 的挑战。",
-  "Join the challenge": "加入挑战",
-  "Sign in free to join the challenge.": "免费登录后即可加入挑战。"
+  "Join the challenge": "加入挑战"
 }

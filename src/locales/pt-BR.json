@@ -8,7 +8,6 @@
   "Upgrades": "Melhorias",
   "Sound on": "Ligar som",
   "Sound off": "Desligar som",
-  "Sign in to earn coins and badges": "Entre para ganhar moedas e medalhas",
   "Levels": "Níveis",
   "Earlier levels": "Níveis anteriores",
   "Later levels": "Próximos níveis",
@@ -61,7 +60,6 @@
   "Spend your dingn coins": "Gaste suas moedas dingn",
   "Close": "Fechar",
   "Upgrades are yours to keep and work on every level. The daily board stays the same for everyone.": "As melhorias são suas para sempre e valem em todos os níveis. O tabuleiro diário continua igual para todo mundo.",
-  "Sign in to buy upgrades": "Entre para comprar melhorias",
   "Extra moves": "Jogadas extras",
   "Every level starts with more moves: +1 a tier.": "Todo nível começa com mais jogadas: +1 por grau.",
   "Line blasters": "Lasers",
@@ -182,7 +180,6 @@
   "Challenge anyone": "Desafiar qualquer pessoa",
   "Take on level {0} in Gem Surge. Can you beat the score?": "Encare o nível {0} do Gem Surge. Consegue bater a pontuação?",
   "Take on today's daily board in Gem Surge. Can you beat the score?": "Encare o tabuleiro diário do Gem Surge. Consegue bater a pontuação?",
-  "Great score! Sign in free to challenge anyone.": "Ótima pontuação! Entre grátis para desafiar qualquer pessoa.",
   "Link copied. Send it to anyone!": "Link copiado. Envie para quem quiser!",
   "Challenge link": "Link de desafio",
   "You beat the challenge's {0}!": "Você superou os {0} do desafio!",
@@ -197,10 +194,8 @@
   "Tap to speed up": "Toque para acelerar",
   "{0} moves left turn into blasters": "As {0} jogadas que sobraram viram lasers",
   "Place {0} of {1}": "{0}º lugar de {1}",
-  "Ranked No. {0} of {1}. Sign in free to save it.": "{0}º lugar de {1}. Entre grátis para salvar.",
-  "Sign in free to save your score and see your rank.": "Entre grátis para salvar sua pontuação e ver sua posição.",
+  "You would be No. {0} of {1}.": "Você ficaria em {0}º de {1}.",
   "{0} already has a challenge on this round. You would be No. {1} of {2}.": "{0} já tem um desafio nesta rodada. Você ficaria em {1}º de {2}.",
   "{0} already has a challenge on this round.": "{0} já tem um desafio nesta rodada.",
-  "Join the challenge": "Entrar no desafio",
-  "Sign in free to join the challenge.": "Entre grátis para entrar no desafio."
+  "Join the challenge": "Entrar no desafio"
 }

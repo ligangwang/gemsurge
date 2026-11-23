@@ -116,6 +116,16 @@ shows the key once; if it is lost, revoke it and create another.
 into the game. Run `npm run update-sdk` to refresh it. The full guide is at
 <https://dingn.com/developers/>.
 
+All sign-in UI is dingn's. The game draws no sign-in text, link or button: on a
+signed-out player's result it calls `sdk.showSignIn?.(reasons)` and dingn shows
+its own sign-in box along the bottom, taken away with `sdk.hideSignIn?.()` when
+the result card closes. Buttons that need an account (buying an upgrade,
+"Challenge anyone") call `sdk.requestSignIn()` for a signed-out player.
+
+`showSignIn` / `hideSignIn` were added to `sdk/` by hand from dingn 2.17.0's
+description, before dingn.com served them: run `npm run update-sdk` once that
+dingn version is live so the copy matches the real one.
+
 ## Credits
 
 Written by Ligang Wang. Built with [three.js](https://threejs.org/) and

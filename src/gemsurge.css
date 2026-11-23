@@ -281,7 +281,6 @@
   max-width: 30em;
   margin: 0 0 28px;
 }
-.gem-title .signin-note { margin-top: 18px; font-size: 15px; }
 .tick { color: #4af0a4; }
 .gem-worlds {
   align-self: center;
@@ -488,6 +487,8 @@
   overflow-y: auto;
 }
 .gem-end > .gem-panel { margin: auto; }
+/* dingn's sign-in box lies over the bottom strip of the game: keep the result card and its buttons above it. */
+.signin-box .gem-end { padding-bottom: 104px; }
 .screen-shop .gem-end { left: 0; }
 @keyframes fade-in { from { opacity: 0; } }
 .gem-end .gem-panel {
@@ -528,7 +529,6 @@
 .shop-head h2 { margin: 0; }
 .shop-head .eyebrow { margin: 0; }
 .shop-intro { color: #cdd2e0; margin: 8px 0 14px; }
-.shop-signin { margin: 0 0 14px; }
 .shop-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
 .shop-item {
   display: flex;
@@ -730,4 +730,3 @@
 .end-rival.beaten { background: rgba(74, 240, 164, 0.14); color: #4af0a4; font-weight: 700; }
 
 .end-rival small { display: block; margin-top: 2px; font-weight: 400; opacity: 0.85; }
-.end-unsaved { display: block; margin: 4px auto 0; font-weight: 700; }
