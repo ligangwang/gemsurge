@@ -197,5 +197,11 @@
   "You would be No. {0} of {1}.": "{1}명 중 {0}위가 됩니다.",
   "{0} already has a challenge on this round. You would be No. {1} of {2}.": "이 라운드에는 이미 {0}의 챌린지가 있어요. {2}명 중 {1}위가 됩니다.",
   "{0} already has a challenge on this round.": "이 라운드에는 이미 {0}의 챌린지가 있어요.",
-  "Join the challenge": "챌린지 참가"
+  "Join the challenge": "챌린지 참가",
+  "Restart": "다시 시작",
+  "Restart level {0}?": "레벨 {0} 다시 시작할까요?",
+  "Restart the daily board?": "오늘의 보드를 다시 시작할까요?",
+  "Your moves and score so far will be lost.": "지금까지의 이동과 점수는 사라져요.",
+  "Supernovas you set off this time are not given back.": "이번에 사용한 초신성은 돌려받지 못해요.",
+  "Keep playing": "계속하기"
 }

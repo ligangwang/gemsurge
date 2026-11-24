@@ -197,5 +197,11 @@
   "You would be No. {0} of {1}.": "你的成绩可排第 {0} 名（共 {1} 人）。",
   "{0} already has a challenge on this round. You would be No. {1} of {2}.": "这一关已有 {0} 的挑战。你的成绩可排第 {1} 名（共 {2} 人）。",
   "{0} already has a challenge on this round.": "这一关已有 {0} 的挑战。",
-  "Join the challenge": "加入挑战"
+  "Join the challenge": "加入挑战",
+  "Restart": "重新开始",
+  "Restart level {0}?": "重新开始第 {0} 关？",
+  "Restart the daily board?": "重新开始每日棋盘？",
+  "Your moves and score so far will be lost.": "目前的步数和分数都会作废。",
+  "Supernovas you set off this time are not given back.": "这一局用掉的超新星不会退还。",
+  "Keep playing": "继续玩"
 }

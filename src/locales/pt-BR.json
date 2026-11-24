@@ -197,5 +197,11 @@
   "You would be No. {0} of {1}.": "Você ficaria em {0}º de {1}.",
   "{0} already has a challenge on this round. You would be No. {1} of {2}.": "{0} já tem um desafio nesta rodada. Você ficaria em {1}º de {2}.",
   "{0} already has a challenge on this round.": "{0} já tem um desafio nesta rodada.",
-  "Join the challenge": "Entrar no desafio"
+  "Join the challenge": "Entrar no desafio",
+  "Restart": "Reiniciar",
+  "Restart level {0}?": "Reiniciar o nível {0}?",
+  "Restart the daily board?": "Reiniciar o tabuleiro diário?",
+  "Your moves and score so far will be lost.": "Você vai perder as jogadas e a pontuação até agora.",
+  "Supernovas you set off this time are not given back.": "As Supernovas que você usou desta vez não são devolvidas.",
+  "Keep playing": "Continuar jogando"
 }

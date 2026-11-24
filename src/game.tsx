@@ -134,6 +134,8 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     if (turnOver.current && flying === 0) showGoals(null);
   };
   const [end, setEnd] = useState<EndInfo | null>(null);
+  /** The player asked to restart mid-level and is being asked to confirm. */
+  const [restarting, setRestarting] = useState(false);
   const [buying, setBuying] = useState<string | null>(null);
   // Kept in English and translated when shown, so it follows a language switch.
   const [shopNote, setShopNote] = useState("");
@@ -288,6 +290,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     scene.current?.offerSpeedUp(false);
     setShown(0);
     setEnd(null);
+    setRestarting(false);
     setScreen("play");
     rerender();
     scene.current?.setBoard(s.board.cells, s.board.ice, spec.world, worldCycle(spec.level), s.board.holes, spec.iceCover ? frostMotifForLevel(level) : undefined);
@@ -317,7 +320,7 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   async function play(pair: [Pos, Pos] | null) {
     const s = session.current;
     const sc = scene.current;
-    if (!s || !sc || busy.current || screen !== "play") return;
+    if (!s || !sc || busy.current || screen !== "play" || restarting) return;
     const rules = sessionRules.get(s);
     if (!pair && (s.outcome || !s.spec.level || novasLeft(s) < 1)) return;
     busy.current = true;
@@ -574,7 +577,38 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
     scene.current?.setInput(false);
     scene.current?.setFever(false);
     scene.current?.showHint(null);
+    setRestarting(false);
     setScreen("menu");
+  }
+
+  /**
+   * The restart button: plays the same level (or daily board) again from the
+   * start. Once a move has been made it asks first, since the play so far is
+   * lost.
+   */
+  function askRestart() {
+    const s = session.current;
+    if (!s || busy.current || screen !== "play" || s.outcome) return;
+    if (s.movesMade === 0 && s.novas === 0) return restart();
+    clearTimeout(hintTimer.current);
+    scene.current?.showHint(null);
+    scene.current?.setInput(false);
+    setRestarting(true);
+  }
+
+  function keepPlaying() {
+    setRestarting(false);
+    if (session.current && !session.current.outcome) {
+      scene.current?.setInput(true);
+      armHint();
+    }
+  }
+
+  function restart() {
+    const s = session.current;
+    if (!s || busy.current) return;
+    // start() keeps a friend's challenge, and its rules, for the same round.
+    start(s.spec.level, sessionDay.get(s) ?? today);
   }
 
   async function purchase(kind: UpgradeKind) {
@@ -607,10 +641,12 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && screen === "shop") setScreen("menu");
+      if (e.key === "Escape" && restarting) keepPlaying();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [screen]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen, restarting]);
 
   const s = session.current;
   const nextLevel = Math.min(top + 1, LAST_LEVEL);
@@ -666,8 +702,29 @@ export function GemGame({ initial, prefs }: { initial: Saved; prefs: { muted: bo
           charge={novaCharge(saved)}
           onNova={() => play(null)}
           onUndo={undo}
-          canNova={screen === "play" && !s.outcome}
+          onRestart={askRestart}
+          canNova={screen === "play" && !s.outcome && !restarting}
         />
+      )}
+
+      {webgl && screen === "play" && restarting && s && (
+        <div className="gem-end gem-confirm" role="dialog" aria-modal="true" aria-labelledby="restart-title">
+          <div className="gem-panel">
+            <h2 id="restart-title">{s.spec.level ? t("Restart level {0}?", String(s.spec.level)) : t("Restart the daily board?")}</h2>
+            <p className="end-sub">{t("Your moves and score so far will be lost.")}</p>
+            {s.novas > 0 && !sessionRules.has(s) && (
+              <p className="end-note">{t("Supernovas you set off this time are not given back.")}</p>
+            )}
+            <div className="gem-actions">
+              <button className="button" onClick={restart} autoFocus>
+                {t("Restart")}
+              </button>
+              <button className="secondary-button" onClick={keepPlaying}>
+                {t("Keep playing")}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {webgl && screen === "menu" && (drawsOwed(saved) > 0 || owedOpen) && (
@@ -950,6 +1007,7 @@ function Hud(props: {
   canNova: boolean;
   onNova: () => void;
   onUndo: () => void;
+  onRestart: () => void;
 }) {
   const { t } = useLocale();
   const s = props.session;
@@ -978,6 +1036,9 @@ function Hud(props: {
           <p className="eyebrow">{spec.level ? t(WORLDS[spec.world].name) : t("Daily board")}</p>
           <h2>{spec.level ? t("Level {0}", String(spec.level)) : props.day}</h2>
         </div>
+        <button className="icon-button" disabled={!props.canNova} onClick={props.onRestart} aria-label={t("Restart")} title={t("Restart")}>
+          ↻
+        </button>
         <button className="icon-button" onClick={props.onMute} aria-label={props.muted ? t("Sound on") : t("Sound off")}>
           {props.muted ? "🔇" : "🔊"}
         </button>

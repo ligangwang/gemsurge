@@ -475,6 +475,43 @@ test("undo takes the last move back, three times a level", async () => {
   expect(undo().disabled).toBe(true);
 });
 
+test("restart plays the level again from the start, asking first once a move is made", async () => {
+  play();
+  fireEvent.click(screen.getByRole("button", { name: "Play" }));
+  const first = session();
+  const moves = first.movesLeft;
+  const cells = JSON.stringify(first.board.cells);
+  // Nothing to lose yet: it restarts straight away.
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Restart" })));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(session()).not.toBe(first);
+  const [a, b] = findHint(session().board)!;
+  await act(async () => mocks.scene!.onSwap(a, b));
+  const played = session();
+  expect(played.movesLeft).toBe(moves - 1);
+  // After a move it asks, and "Keep playing" leaves the play as it was.
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Restart" })));
+  expect(screen.getByRole("heading", { name: "Restart level 1?" })).toBeTruthy();
+  expect((screen.getByRole("button", { name: /Undo ×/ }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Keep playing" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(session()).toBe(played);
+  expect(session().movesLeft).toBe(moves - 1);
+  // Confirming starts the same level afresh, with the same board.
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Restart" })));
+  const dialog = screen.getByRole("dialog");
+  await act(async () => fireEvent.click(dialog.querySelector("button")!));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(session()).not.toBe(played);
+  expect(session().spec.level).toBe(1);
+  expect(session().movesLeft).toBe(moves);
+  expect(session().score).toBe(0);
+  expect(JSON.stringify(session().board.cells)).toBe(cells);
+  expect(screen.getByRole("heading", { name: "Level 1" })).toBeTruthy();
+  // Abandoning a level mid-play pays and saves nothing.
+  expect(calls.earn).not.toHaveBeenCalled();
+});
+
 test("after a round, a player challenges a friend to beat the score", async () => {
   const writeText = vi.fn(async () => {});
   Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
