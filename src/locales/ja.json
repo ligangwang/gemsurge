@@ -197,5 +197,11 @@
   "You would be No. {0} of {1}.": "あなたは {1} 人中 {0} 位になります。",
   "{0} already has a challenge on this round. You would be No. {1} of {2}.": "このラウンドには {0} のチャレンジがあります。あなたは {2} 人中 {1} 位になります。",
   "{0} already has a challenge on this round.": "このラウンドには {0} のチャレンジがあります。",
-  "Join the challenge": "チャレンジに参加"
+  "Join the challenge": "チャレンジに参加",
+  "Restart": "やり直す",
+  "Restart level {0}?": "レベル {0} をやり直しますか？",
+  "Restart the daily board?": "デイリーボードをやり直しますか？",
+  "Your moves and score so far will be lost.": "ここまでの手数とスコアは消えます。",
+  "Supernovas you set off this time are not given back.": "今回使った超新星は戻りません。",
+  "Keep playing": "プレイを続ける"
 }
