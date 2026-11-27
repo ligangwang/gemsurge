@@ -84,6 +84,8 @@ type Tween = {
   done?: () => void;
   /** Ends a wait early when the board is replaced. */
   cancel?: () => void;
+  /** Decoration only (a glint): doesn't keep the scene at full frame rate. */
+  ambient?: boolean;
 };
 
 /** Thrown out of an animation whose board was replaced (setBoard). */
@@ -924,6 +926,8 @@ class Particles {
   drag = new Float32Array(PARTICLES);
   gravity = new Float32Array(PARTICLES);
   next = 0;
+  /** Whether any particle may still be alive; when none are, update() does nothing. */
+  live = false;
   constructor(texture: THREE.Texture) {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(this.pos, 3));
@@ -978,14 +982,20 @@ class Particles {
       this.drag[i] = drag;
       this.gravity[i] = gravity;
     }
+    if (count > 0) this.live = true;
   }
   update(dt: number) {
+    // Nothing alive: the sizes were zeroed and uploaded last time, so there's
+    // nothing to move or send to the GPU.
+    if (!this.live) return;
+    let alive = false;
     for (let i = 0; i < PARTICLES; i++) {
       if (this.life[i] <= 0) {
         this.size[i] = 0;
         continue;
       }
       this.life[i] -= dt;
+      if (this.life[i] > 0) alive = true;
       const k = Math.max(0, this.life[i] / this.maxLife[i]);
       const d = Math.exp(-this.drag[i] * dt);
       this.vel[i * 3] *= d;
@@ -997,6 +1007,7 @@ class Particles {
       this.tint[i * 4 + 3] = k;
       this.size[i] = this.base[i] * (0.3 + 0.7 * k);
     }
+    this.live = alive;
     const g = this.points.geometry;
     g.attributes.position.needsUpdate = true;
     g.attributes.tint.needsUpdate = true;
@@ -1005,6 +1016,24 @@ class Particles {
 }
 
 // ------------------------------------------------------------------- scene
+
+/** Frame rate while something is happening on the board. */
+const BUSY_FPS = 60;
+/** Frame rate while the board is at rest (only the slow sway and glints move). */
+const IDLE_FPS = 30;
+/** Lets a frame that comes a touch early still count, so 60 Hz screens draw every frame. */
+const FRAME_SLACK_MS = 3;
+
+/**
+ * The drawing resolution. Phones have 3x screens and a full bloom chain to
+ * fill at that size; 1.5x looks the same on a small screen at a fraction of
+ * the work. Mouse-driven screens keep up to 2x.
+ */
+function pixelRatio() {
+  const dpr = window.devicePixelRatio || 1;
+  const touch = window.matchMedia?.("(pointer: coarse)").matches ?? false;
+  return Math.min(dpr, touch ? 1.5 : 2);
+}
 
 export class GemScene {
   private renderer: THREE.WebGLRenderer;
@@ -1087,11 +1116,13 @@ export class GemScene {
     private host: HTMLElement,
     private options: SceneOptions,
   ) {
+    // No antialiasing on the canvas itself: everything is drawn into the
+    // composer's multisampled target, and the canvas only gets a full-screen copy.
     this.renderer = new THREE.WebGLRenderer({
-      antialias: true,
+      antialias: false,
       powerPreference: "high-performance",
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(pixelRatio());
     this.renderer.toneMapping = THREE.NeutralToneMapping;
     this.renderer.toneMappingExposure = 1;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -1190,8 +1221,20 @@ export class GemScene {
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(host);
     this.resize();
+    document.addEventListener("visibilitychange", this.onVisibility);
     this.loop();
   }
+
+  /** Stops drawing while the page is hidden (some embedded views keep frames coming). */
+  private onVisibility = () => {
+    if (this.disposed) return;
+    cancelAnimationFrame(this.raf);
+    this.raf = 0;
+    if (document.hidden) return;
+    this.last = performance.now();
+    this.nextFrame = 0;
+    this.loop();
+  };
 
   // ------------------------------------------------------------- building
 
@@ -1536,6 +1579,7 @@ export class GemScene {
   }
 
   private onDown = (e: PointerEvent) => {
+    this.pointerActiveUntil = performance.now() + 1500;
     this.options.onPoke?.();
     if (!this.inputOn) return;
     const hit = this.cellAt(e);
@@ -1555,6 +1599,8 @@ export class GemScene {
   };
 
   private onMove = (e: PointerEvent) => {
+    // The camera eases toward the pointer for a moment after it moves.
+    this.pointerActiveUntil = performance.now() + 1500;
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.pointer.set(
       ((e.clientX - rect.left) / rect.width) * 2 - 1,
@@ -2387,6 +2433,7 @@ export class GemScene {
         mat.dispose();
       },
     );
+    this.tweens[this.tweens.length - 1].ambient = true;
   }
 
   private burst(
@@ -2566,10 +2613,37 @@ export class GemScene {
   }
   private baseDistance = 16;
 
+  /** When the next frame is due (ms), for the frame-rate cap. */
+  private nextFrame = 0;
+  /** Until when (ms) the player's pointer counts as recently active. */
+  private pointerActiveUntil = 0;
+
+  /**
+   * Whether anything on screen moves faster than the gentle idle sway: a
+   * move playing out, particles, shake, Fever, the player touching the board.
+   * When nothing does, the scene is drawn at a lower rate.
+   */
+  private isBusy(nowMs: number) {
+    if (nowMs < this.pointerActiveUntil || this.dragFrom || this.selected) return true;
+    if (this.particles.live || this.lightningLines.length || this.shake > 0) return true;
+    if (this.fever > 0.01 || this.feverTarget > 0) return true;
+    if (Math.abs(this.timeScale - 1) > 0.01) return true;
+    for (const tw of this.tweens) if (!tw.ambient) return true;
+    return false;
+  }
+
   private loop = () => {
     if (this.disposed) return;
     this.raf = requestAnimationFrame(this.loop);
     const nowMs = performance.now();
+    // Cap the frame rate: phones with 90/120 Hz screens would otherwise draw
+    // the whole scene (bloom included) twice as often as needed, and a board
+    // at rest only needs a calm 30.
+    // Frames are due on a fixed cadence, so an early frame doesn't shorten
+    // the next interval (on a 144 Hz screen that would give 72 fps, not 60).
+    const interval = 1000 / (this.isBusy(nowMs) ? BUSY_FPS : IDLE_FPS);
+    if (nowMs < this.nextFrame - FRAME_SLACK_MS) return;
+    this.nextFrame = nowMs - this.nextFrame > interval ? nowMs + interval : this.nextFrame + interval;
     const real = Math.min((nowMs - this.last) / 1000, 0.1);
     this.last = nowMs;
     const now = nowMs / 1000;
@@ -2668,6 +2742,7 @@ export class GemScene {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
     this.resizeObserver.disconnect();
+    document.removeEventListener("visibilitychange", this.onVisibility);
     this.renderer.domElement.removeEventListener("pointerdown", this.onDown);
     this.renderer.domElement.removeEventListener("pointerdown", this.onSpeedUp);
     window.removeEventListener("pointermove", this.onMove);
