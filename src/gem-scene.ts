@@ -1232,7 +1232,7 @@ export class GemScene {
     this.raf = 0;
     if (document.hidden) return;
     this.last = performance.now();
-    this.lastFrame = 0;
+    this.nextFrame = 0;
     this.loop();
   };
 
@@ -2613,8 +2613,8 @@ export class GemScene {
   }
   private baseDistance = 16;
 
-  /** When the last frame was drawn (ms), for the frame-rate cap. */
-  private lastFrame = 0;
+  /** When the next frame is due (ms), for the frame-rate cap. */
+  private nextFrame = 0;
   /** Until when (ms) the player's pointer counts as recently active. */
   private pointerActiveUntil = 0;
 
@@ -2639,9 +2639,11 @@ export class GemScene {
     // Cap the frame rate: phones with 90/120 Hz screens would otherwise draw
     // the whole scene (bloom included) twice as often as needed, and a board
     // at rest only needs a calm 30.
-    const fps = this.isBusy(nowMs) ? BUSY_FPS : IDLE_FPS;
-    if (nowMs - this.lastFrame < 1000 / fps - FRAME_SLACK_MS) return;
-    this.lastFrame = nowMs;
+    // Frames are due on a fixed cadence, so an early frame doesn't shorten
+    // the next interval (on a 144 Hz screen that would give 72 fps, not 60).
+    const interval = 1000 / (this.isBusy(nowMs) ? BUSY_FPS : IDLE_FPS);
+    if (nowMs < this.nextFrame - FRAME_SLACK_MS) return;
+    this.nextFrame = nowMs - this.nextFrame > interval ? nowMs + interval : this.nextFrame + interval;
     const real = Math.min((nowMs - this.last) / 1000, 0.1);
     this.last = nowMs;
     const now = nowMs / 1000;
